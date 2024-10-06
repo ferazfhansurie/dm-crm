@@ -1,5 +1,4 @@
-import logoUrl from "@/assets/images/logo.png";
-import illustrationUrl from "@/assets/images/illustration.svg";
+
 import { FormInput, FormCheck } from "@/components/Base/Form";
 import Button from "@/components/Base/Button";
 import clsx from "clsx";
@@ -79,7 +78,7 @@ const firebaseConfig = {
               <div className="flex-col hidden min-h-screen xl:flex">
                 <div className="my-auto flex flex-col items-left w-full">
                 <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-center intro-x xl:text-left text-white">
-  Zahin Travel
+  DM LILY
 </h1>
                 </div>
               </div>

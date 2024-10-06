@@ -1233,17 +1233,35 @@ const handleConfirmDeleteTag = async () => {
       if(companyId == '042'){
         message = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://web.jutasoftware.co/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
       }
-  
+      let phoneIndex;
+      if (userData?.phone !== undefined) {
+          if (userData.phone === 0) {
+              // Handle case for phone index 0
+              phoneIndex = 0;
+          } else if (userData.phone === -1) {
+              // Handle case for phone index -1
+              phoneIndex = 0;
+          } else {
+              // Handle other cases
+              console.log(`User phone index is: ${userData.phone}`);
+              phoneIndex = userData.phone;
+          }
+      } else {
+          console.error('User phone is not defined');
+          phoneIndex = 0; // Default value if phone is not defined
+      }
       let url;
       let requestBody;
       if (companyData.v2 === true) {
         console.log("v2 is true");
         url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${employeePhone}`;
-        requestBody = { message };
+        requestBody = { message, 
+          phoneIndex  };
         } else {
         console.log("v2 is false");
         url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${employeePhone}/${companyData.whapiToken}`;
-        requestBody = { message };
+        requestBody = { message, 
+          phoneIndex  };
       }
   
       console.log('Sending request to:', url);
@@ -1253,7 +1271,10 @@ const handleConfirmDeleteTag = async () => {
         url,
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(requestBody)
+        body: JSON.stringify({
+          message: message,
+          phoneIndex: phoneIndex,
+        })
       });
   
       // Send WhatsApp message to the employee
@@ -1648,6 +1669,61 @@ const chatId = tempphone + "@c.us"
 
   const handleSaveContact = async () => {
     if (currentContact) {
+        try {
+            const user = auth.currentUser;
+            const docUserRef = doc(firestore, 'user', user?.email!);
+            const docUserSnapshot = await getDoc(docUserRef);
+            if (!docUserSnapshot.exists()) {
+                console.log('No such document for user!');
+                return;
+            }
+            const userData = docUserSnapshot.data();
+            const companyId = userData.companyId;
+            const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
+
+            // Create an object with only the defined fields
+            const updateData: { [key: string]: any } = {
+                contactName: currentContact.contactName,
+                email: currentContact.email,
+                lastName: currentContact.lastName,
+                phone: currentContact.phone,
+                points: currentContact.points || 0,
+                ic: currentContact.ic
+            };
+
+            const fieldsToUpdate = [
+                'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
+                'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
+                'customFields', 'source', 'country', 'companyName', 'branch', 
+                'expiryDate', 'vehicleNumber', 'points', 'IC',
+            ];
+
+            fieldsToUpdate.forEach(field => {
+                if (currentContact[field as keyof Contact] !== undefined) {
+                    updateData[field] = currentContact[field as keyof Contact];
+                }
+            });
+
+            // Update contact in Firebase
+            const contactDocRef = doc(contactsCollectionRef, currentContact.phone!); // Get the document reference
+            await updateDoc(contactDocRef, updateData); // Use the document reference
+
+            // Update local state immediately after saving
+            setContacts(prevContacts => 
+                prevContacts.map(contact => 
+                    contact.phone === currentContact.phone ? { ...contact, ...updateData } : contact
+                )
+            );
+            setCurrentContact(prevContact => ({ ...prevContact, ...updateData })); // Update currentContact state
+
+            setEditContactModal(false);
+            setCurrentContact(null);
+            await fetchContacts();
+            toast.success("Contact updated successfully!");
+        } catch (error) {
+            console.error('Error saving contact:', error);
+            toast.error("Failed to update contact.");
+        }
 
       const requiredFields = ['contactName', 'phone'];
       const missingFields = requiredFields.filter(field => !currentContact[field as keyof Contact]);

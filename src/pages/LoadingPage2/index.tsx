@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from "react";
-
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';
@@ -410,15 +409,9 @@ function LoadingPage2() {
   const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
 
   return (
-<<<<<<< HEAD
     <div className="flex items-center justify-center h-screen bg-white dark:bg-gray-900">
       <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
 
-=======
-    <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">
-      <div className="flex flex-col items-center w-full max-w-md text-center">
-        <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
->>>>>>> juta-crm/main
         {v2 ? (
           <div className="w-full overflow-y-auto max-h-[calc(100vh-8rem)]">
             {botStatus === 'qr' && currentQrIndex !== null ? (

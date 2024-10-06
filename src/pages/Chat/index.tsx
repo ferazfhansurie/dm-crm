@@ -466,7 +466,6 @@ function Main() {
   const location = useLocation();
   const [isChatActive, setIsChatActive] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
-  const [isEditing, setIsEditing] = useState(false);
   const [editedName, setEditedName] = useState('');
   const [isNewChatModalOpen, setIsNewChatModalOpen] = useState(false);
   const [newContactNumber, setNewContactNumber] = useState('');
@@ -2957,6 +2956,26 @@ const removeTagAfterQuote = (contact: Contact) => {
     handleBinaTag('removeAfterQuote', contact.phone, contact.contactName);
 };
 
+const removeTag5Days = (contact: Contact) => {
+    console.log('Removing tag 5 days for contact:', contact.phone);
+    console.log('Removing tag 5 days for contact:', contact.contactName);
+    if (!contact.phone || !contact.contactName) {
+      console.error('Phone or firstname is null or undefined');
+      return;
+    }
+    handleBinaTag('remove5DaysFollowUp', contact.phone, contact.contactName);
+};
+
+const removeTagPause = (contact: Contact) => {
+    console.log('Removing tag pause for contact:', contact.phone);
+    console.log('Removing tag pause for contact:', contact.contactName);
+    if (!contact.phone || !contact.contactName) {
+      console.error('Phone or firstname is null or undefined');
+      return;
+    }
+    handleBinaTag('resumeFollowUp', contact.phone, contact.contactName);
+};
+
 const fiveDaysFollowUpEnglish = (contact: Contact) => {
     console.log('5 Days Follow Up (English) for contact:', contact.phone);
     console.log('5 Days Follow Up (English) for contact:', contact.contactName);
@@ -2986,6 +3005,17 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
     }
     handleBinaTag('5DaysFollowUpMalay', contact.phone, contact.contactName);
 };
+
+const pauseFiveDaysFollowUp = (contact: Contact) => {
+  console.log('Pausing 5 Days Follow Up for contact:', contact.phone);
+  console.log('Pausing 5 Days Follow Up for contact:', contact.contactName);
+  if (!contact.phone || !contact.contactName) {
+    console.error('Phone or firstname is null or undefined');
+    return;
+  }
+  handleBinaTag('pauseFollowUp', contact.phone, contact.contactName);
+};
+
 
 
   const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
@@ -3060,6 +3090,8 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
           fiveDaysFollowUpChinese(contact);
         } else if (tagName === '5 Days Follow Up BM') {
           fiveDaysFollowUpMalay(contact);
+        } else if (tagName === 'Pause Follow Up') {
+          pauseFiveDaysFollowUp(contact);
         } else {
           // Check if the tag is an employee's name and send assignment notification
           const employee = employeeList.find(emp => emp.name === tagName);
@@ -4264,11 +4296,13 @@ const sortContacts = (contacts: Contact[]) => {
       } else if (tagName === 'After Quote Follow Up BM') {
         removeTagAfterQuote(contact);
       } else if (tagName === '5 Days Follow Up EN') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
       } else if (tagName === '5 Days Follow Up CN') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
       } else if (tagName === '5 Days Follow Up BM') {
-        removeTagAfterQuote(contact);
+        removeTag5Days(contact);
+      } else if (tagName === 'Pause Follow Up') {
+        removeTagPause(contact);
       }
       // Update state
       setContacts(prevContacts => {
@@ -5043,6 +5077,62 @@ console.log(prompt);
   const insertPlaceholder = (field: string) => {
     const placeholder = `@{${field}}`;
     setBlastMessage(prevMessage => prevMessage + placeholder);
+  };
+
+
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedContact, setEditedContact] = useState<Contact | null>(null);
+
+  const handleEditClick = () => {
+    setIsEditing(true);
+    setEditedContact({ ...selectedContact });
+  };
+
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditedContact(null);
+  };
+
+  const handleSaveContact = async () => {
+    if (!editedContact) return;
+
+    try {
+      const user = auth.currentUser;
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+      const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
+
+      const updateData: { [key: string]: any } = {};
+      const fieldsToUpdate = [
+        'contactName', 'email', 'lastName', 'phone', 'address1', 'city', 
+        'state', 'postalCode', 'website', 'dnd', 'dndSettings', 'tags', 
+        'customFields', 'source', 'country', 'companyName', 'branch', 
+        'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
+      ];
+
+      fieldsToUpdate.forEach(field => {
+        if (editedContact[field as keyof Contact] !== undefined) {
+          updateData[field] = editedContact[field as keyof Contact];
+        }
+      });
+
+      const contactDocRef = doc(contactsCollectionRef, editedContact.phone!);
+      await updateDoc(contactDocRef, updateData);
+
+      setSelectedContact({ ...selectedContact, ...updateData });
+      setIsEditing(false);
+      setEditedContact(null);
+      toast.success("Contact updated successfully!");
+    } catch (error) {
+      console.error('Error saving contact:', error);
+      toast.error("Failed to update contact.");
+    }
   };
 
   return (
@@ -6923,23 +7013,65 @@ console.log(prompt);
       <div className="flex-grow overflow-y-auto p-4 space-y-4">
         <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
           <div className="bg-blue-50 dark:bg-blue-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-            <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
+              {!isEditing ? (
+                <button
+                  onClick={() => {
+                    setIsEditing(true);
+                    setEditedContact({ ...selectedContact });
+                  }}
+                  className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                >
+                  Edit
+                </button>
+              ) : (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={handleSaveContact}
+                    className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditing(false);
+                      setEditedContact(null);
+                    }}
+                    className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
           <div className="p-4">
             <div className="grid grid-cols-2 gap-4">
               {[
-                { label: "First Name", value: selectedContact.contactName ?? selectedContact.firstName },
-                { label: "Last Name", value: selectedContact.lastName },
-                { label: "Email", value: selectedContact.email },
-                { label: "Company", value: selectedContact.companyName },
-                { label: "Address", value: selectedContact.address1 },
-                { label: "Website", value: selectedContact.website }
+                { label: "First Name", key: "contactName" },
+                { label: "Last Name", key: "lastName" },
+                { label: "Email", key: "email" },
+                { label: "Company", key: "companyName" },
+                { label: "Address", key: "address1" },
+                { label: "Website", key: "website" }
               ].map((item, index) => (
                 <div key={index} className="col-span-1">
                   <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
-                  <p className="text-gray-800 dark:text-gray-200">{item.value || 'N/A'}</p>
+                  {isEditing ? (
+                    <input
+                      type="text"
+                      value={editedContact?.[item.key as keyof Contact] || ''}
+                      onChange={(e) => setEditedContact({ ...editedContact, [item.key]: e.target.value } as Contact)}
+                      className="w-full mt-1 px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    />
+                  ) : (
+                    <p className="text-gray-800 dark:text-gray-200">
+                      {selectedContact[item.key as keyof Contact] || 'N/A'}
+                    </p>
+                  )}
                 </div>
-              ))}      
+              ))}         
             </div>
             <div className="border-t border-gray-200 dark:border-gray-600 mt-4 pt-4"></div>
             {selectedContact.tags.some((tag: string) => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())) && (

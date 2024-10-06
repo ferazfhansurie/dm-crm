@@ -1,4 +1,5 @@
-
+import logoUrl from "@/assets/images/logo.png";
+import illustrationUrl from "@/assets/images/illustration.svg";
 import { FormInput, FormCheck } from "@/components/Base/Form";
 import Button from "@/components/Base/Button";
 import clsx from "clsx";
@@ -77,9 +78,11 @@ const firebaseConfig = {
             <div className="block grid-cols-2 gap-4 xl:grid">
               <div className="flex-col hidden min-h-screen xl:flex">
                 <div className="my-auto flex flex-col items-left w-full">
-                <h1 className="text-4xl sm:text-5xl md:text-6xl font-bold text-center intro-x xl:text-left text-white">
-  DM LILY
-</h1>
+                  <img
+                    alt="Logo"
+                    className="w-2/4 -mt-16"
+                    src={logoUrl}
+                  />
                 </div>
               </div>
               <div className="flex h-screen py-5 my-10 xl:h-auto xl:py-0 xl:my-0">

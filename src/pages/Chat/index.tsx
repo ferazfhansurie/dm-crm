@@ -1,8 +1,8 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from "react";
+import React, { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
 import { getAuth } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import logoImage from '@/assets/images/placeholder.svg';
-import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment } from "firebase/firestore";
+import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment, getCountFromServer } from "firebase/firestore";
 import {QueryDocumentSnapshot, DocumentData ,Query,CollectionReference, startAfter,limit,deleteField} from 'firebase/firestore'
 import axios, { AxiosError } from "axios";
 import Lucide from "@/components/Base/Lucide";
@@ -32,6 +32,7 @@ import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
 import ReactPaginate from 'react-paginate';
 import { getFileTypeFromMimeType } from '../../utils/fileUtils';
+import { Transition } from "@headlessui/react";
 
 interface Label {
   id: string;
@@ -77,6 +78,7 @@ interface Contact {
   profilePicUrl?:string;
   phoneIndex?:number |null;
   points?:number |null;
+  phoneIndexes?:number[] |null;
 }
 interface GhlConfig {
   ghl_id: string;
@@ -163,6 +165,7 @@ interface Employee {
   phone?: string;
   quotaLeads?: number;
   assignedContacts?: number;
+  group?: string;
   // Add other properties as needed
 }
 interface Tag {
@@ -331,30 +334,34 @@ const ImageModal: React.FC<ImageModalProps> = ({ isOpen, onClose, imageUrl }) =>
     </div>
   );
 };
-const PDFModal: React.FC<PDFModalProps> = ({ isOpen, onClose, pdfUrl }) => {
-  if (!isOpen) return null;
 
+const PDFModal = ({ isOpen, onClose, pdfUrl }: PDFModalProps) => {
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75" onClick={onClose}>
-      <div
-        className="relative mt-10 p-2 bg-white rounded-lg shadow-lg w-full max-w-5xl h-4/5"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <button
-          className="absolute top-4 right-4 text-white bg-gray-800 hover:bg-gray-900 rounded-full p-2"
-          onClick={onClose}
-        >
-          <Lucide icon="X" className="w-6 h-6" />
-        </button>
-        <iframe
-          src={pdfUrl}
-          width="100%"
-          height="100%"
-          title="PDF Document"
-          className="border rounded"
-        />
-      </div>
-    </div>
+    <Dialog
+      open={isOpen}
+      onClose={onClose}
+    >
+      <Dialog.Panel className="fixed inset-0 z-50 flex items-center justify-center">
+        <div className="fixed flex inset-0 bg-black/70 transition-opacity" onClick={onClose} />
+        
+        <div className="relative mt-10 p-2 bg-white dark:bg-gray-800 rounded-lg shadow-lg w-full max-w-5xl h-4/5">
+          <button
+            className="absolute top-4 right-4 text-white bg-gray-800 hover:bg-gray-900 dark:bg-gray-700 dark:hover:bg-gray-600 rounded-full p-2 transition-colors"
+            onClick={onClose}
+          >
+            <Lucide icon="X" className="w-6 h-6" />
+          </button>
+
+          <iframe
+            src={pdfUrl}
+            width="100%"
+            height="100%"
+            title="PDF Document"
+            className="border rounded"
+          />
+        </div>
+      </Dialog.Panel>
+    </Dialog>
   );
 };
 
@@ -376,8 +383,20 @@ const firestore = getFirestore(app);
 const auth = getAuth(app);
 
 function Main() {
-  const { contacts: initialContacts, isLoading } = useContacts();
-  const [contacts, setContacts] = useState<Contact[]>([]);
+   // Initial state setup with localStorage
+  const { contacts: contextContacts, isLoading: contextLoading } = useContacts();
+  const [contacts, setContacts] = useState<Contact[]>(() => {
+    const storedContacts = localStorage.getItem('contacts');
+    if (storedContacts) {
+      try {
+        return JSON.parse(LZString.decompress(storedContacts)!);
+      } catch (error) {
+        console.error('Error parsing stored contacts:', error);
+        return [];
+      }
+    }
+    return [];
+  });
 
   const [selectedChatId, setSelectedChatId] = useState<string | null>(null);
   const [whapiToken, setToken] = useState<string | null>(null);
@@ -511,10 +530,75 @@ function Main() {
   const [isRecordingPopupOpen, setIsRecordingPopupOpen] = useState(false);
   const [selectedDocumentURL, setSelectedDocumentURL] = useState<string | null>(null);
   const [documentCaption, setDocumentCaption] = useState('');
-  
+  const [isPhoneDropdownOpen, setIsPhoneDropdownOpen] = useState(false);
 
   const [showAllForwardTags, setShowAllForwardTags] = useState(false);
   const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
+
+  const [totalContacts, setTotalContacts] = useState<number>(0);
+
+  const [showReactionPicker, setShowReactionPicker] = useState(false);
+  const [reactionMessage, setReactionMessage] = useState<any>(null);
+
+  const [isGlobalSearchActive, setIsGlobalSearchActive] = useState(false);
+  const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([]);
+  const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
+  const [globalSearchPage, setGlobalSearchPage] = useState(1);
+  const [totalGlobalSearchPages, setTotalGlobalSearchPages] = useState(1);
+  const [messageUsage, setMessageUsage] = useState<number>(0);
+  const [companyPlan, setCompanyPlan] = useState<string>('');
+
+
+  useEffect(() => {
+    if (contextContacts.length > 0) {
+      setContacts(contextContacts as Contact[]);
+    }
+  }, [contextContacts]);
+
+
+  useEffect(() => {
+    let filteredResults = contacts;
+  
+    // Only keep filtering logic
+    if (searchQuery) {
+      filteredResults = filteredResults.filter((contact) => {
+        const searchLower = searchQuery.toLowerCase();
+        return (
+          contact.contactName?.toLowerCase().includes(searchLower) ||
+          contact.phone?.toLowerCase().includes(searchLower) ||
+          contact.tags?.some((tag: string) => tag.toLowerCase().includes(searchLower))
+        );
+      });
+    }
+  
+    if (activeTags.length > 0) {
+      filteredResults = filteredResults.filter((contact) => {
+        return activeTags.every((tag) => {
+          const tagLower = tag.toLowerCase();
+          const isGroup = contact.chat_id?.endsWith('@g.us');
+          const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => name.toLowerCase() === tagLower);
+          
+          return (
+            tagLower === 'all' ? !isGroup :
+            tagLower === 'unread' ? contact.unreadCount && contact.unreadCount > 0 :
+            tagLower === 'mine' ? contact.tags?.includes(currentUserName) :
+            tagLower === 'unassigned' ? !contact.tags?.some(t => employeeList.some(e => e.name.toLowerCase() === t.toLowerCase())) :
+            tagLower === 'snooze' ? contact.tags?.includes('snooze') :
+            tagLower === 'resolved' ? contact.tags?.includes('resolved') :
+            tagLower === 'group' ? isGroup :
+            tagLower === 'stop bot' ? contact.tags?.includes('stop bot') :
+            phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
+            contact.tags?.map(t => t.toLowerCase()).includes(tagLower)
+          );
+        });
+      });
+    }
+
+    setFilteredContacts(filteredResults);
+  }, [contacts, searchQuery, activeTags, currentUserName, employeeList, phoneNames]);
+
+  // Initial chat selection from URL
+
 
   // Update this useEffect
   useEffect(() => {
@@ -624,6 +708,91 @@ const sendVoiceMessage = async () => {
   }
 };
 
+const handleReaction = async (message: any, emoji: string) => {
+  try {
+    // Ensure we have all required data
+    if (!userData?.companyId || !message.id) {
+      throw new Error('Missing required data: companyId or messageId');
+    }
+
+    // Use the full message ID from Firebase
+    const messageId = message.id;
+    
+    console.log('Reaction details:', {
+      emoji,
+      messageId,
+      companyId: userData.companyId,
+      phoneIndex: selectedContact?.phoneIndex
+    });
+    
+    // Construct the endpoint with the full message ID
+    const endpoint = `https://mighty-dane-newly.ngrok-free.app/api/messages/react/${userData.companyId}/${messageId}`;
+    
+    const payload = {
+      reaction: emoji,
+      phoneIndex: selectedContact?.phoneIndex || 0
+    };
+
+    console.log('Sending reaction request:', {
+      endpoint,
+      payload
+    });
+
+    const response = await axios.post(endpoint, payload);
+
+    if (response.data.success) {
+      setMessages(prevMessages => prevMessages.map(msg => {
+        if (msg.id === message.id) {
+          return {
+            ...msg,
+            reactions: [...(msg.reactions || []), { emoji, from_name: userData.name }]
+          };
+        }
+        return msg;
+      }));
+      
+      toast.success('Reaction added successfully');
+    }
+  } catch (error) {
+    console.error('Error adding reaction:', error);
+    if (axios.isAxiosError(error) && error.response?.data) {
+      console.error('Error response:', error.response.data);
+      const errorMessage = error.response.data.details || error.response.data.error || 'Failed to add reaction';
+      toast.error(errorMessage);
+    } else {
+      toast.error('Failed to add reaction. Please try again.');
+    }
+  } finally {
+    setShowReactionPicker(false);
+  }
+};
+
+const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => void, onClose: () => void }) => {
+  const commonEmojis = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+  
+  return (
+    <div className="absolute bottom-40 right-8 bg-white dark:bg-gray-800 rounded-lg shadow-lg p-2 z-50">
+      <div className="flex items-center justify-between align-middle space-x-2">
+        {commonEmojis.map((emoji) => (
+          <button
+            key={emoji}
+            onClick={() => onSelect(emoji)}
+            className="hover:bg-gray-100 dark:hover:bg-gray-700 p-2 rounded-full transition-colors text-2xl"
+          >
+            {emoji}
+          </button>
+        ))}
+        <button
+          onClick={onClose}
+          className="p-2 rounded-full transition-colors text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-300"
+        >
+          <Lucide icon="X" className="w-5 h-5" />
+        </button>
+      </div>
+    </div>
+  );
+};
+
 
   const uploadDocument = async (file: File): Promise<string> => {
     const storage = getStorage(); // Correctly initialize storage
@@ -679,7 +848,9 @@ const sendVoiceMessage = async () => {
             if (companyData) {
               setIsAssistantAvailable(!!companyData.assistantId);
             }
-            setStopbot(companyData.stopbot)
+            if(companyData.plan === 'blaster'){
+              setIsAssistantAvailable(false);
+            }
             const phoneCount = companyData.phoneCount || 0;
             const newPhoneNames: Record<number, string> = {};
             for (let i = 0; i < phoneCount; i++) {
@@ -829,114 +1000,127 @@ const sendVoiceMessage = async () => {
     setIsPrivateNotesMentionOpen(false);
   };
 
-  useEffect(() => {
-    console.log('Initial contacts:', initialContacts);
-  }, []);
+  // useEffect(() => {
+  //   console.log('Initial contacts:', initialContacts);
+  // }, []);
 
-  const filterContactsByUserRole = (contacts: Contact[], userRole: string, userName: string) => {
+  const filterContactsByUserRole = useCallback((contacts: Contact[], userRole: string, userName: string) => {
+    console.log('Filtering contacts by user role', { userRole, userName, contactsCount: contacts.length });
     switch (userRole) {
-      case '1':
+      case '1': // Admin
         return contacts; // Admin sees all contacts
-      case '2':
-        // Sales sees only contacts assigned to them
+      case '2': // Sales
+      case '3': // Observer
+      case '4': // Manager
+        // Sales, Observer, and Manager see only contacts assigned to them
         return contacts.filter(contact => 
           contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
         );
-      case '3':
-        // Observer sees only contacts assigned to them
-        return contacts.filter(contact => 
-          contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
-        );
-      case '4':
-        // Manager sees only contacts assigned to them
-        return contacts.filter(contact => 
-          contact.tags?.some(tag => tag.toLowerCase() === userName.toLowerCase())
-        );
-      case '5':
+      case '5': // Other role
         return contacts;
       default:
+        console.warn(`Unknown user role: ${userRole}`);
         return [];
     }
-  };
+  }, []);
+// Add this function to handle phone change
+const handlePhoneChange = async (newPhoneIndex: number) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error('No authenticated user');
+      return;
+    }
 
+    const docUserRef = doc(firestore, 'user', user.email!);
+    await updateDoc(docUserRef, { phone: newPhoneIndex });
+    // Update local state
+    setUserData(prevState => {
+      if (prevState === null) {
+        return {
+          phone: newPhoneIndex,
+          companyId: '',
+          name: '',
+          role: ''
+        };
+      }
+      return {
+        ...prevState,
+        phone: newPhoneIndex
+      };
+    });
+
+    toast.success('Phone updated successfully');
+  } catch (error) {
+    console.error('Error updating phone:', error);
+    toast.error('Failed to update phone');
+  }
+};
   const filterAndSetContacts = useCallback((contactsToFilter: Contact[]) => {
     console.log('Filtering contacts', { 
       contactsLength: contactsToFilter.length, 
       userRole, 
       userName: userData?.name,
       activeTags,
-      phoneCount,
-      phoneNames,
-      userPhone: userData?.phone,
     });
   
     // Apply role-based filtering first
     let filtered = filterContactsByUserRole(contactsToFilter, userRole, userData?.name || '');
     console.log('After role-based filtering:', { filteredCount: filtered.length });
-
-  // Filter out group chats
-  filtered = filtered.filter(contact => 
-    contact.chat_id && !contact.chat_id.includes('@g.us')
-  );
-  console.log('Filtered out group chats:', { filteredCount: filtered.length });
-
-  // Filter by user's phone if set
-  if (userData?.phone !== null) {
-
-    filtered = filtered.filter(contact => contact.phoneIndex === parseInt(userData?.phone));
-    console.log(`Filtered contacts for user's phone (${phoneNames[userData?.phone]}):`, { filteredCount: filtered.length });
-  }
-
-  // Apply tag-based filtering
-  if (activeTags.includes('all')) {
-    console.log('Showing all contacts');
-  } else if (activeTags.includes('unread')) {
-    filtered = filtered.filter(contact => (contact.unreadCount || 0) > 0);
-    console.log('Filtered unread contacts:', { filteredCount: filtered.length });
-  } else if (activeTags.includes('mine')) {
-    filtered = filtered.filter((contact) => 
-      contact.tags?.some(tag => tag.toLowerCase() === currentUserName.toLowerCase())
+  
+    // Filter out group chats
+    filtered = filtered.filter(contact => 
+      contact.chat_id && !contact.chat_id.includes('@g.us')
     );
-    console.log('Filtered "mine" contacts:', { filteredCount: filtered.length });
-  } else if (userData?.role !== '1') {
-    // Get the user's assigned phone from the employee document
-    const userPhoneNames = userData?.phone && phoneNames[userData.phone] ? [phoneNames[userData.phone]] : [];
-    
-    if (userPhoneNames.length > 0 && userData?.phone !== undefined) {
-      // Only display contacts for the user's assigned phone
-      filtered = filtered.filter(contact => contact.phoneIndex === userData.phone);
-      console.log(`Filtered contacts for ${userPhoneNames[0]}:`, { filteredCount: filtered.length });
-    } else {
-      console.log('User has no assigned phone');
-    }
-  } else if (Object.values(phoneNames).includes(activeTags[0])) {
-    // For role '1', display contacts for the selected phone
-    const phoneIndex = Object.entries(phoneNames).find(([_, name]) => name === activeTags[0])?.[0];
-    if (phoneIndex !== undefined) {
-      filtered = filtered.filter(contact => contact.phoneIndex === parseInt(phoneIndex));
-      console.log(`Filtered contacts for ${activeTags[0]}:`, { filteredCount: filtered.length });
-    }
-    } else {
+    console.log('After filtering group chats:', { filteredCount: filtered.length });
+  
+    // Apply tag-based filtering only if activeTags is not empty and doesn't include 'all'
+    if (activeTags.length > 0 && !activeTags.includes('all')) {
       filtered = filtered.filter(contact => 
-        activeTags.some(tag => contact.tags?.includes(tag))
+        contact.tags?.some(tag => activeTags.includes(tag))
       );
-      console.log('Filtered by active tags:', { filteredCount: filtered.length, activeTags });
+      console.log('After tag-based filtering:', { filteredCount: filtered.length, activeTags });
     }
   
     setFilteredContacts(filtered);
     console.log('Final filtered contacts set:', { filteredCount: filtered.length });
-  }, [userRole, userData, activeTags, currentUserName, phoneCount, phoneNames]);
+  }, [userRole, userData, activeTags, filterContactsByUserRole]);
 
   useEffect(() => {
-    if (initialContacts.length > 0) {
-      const filteredContacts = filterContactsByUserRole(initialContacts, userRole, userData?.name || '');
-      console.log('Filtered contacts:', { count: filteredContacts.length });
-      setContacts(filteredContacts.slice(0, 200));
-      filterAndSetContacts(filteredContacts.slice(0, 200));
-      localStorage.setItem('contacts', LZString.compress(JSON.stringify(filteredContacts)));
-      sessionStorage.setItem('contactsFetched', 'true');
-    }
-  }, [initialContacts, userRole, userData]);
+    const fetchContacts = async () => {
+      if (!userData?.companyId) {
+        console.log('No company ID available, skipping contact fetch');
+        return;
+      }
+  
+      console.log('Fetching contacts for company:', userData.companyId);
+      const contactsRef = collection(firestore, `companies/${userData.companyId}/contacts`);
+      const q = query(contactsRef, orderBy("last_message.timestamp", "desc"));
+  
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        const updatedContacts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
+        console.log('Fetched contacts:', updatedContacts.length);
+        setContacts(updatedContacts);
+        filterAndSetContacts(updatedContacts);
+      }, (error) => {
+        console.error('Error fetching contacts:', error);
+      });
+  
+      return () => unsubscribe();
+    };
+  
+    fetchContacts();
+  }, [userData, filterAndSetContacts]);
+
+  // useEffect(() => {
+  //   if (initialContacts.length > 0) {
+  //     console.log('Initial contacts:', initialContacts.length);
+  //     setContacts(initialContacts);
+  //     filterAndSetContacts(initialContacts);
+  //     localStorage.setItem('contacts', LZString.compress(JSON.stringify(initialContacts)));
+  //     sessionStorage.setItem('contactsFetched', 'true');
+  //   }
+  // }, [initialContacts, userRole, userData, filterAndSetContacts]);
 
 
 
@@ -983,21 +1167,21 @@ useEffect(() => {
   }
 }, [activeTags, employeeList]);
 
-const loadMoreContacts = () => {
-  if (initialContacts.length <= contacts.length) return;
+// const loadMoreContacts = () => {
+//   if (initialContacts.length <= contacts.length) return;
 
-  const nextPage = currentPage + 1;
-  const newContacts = initialContacts.slice(
-    contacts.length,
-    nextPage * contactsPerPage
-  );
+//   const nextPage = currentPage + 1;
+//   const newContacts = initialContacts.slice(
+//     contacts.length,
+//     nextPage * contactsPerPage
+//   );
 
-  setContacts((prevContacts) => {
-    const updatedContacts = [...prevContacts, ...newContacts];
-    return filterContactsByUserRole(updatedContacts, userRole, userData?.name || '');
-  });
-  setCurrentPage(nextPage);
-};
+//   setContacts((prevContacts) => {
+//     const updatedContacts = [...prevContacts, ...newContacts];
+//     return filterContactsByUserRole(updatedContacts, userRole, userData?.name || '');
+//   });
+//   setCurrentPage(nextPage);
+// };
 
 const handleEmojiClick = (emojiObject: EmojiClickData) => {
   setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
@@ -1093,6 +1277,7 @@ const closePDFModal = () => {
       const user = auth.currentUser;
       if (!user) {
         console.error('No authenticated user');
+        toast.error('Authentication error. Please try logging in again.');
         return;
       }
   
@@ -1100,39 +1285,66 @@ const closePDFModal = () => {
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
         console.error('No such document for user!');
+        toast.error('User data not found. Please contact support.');
         return;
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
+      let successCount = 0;
+      let failureCount = 0;
+  
+      const phoneIndex = selectedContact?.phoneIndex || 0;
+  
       for (const message of selectedMessages) {
         try {
+          console.log(`Attempting to delete message: ${message.id}`);
           const response = await axios.delete(
             `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
-              data: { deleteForEveryone: true } // Set this to false if you want to delete only for the current user
+              data: { 
+                deleteForEveryone: true, 
+                phoneIndex: phoneIndex,
+                messageId: message.id, // Add the message ID to ensure it's passed to the API
+                chatId: selectedChatId // Add the chat ID for additional context
+              },
+              headers: {
+                'Authorization': `Bearer ${userData.accessToken}`
+              }
             }
           );
   
           if (response.data.success) {
+            console.log(`Successfully deleted message: ${message.id}`);
             setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== message.id));
+            successCount++;
           } else {
-            console.error(`Failed to delete message: ${message.id}`);
+            console.error(`Failed to delete message: ${message.id}`, response.data);
+            failureCount++;
           }
         } catch (error) {
-          console.error('Error deleting message:', error);
+          console.error('Error deleting message:', message.id, error);
           if (axios.isAxiosError(error) && error.response) {
             console.error('Error details:', error.response.status, error.response.data);
           }
+          failureCount++;
         }
       }
   
-      toast.success('Messages deleted successfully');
+      if (successCount > 0) {
+        toast.success(`Successfully deleted ${successCount} message(s)`);
+        // Refresh the chat to ensure WhatsApp changes are reflected
+        await fetchMessages(selectedChatId!, whapiToken!);
+      }
+      if (failureCount > 0) {
+        toast.error(`Failed to delete ${failureCount} message(s)`);
+      }
+  
       setSelectedMessages([]);
       closeDeletePopup();
     } catch (error) {
       console.error('Error in delete operation:', error);
-      toast.error('Failed to delete messages');
+      toast.error('Failed to delete messages. Please try again.');
     }
   };
 
@@ -1352,40 +1564,7 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
     setIsQuickRepliesOpen(false);
   };
 
-  
-  // Modify the notification listener
-  useEffect(() => {
-    const unsubscribe = onSnapshot(
-      collection(firestore, 'user', auth.currentUser?.email!, 'notifications'),
-      async (snapshot) => {
-        const currentNotifications = snapshot.docs.map(doc => doc.data() as Notification);
 
-        // Prevent running on initial mount
-        if (isInitialMount.current) {
-          isInitialMount.current = false;
-          prevNotificationsRef.current = currentNotifications.length;
-          return;
-        }
-
-        // Check if a new notification has been added
-        if (prevNotificationsRef.current !== null && currentNotifications.length > prevNotificationsRef.current) {
-          // Sort notifications by timestamp to ensure the latest one is picked
-          currentNotifications.sort((a, b) => b.timestamp - a.timestamp);
-          const latestNotification = currentNotifications[0];
-
-          // Update the contact's last_message
-          updateContactLastMessage(latestNotification);
-
-          // ... rest of the existing notification handling code ...
-        }
-
-        // Update the previous notifications count
-        prevNotificationsRef.current = currentNotifications.length;
-      }
-    );
-
-    return () => unsubscribe();
-  }, [companyId, selectedChatId, whapiToken]);
 
   const updateContactLastMessage = async (notification: Notification) => {
     if (!userData?.companyId) return;
@@ -1485,51 +1664,7 @@ const showNotificationToast = (notification: Notification, index: number) => {
   setActiveNotifications(prev => [...prev, toastId]);
 };
 
-// Update the useEffect for notifications
-useEffect(() => {
-  const unsubscribe = onSnapshot(
-    collection(firestore, 'user', auth.currentUser?.email!, 'notifications'),
-    async (snapshot) => {
-      const currentNotifications = snapshot.docs.map(doc => doc.data() as Notification);
 
-      // Prevent running on initial mount
-      if (isInitialMount.current) {
-        isInitialMount.current = false;
-        prevNotificationsRef.current = currentNotifications.length;
-        return;
-      }
-
-      // Check if a new notification has been added
-      if (prevNotificationsRef.current !== null && currentNotifications.length > prevNotificationsRef.current) {
-        // Sort notifications by timestamp to ensure the latest one is picked
-        currentNotifications.sort((a, b) => b.timestamp - a.timestamp);
-        const latestNotification = currentNotifications[0];
-
-        // Check for duplicate notifications
-        setNotifications(prev => {
-          const isDuplicate = prev.some(notification => notification.timestamp === latestNotification.timestamp && notification.from === latestNotification.from);
-          if (isDuplicate) {
-            return prev;
-          }
-          return [...prev, latestNotification];
-        });
-        
-        // Play notification sound
-        if (audioRef.current) {
-          audioRef.current.play();
-        }
-
-        // Show toast notification
-        showNotificationToast(latestNotification, notifications.length);
-      }
-
-      // Update the previous notifications count
-      prevNotificationsRef.current = currentNotifications.length;
-    }
-  );
-
-  return () => unsubscribe();
-}, [companyId, selectedChatId, whapiToken]);
 
 
 // New separate useEffect for message listener
@@ -1623,9 +1758,9 @@ useEffect(() => {
   
         let contact;
         if (companyData.v2) {
-          contact = initialContacts.find(c => c.phone === phone || c.chat_id === chatIdFromUrl);
-          if (!contact) throw new Error('Contact not found in initialContacts');
-        } 
+          contact = contacts.find(c => c.phone === phone || c.chat_id === chatIdFromUrl);
+          if (!contact) throw new Error('Contact not found in contacts');
+        }
   
         setSelectedContact(contact);
         setSelectedChatId(chatIdFromUrl);
@@ -1679,6 +1814,22 @@ async function fetchConfigFromDatabase() {
     if (!data) {
       console.error('Company data is missing');
       return;
+    }
+    setCompanyPlan(data.plan || '');
+     // Add message usage tracking for enterprise plan
+     if (data.plan === 'enterprise') {
+      const currentDate = new Date();
+      const monthKey = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}`;
+      
+      const usageRef = doc(firestore, `companies/${companyId}/usage/${monthKey}`);
+      const usageSnapshot = await getDoc(usageRef);
+      
+      if (usageSnapshot.exists()) {
+        const totalMessages = usageSnapshot.data().total_messages || 0;
+        setMessageUsage(totalMessages);
+      } else {
+        setMessageUsage(0);
+      }
     }
     setPhoneCount(data.phoneCount);
     if(data.phoneCount >=2){
@@ -1760,125 +1911,113 @@ async function fetchConfigFromDatabase() {
     }
   };
 
-  const selectChat = async (chatId: string, contactId?: string, contactSelect?: Contact) => {
+  const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
-    if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
-      console.log('Permission denied for role 3 user');
-      toast.error("You don't have permission to view this chat.");
-      return;
-    }
-
-    const updatedContacts = contacts.map(contact =>
-      contact.chat_id === chatId ? { ...contact, unreadCount: 0 } : contact
-    );
-    console.log('Updated Contacts:', updatedContacts);
-    setContacts(updatedContacts);
-  
-    console.log('Updating local storage');
-    localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
-    sessionStorage.setItem('contactsFetched', 'true');
-
-    let contact = contacts.find(contact => contact.chat_id === chatId || contact.id === contactId);
-    console.log('Selected Contact:', contact);
-
-    if(contactSelect){
-      contact = contactSelect;
-      console.log('Using provided contactSelect:', contact);
-    }
-    
-    if (contact) {
-      // Update unreadCount in Firebase
-      try {
-        const user = auth.currentUser;
-        if (user) {
-          const docUserRef = doc(firestore, 'user', user.email!);
-          const docUserSnapshot = await getDoc(docUserRef);
-          if (docUserSnapshot.exists()) {
-            const userData = docUserSnapshot.data();
-            const companyId = userData.companyId;
-            
-            const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.id!);
-            await updateDoc(contactRef, { unreadCount: 0 });
-            console.log('Updated unreadCount in Firebase for contact:', contact.id);
-          }
-        }
-
-        setContacts(prevContacts => {
-          const updatedContacts = prevContacts.map(c =>
-            c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
-          );
-          
-          // Sort contacts: pinned first, then by last message timestamp
-          return updatedContacts.sort((a, b) => {
-            if (a.pinned && !b.pinned) return -1;
-            if (!a.pinned && b.pinned) return 1;
-            
-            const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-            const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
-            
-            return timestampB - timestampA;
-          });
-        });
-
-        console.log('Setting state variables');
-        setSelectedContact(contact);
-        setSelectedChatId(chatId);
-        setIsChatActive(true);
-
-        console.log('Deleting notifications');
-        deleteNotifications(chatId);
-      } catch (error) {
-        console.error('Error updating unreadCount in Firebase:', error);
-      }
-    }
-
-    setSelectedContact(contact);
-    setSelectedChatId(chatId);
-    setIsChatActive(true);
-    setSelectedChatId(chatId);
     
     try {
-      const user = auth.currentUser;
-      if (user) {
-        console.log('Fetching notifications for user:', user.email);
-        const notificationsRef = collection(firestore, 'user', user.email!, 'notifications');
-        console.log('Notifications Reference Path:', notificationsRef.path);
-  
-        const notificationsSnapshot = await getDocs(notificationsRef);
-        if (notificationsSnapshot.empty) {
-          console.log('No notifications found for user:', user.email);
-        } else {
-          const notifications = notificationsSnapshot.docs.map(doc => ({
-            docId: doc.id,
-            ...doc.data()
-          }));
-          console.log('Fetched Notifications:', notifications);
-  
-          const notificationsToDelete = notifications.filter((notification: any) => notification.chat_id === chatId);
-  
-          // Delete each notification document in the subcollection
-          for (const notification of notificationsToDelete) {
-            const notificationDocRef = doc(firestore, 'user', user.email!, 'notifications', notification.docId);
-            await deleteDoc(notificationDocRef);
-            console.log('Deleted notification:', notification.docId);
-          }
-        }
+      // Permission check
+      if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
+        console.log('Permission denied for role 3 user');
+        toast.error("You don't have permission to view this chat.");
+        return;
       }
+  
+      // Find contact - prioritize contactSelect if provided
+      let contact = contactSelect || contacts.find(c => c.chat_id === chatId || c.id === contactId);
+      if (!contact) {
+        console.error('Contact not found');
+        return;
+      }
+  
+      // Update local state first for immediate UI response
+      setContacts(prevContacts => {
+        const updatedContacts = prevContacts.map(c =>
+          c.chat_id === chatId ? { ...c, unreadCount: 0 } : c
+        ).sort((a, b) => {
+          if (a.pinned && !b.pinned) return -1;
+          if (!a.pinned && b.pinned) return 1;
+          
+          const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
+          const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
+          
+          return timestampB - timestampA;
+        });
+  
+        // Update localStorage with new contacts
+        localStorage.setItem('contacts', LZString.compress(JSON.stringify(updatedContacts)));
+        return updatedContacts;
+      });
+  
+      // Update Firebase in parallel
+      const updateFirebasePromise = (async () => {
+        const user = auth.currentUser;
+        if (!user?.email) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        
+        if (docUserSnapshot.exists()) {
+          const userData = docUserSnapshot.data();
+          const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, contact.id!);
+          await updateDoc(contactRef, { unreadCount: 0 });
+          console.log('Updated unreadCount in Firebase for contact:', contact.id);
+        }
+      })();
+  
+      // Delete notifications in parallel
+      const deleteNotificationsPromise = (async () => {
+        const user = auth.currentUser;
+        if (!user?.email) return;
+
+        console.log('Deleted notifications for chat:', chatId);
+      })();
+  
+      // Update UI state
+      setSelectedContact(contact);
+      setSelectedChatId(chatId);
+      setIsChatActive(true);
+  
+      // Wait for background operations to complete
+      await Promise.all([
+        updateFirebasePromise,
+        deleteNotificationsPromise
+      ]);
+  
+      // Update URL without triggering a page reload
+      const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
+      window.history.pushState({ path: newUrl }, '', newUrl);
+  
     } catch (error) {
-      console.error('Error deleting notifications:', error);
+      console.error('Error in selectChat:', error);
+      toast.error('An error occurred while loading the chat. Please try again.');
     }
-  };
-const getTimestamp = (timestamp: any): number => {
-  if (typeof timestamp === 'number') {
-    return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
-  } else if (typeof timestamp === 'object' && timestamp.seconds) {
-    return timestamp.seconds * 1000;
-  } else if (typeof timestamp === 'string') {
-    return new Date(timestamp).getTime();
-  } else {
+  }, [contacts, userRole, userData?.name]);
+
+  const getTimestamp = (timestamp: any): number => {
+    // If timestamp is missing, return 0 to put it at the bottom
+    if (!timestamp) return 0;
+  
+    // If timestamp is already a number
+    if (typeof timestamp === 'number') {
+      // Convert to milliseconds if needed (check if it's in seconds)
+      return timestamp < 10000000000 ? timestamp * 1000 : timestamp;
+    }
+  
+    // If timestamp is a Firestore timestamp
+    if (timestamp?.seconds) {
+      return timestamp.seconds * 1000;
+    }
+  
+    // If timestamp is an ISO string or other date format
+    if (typeof timestamp === 'string') {
+      const parsed = Date.parse(timestamp);
+      return isNaN(parsed) ? 0 : parsed;
+    }
+  
+    // Default case - invalid timestamp
+    console.warn('Invalid timestamp format:', timestamp);
     return 0;
-  }
-};
+  };
 
 const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
   try {
@@ -1942,27 +2081,97 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
 
     await Promise.all(updatePromises);
 
-    // Sort contacts by pinned status and last_message timestamp
+    console.log('Before sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
+      id: c.chat_id,
+      unread: c.unreadCount,
+      timestamp: c.last_message?.timestamp,
+      pinned: c.pinned
+    })));
+
     allContacts.sort((a, b) => {
+      // First priority: pinned status
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
       
-      const timestampA = getTimestamp(a.last_message?.timestamp || a.last_message?.createdAt);
-      const timestampB = getTimestamp(b.last_message?.timestamp || b.last_message?.createdAt);
+      // Second priority: unread messages
+      if (a.unreadCount && !b.unreadCount) return -1;
+      if (!a.unreadCount && b.unreadCount) return 1;
+      
+      // Get timestamps with validation
+      let timestampA = a.last_message?.timestamp;
+      let timestampB = b.last_message?.timestamp;
+
+      // Convert string timestamps to numbers if needed
+      if (typeof timestampA === 'string') timestampA = parseInt(timestampA, 10);
+      if (typeof timestampB === 'string') timestampB = parseInt(timestampB, 10);
+
+      // Ensure timestamps are in seconds
+      if (timestampA && timestampA > 9999999999) timestampA = Math.floor(timestampA / 1000);
+      if (timestampB && timestampB > 9999999999) timestampB = Math.floor(timestampB / 1000);
+
+      // If either timestamp is invalid, use 0
+      timestampA = timestampA || 0;
+      timestampB = timestampB || 0;
+
+      // Sort descending (newest first)
       return timestampB - timestampA;
+    });
+
+    // Add debugging after sorting
+    console.log('After sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
+      id: c.chat_id,
+      unread: c.unreadCount,
+      timestamp: c.last_message?.timestamp,
+      pinned: c.pinned
+    })));
+
+    // Before setting contacts, ensure all timestamps are in the correct format
+    allContacts = allContacts.map(contact => {
+      if (!contact.last_message) return contact;
+
+      let timestamp = contact.last_message.timestamp;
+      
+      // Convert string timestamps to numbers
+      if (typeof timestamp === 'string') {
+        timestamp = parseInt(timestamp, 10);
+      }
+
+      // Ensure timestamp is in seconds
+      if (timestamp && timestamp > 9999999999) {
+        timestamp = Math.floor(timestamp / 1000);
+      }
+
+      return {
+        ...contact,
+        last_message: {
+          ...contact.last_message,
+          timestamp
+        }
+      };
     });
 
     console.log('Active tag:', activeTags[0]);
     console.log('Total contacts:', allContacts.length);
 
-    setContacts(allContacts.slice(0, 200));
+    // Set all contacts to state instead of just the first 200
+    setContacts(allContacts);
+
+    // Store all contacts in localStorage
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
     sessionStorage.setItem('contactsFetched', 'true');
+    
+    // If you need to limit the displayed contacts, implement pagination in the UI component
+    // For example, you could add a state variable for the current page:
+    // const [currentPage, setCurrentPage] = useState(1);
+    // const contactsPerPage = 200;
+    // const displayedContacts = allContacts.slice((currentPage - 1) * contactsPerPage, currentPage * contactsPerPage);
     
   } catch (error) {
     console.error('Error fetching contacts:', error);
   }
 };
+
+
 
 useEffect(() => {
   const fetchUserRole = async () => {
@@ -2567,23 +2776,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     }
     const dataUser = docUserSnapshot.data();
     companyId = dataUser.companyId;
-    let phoneIndex;
-    if (dataUser?.phone !== undefined) {
-        if (dataUser.phone === 0) {
-            // Handle case for phone index 0
-            phoneIndex = 0;
-        } else if (dataUser.phone === -1) {
-            // Handle case for phone index -1
-            phoneIndex = 0;
-        } else {
-            // Handle other cases
-            console.log(`User phone index is: ${dataUser.phone}`);
-            phoneIndex = dataUser.phone;
-        }
-    } else {
-        console.error('User phone is not defined');
-        phoneIndex = 0; // Default value if phone is not defined
-    }
+  // Use contact's phoneIndex instead of user's phone
+  let phoneIndex = selectedContact?.phoneIndex ?? 0;
     
     const userName = dataUser.name || dataUser.email || ''; // Get the user's name
     const docRef = doc(firestore, 'companies', companyId);
@@ -2612,14 +2806,14 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
             userName: userName
           }),
         });
-  
-   
-  
+    
         if (!response.ok) {
           throw new Error('Failed to send message');
         }
         const now = new Date();
         const data = await response.json();
+        console.log('response:', data);
+        
         // Update the local state
         setContacts(prevContacts => 
           prevContacts.map(contact => 
@@ -2628,20 +2822,72 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
               : contact
           )
         );
-        const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-        const updatedLastMessage: Message = {
-          text: { body: newMessage },
-          chat_id: selectedContact.chat_id || '',
-          timestamp:  Math.floor(now.getTime() / 1000),
-          id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
-          from_me: true,
-          type: 'text',
-          phoneIndex: phoneIndex,
-        };
-        
-        await updateDoc(contactRef, {
-          last_message: updatedLastMessage
-        });
+    
+        // Add "stop bot" tag for companyId 0123
+        if (companyId === '0123' && selectedContact?.id) {
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          
+          // Get current contact data
+          const contactSnapshot = await getDoc(contactRef);
+          if (contactSnapshot.exists()) {
+            const currentTags = contactSnapshot.data().tags || [];
+            
+            // Only add "stop bot" if it's not already present
+            if (!currentTags.includes('stop bot')) {
+              await updateDoc(contactRef, {
+                tags: arrayUnion('stop bot'),
+                last_message: {
+                  text: { body: newMessage },
+                  chat_id: selectedContact.chat_id || '',
+                  timestamp: Math.floor(Date.now() / 1000),
+                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+                  from_me: true,
+                  type: 'text',
+                  phoneIndex: phoneIndex,
+                }
+              });
+              
+              // Update local state to reflect the new tag
+              setContacts(prevContacts =>
+                prevContacts.map(contact =>
+                  contact.id === selectedContact.id
+                    ? { ...contact, tags: [...(contact.tags || []), 'stop bot'] }
+                    : contact
+                )
+              );
+            } else {
+              // If "stop bot" tag already exists, just update the last message
+              await updateDoc(contactRef, {
+                last_message: {
+                  text: { body: newMessage },
+                  chat_id: selectedContact.chat_id || '',
+                  timestamp: Math.floor(Date.now() / 1000),
+                  id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+                  from_me: true,
+                  type: 'text',
+                  phoneIndex: phoneIndex,
+                }
+              });
+            }
+          }
+        } else {
+          // Original update for non-0123 companies
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          const updatedLastMessage: Message = {
+            text: { body: newMessage },
+            chat_id: selectedContact.chat_id || '',
+            timestamp: Math.floor(Date.now() / 1000),
+            id: selectedContact.last_message?.id || `temp_${now.getTime()}`,
+            from_me: true,
+            type: 'text',
+            phoneIndex: phoneIndex,
+          };
+          
+          await updateDoc(contactRef, {
+            last_message: updatedLastMessage
+          });
+        }
+    
         console.log('Message sent successfully:', data);
         fetchMessagesBackground(selectedChatId!, data2.apiToken);
       } catch (error) {
@@ -2829,8 +3075,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     setFilteredContacts(contacts);
   }, [contacts]);
 
-  const handleBinaTag = async (requestType: string, phone: string, first_name: string) => {
-    console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name }));
+  const handleBinaTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
+    console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
     
     try {
         const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/bina/tag', {
@@ -2842,6 +3088,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
                 requestType,
                 phone,
                 first_name,
+                phoneIndex,
             }),
         });
 
@@ -2856,6 +3103,34 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     }
 };
 
+const handleEdwardTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
+  console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
+  
+  try {
+      const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/edward/tag', {
+          method: 'POST', // Ensure this is set to POST
+          headers: {
+              'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+              requestType,
+              phone,
+              first_name,
+              phoneIndex,
+          }),
+      });
+
+      if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      console.log('Response data:', data);
+  } catch (error) {
+      console.error('Error:', error);
+  }
+};
+
   const addTagBeforeQuote = (contact: Contact) => {
     console.log('Adding tag before quote for contact:', contact.phone);
     console.log('Adding tag before quote for contact:', contact.contactName);
@@ -2863,7 +3138,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
   };
 
   const addTagBeforeQuoteEnglish = (contact: Contact) => {
@@ -2873,7 +3148,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagBeforeQuoteMalay = (contact: Contact) => {
@@ -2883,7 +3158,7 @@ const addTagBeforeQuoteMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagBeforeQuoteChinese = (contact: Contact) => {
@@ -2893,14 +3168,14 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('addBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
   
   const addTagAfterQuote = (contact: Contact) => {
     console.log('Adding tag after quote for contact:', contact.phone);
     console.log('Adding tag after quote for contact:', contact.contactName);
     if (contact.phone && contact.contactName) {
-      handleBinaTag('addAfterQuote', contact.phone, contact.contactName);
+      handleBinaTag('addAfterQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
     } else {
       console.error('Phone or firstname is null or undefined');
     }
@@ -2913,7 +3188,7 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteEnglish', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteEnglish', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagAfterQuoteChinese = (contact: Contact) => {
@@ -2923,7 +3198,7 @@ const addTagAfterQuoteChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteChinese', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteChinese', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const addTagAfterQuoteMalay = (contact: Contact) => {
@@ -2933,7 +3208,7 @@ const addTagAfterQuoteMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('addAfterQuoteMalay', contact.phone, contact.contactName);
+    handleBinaTag('addAfterQuoteMalay', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTagBeforeQuote = (contact: Contact) => {
@@ -2943,7 +3218,7 @@ const removeTagBeforeQuote = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('removeBeforeQuote', contact.phone, contact.contactName);
+    handleBinaTag('removeBeforeQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTagAfterQuote = (contact: Contact) => {
@@ -2953,7 +3228,7 @@ const removeTagAfterQuote = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('removeAfterQuote', contact.phone, contact.contactName);
+    handleBinaTag('removeAfterQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTag5Days = (contact: Contact) => {
@@ -2963,7 +3238,7 @@ const removeTag5Days = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('remove5DaysFollowUp', contact.phone, contact.contactName);
+    handleBinaTag('remove5DaysFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const removeTagPause = (contact: Contact) => {
@@ -2973,7 +3248,17 @@ const removeTagPause = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('resumeFollowUp', contact.phone, contact.contactName);
+    handleBinaTag('resumeFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
+};
+
+const removeTagEdward = (contact: Contact) => {
+  console.log('Removing tag Edward for contact:', contact.phone);
+  console.log('Removing tag Edward for contact:', contact.contactName);
+  if (!contact.phone || !contact.contactName) {
+    console.error('Phone or firstname is null or undefined');
+    return;
+  }
+  handleEdwardTag('removeFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpEnglish = (contact: Contact) => {
@@ -2983,7 +3268,7 @@ const fiveDaysFollowUpEnglish = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpEnglish', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpEnglish', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpChinese = (contact: Contact) => {
@@ -2993,7 +3278,7 @@ const fiveDaysFollowUpChinese = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpChinese', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpChinese', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const fiveDaysFollowUpMalay = (contact: Contact) => {
@@ -3003,7 +3288,7 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
       console.error('Phone or firstname is null or undefined');
       return;
     }
-    handleBinaTag('5DaysFollowUpMalay', contact.phone, contact.contactName);
+    handleBinaTag('5DaysFollowUpMalay', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
 const pauseFiveDaysFollowUp = (contact: Contact) => {
@@ -3013,103 +3298,177 @@ const pauseFiveDaysFollowUp = (contact: Contact) => {
     console.error('Phone or firstname is null or undefined');
     return;
   }
-  handleBinaTag('pauseFollowUp', contact.phone, contact.contactName);
+  handleBinaTag('pauseFollowUp', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
 };
 
+const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
+  try {
+    const user = auth.currentUser;
+    if (!user) {
+      console.error('No authenticated user');
+      return;
+    }
 
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.error('No such document for user!');
+      return;
+    }
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
 
-  const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact) => {
-    try {
-      const user = auth.currentUser;
-      if (!user) {
-        console.error('No authenticated user');
-        return;
-      }
-  
-      const docUserRef = doc(firestore, 'user', user.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        console.error('No such document for user!');
-        return;
-      }
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
-  
-      console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
-  
-      // Update contact's tags
-      const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
-      const contactDoc = await getDoc(contactRef);
-  
-      if (!contactDoc.exists()) {
-        console.error(`Contact document does not exist: ${contact.id}`);
-        toast.error(`Failed to add tag: Contact not found`);
-        return;
-      }
+    // Special handling for company '0123'
+    if (companyId === '0123') {
+      // Check if the new tag is an employee name
+      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+      
+      if (isNewTagEmployee) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+        const contactDoc = await getDoc(contactRef);
 
-      const currentTags = contactDoc.data().tags || [];
+        if (!contactDoc.exists()) {
+          console.error(`Contact document does not exist: ${contact.id}`);
+          toast.error(`Failed to add tag: Contact not found`);
+          return;
+        }
 
-      if (!currentTags.includes(tagName)) {
+        const currentTags = contactDoc.data().tags || [];
+        // Find and remove any existing employee tags
+        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+        
+        // Add the new employee tag
+        updatedTags.push(tagName);
+
+        // Update Firestore with the new tags
         await updateDoc(contactRef, {
-          tags: arrayUnion(tagName)
+          tags: updatedTags
         });
-  
+
         // Update local state
         setContacts(prevContacts =>
           prevContacts.map(c =>
             c.id === contact.id
-              ? { ...c, tags: [...(c.tags || []), tagName] }
+              ? { ...c, tags: updatedTags }
               : c
           )
         );
 
-  
-        console.log(`Tag ${tagName} added to contact ${contact.id}`);
-        toast.success(`Tag "${tagName}" added to contact`);
+        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+        toast.success(`Contact reassigned to ${tagName}`);
 
-        // Handle specific tags
-        if (tagName === 'Before Quote Follow Up') {
-          addTagBeforeQuote(contact);
-        } else if (tagName === 'Before Quote Follow Up EN') {
-          addTagBeforeQuoteEnglish(contact);
-        } else if (tagName === 'Before Quote Follow Up BM') {
-          addTagBeforeQuoteMalay(contact);
-        } else if (tagName === 'Before Quote Follow Up CN') {
-          addTagBeforeQuoteChinese(contact);
-        } else if (tagName === 'After Quote Follow Up') {
-          addTagAfterQuote(contact);
-        } else if (tagName === 'After Quote Follow Up EN') {
-          addTagAfterQuoteEnglish(contact);
-        } else if (tagName === 'After Quote Follow Up CN') {
-          addTagAfterQuoteChinese(contact);
-        } else if (tagName === 'After Quote Follow Up BM') {
-          addTagAfterQuoteMalay(contact);
-        } else if (tagName === '5 Days Follow Up EN') {
-          fiveDaysFollowUpEnglish(contact);
-        } else if (tagName === '5 Days Follow Up CN') {
-          fiveDaysFollowUpChinese(contact);
-        } else if (tagName === '5 Days Follow Up BM') {
-          fiveDaysFollowUpMalay(contact);
-        } else if (tagName === 'Pause Follow Up') {
-          pauseFiveDaysFollowUp(contact);
-        } else {
-          // Check if the tag is an employee's name and send assignment notification
-          const employee = employeeList.find(emp => emp.name === tagName);
-          if (employee) {
-            await sendAssignmentNotification(tagName, contact);
-          }
-        }
-
-      } else {
-        console.log(`Tag ${tagName} already exists for contact ${contact.id}`);
-        toast.info(`Tag "${tagName}" already exists for this contact`);
+        // Send assignment notification for the new employee
+        await sendAssignmentNotification(tagName, contact);
+        return;
       }
-  
-    } catch (error) {
-      console.error('Error adding tag to contact:', error);
-      toast.error('Failed to add tag to contact');
     }
-  };
+
+    // Check if tag is a trigger tag by looking up follow-up templates
+    const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+    const templatesSnapshot = await getDocs(templatesRef);
+    
+    let matchingTemplate: any = null;
+    templatesSnapshot.forEach(doc => {
+      const template = doc.data();
+      if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+        matchingTemplate = { 
+          id: doc.id, 
+          ...template 
+        };
+      }
+    });
+
+    // Update contact's tags
+    const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+    const contactDoc = await getDoc(contactRef);
+
+    if (!contactDoc.exists()) {
+      console.error(`Contact document does not exist: ${contact.id}`);
+      toast.error(`Failed to add tag: Contact not found`);
+      return;
+    }
+
+    const currentTags = contactDoc.data().tags || [];
+
+    if (!currentTags.includes(tagName)) {
+      await updateDoc(contactRef, {
+        tags: arrayUnion(tagName)
+      });
+
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), tagName] }
+            : c
+        )
+      );
+
+      console.log(`Tag ${tagName} added to contact ${contact.id}`);
+      toast.success(`Tag "${tagName}" added to contact`);
+
+      // If this is a trigger tag, call the follow-up API
+      if (matchingTemplate) {
+        try {
+          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestType: 'startTemplate',
+              phone: contact.phone,
+              first_name: contact.contactName || contact.firstName || contact.phone,
+              phoneIndex: contact.phoneIndex || 0,
+              templateId: matchingTemplate.id,
+              idSubstring: companyId
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Follow-up API error: ${response.statusText}`);
+          }
+
+          console.log('Follow-up template started successfully');
+          toast.success('Follow-up sequence started');
+        } catch (error) {
+          console.error('Error starting follow-up sequence:', error);
+          toast.error('Failed to start follow-up sequence');
+        }
+      }
+
+      // Handle specific tags
+      if (tagName === 'Before Quote Follow Up') {
+        addTagBeforeQuote(contact);
+      } else if (tagName === 'Before Quote Follow Up EN') {
+        addTagBeforeQuoteEnglish(contact);
+      } else if (tagName === 'Before Quote Follow Up BM') {
+        addTagBeforeQuoteMalay(contact);
+      } else if (tagName === 'Before Quote Follow Up CN') {
+        addTagBeforeQuoteChinese(contact);
+      } else if (tagName === 'Pause Follow Up') {
+        pauseFiveDaysFollowUp(contact);
+      } else {
+        // Check if the tag is an employee's name and send assignment notification
+        const employee = employeeList.find(emp => emp.name === tagName);
+        if (employee) {
+          await sendAssignmentNotification(tagName, contact);
+        }
+      }
+
+    } else {
+      console.log(`Tag ${tagName} already exists for contact ${contact.id}`);
+      toast.info(`Tag "${tagName}" already exists for this contact`);
+    }
+
+  } catch (error) {
+    console.error('Error adding tag to contact:', error);
+    toast.error('Failed to add tag to contact');
+  }
+};
+
+
+  
 
 // Add this function to handle adding notifications
 const addNotificationToUser = async (companyId: string, employeeName: string, notificationData: any) => {
@@ -3156,6 +3515,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
+    console.log('Company ID:', companyId); // New log
 
     if (!companyId || typeof companyId !== 'string') {
       console.error('Invalid companyId:', companyId);
@@ -3194,19 +3554,36 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       return;
     }
     const companyData = docSnapshot.data();
+    console.log('Company Data:', companyData); // New log
+    console.log('User Phone:', userData.phone);
+    console.log('WhatsApp API Token:', companyData.whapiToken); // New log
+    console.log('Using API v2:', companyData.v2); // New log
 
     // Function to send WhatsApp message
     const sendWhatsAppMessage = async (phoneNumber: string, message: string) => {
       const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+      console.log('Employee Phone Number:', phoneNumber); // New log
+      console.log('Formatted Chat ID:', chatId); // New log
+
+      let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
+      if (userPhoneIndex === -1) {
+        userPhoneIndex = 0;
+      }
       let url;
       let requestBody;
       if (companyData.v2 === true) {
         url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
-        requestBody = { message };
+        requestBody = { 
+          message,
+          phoneIndex: userPhoneIndex,
+          userName: userData.name || ''
+        };
       } else {
         url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
         requestBody = { message };
       }
+      console.log('API URL:', url); // New log
+      console.log('Request Body:', requestBody); // New log
 
       const response = await fetch(url, {
         method: 'POST',
@@ -3216,7 +3593,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('Error response:', response.status, errorText);
+        console.error('Full error response:', errorText); // Updated log
         throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
       }
 
@@ -3225,9 +3602,9 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     // Send notification to assigned employee
     if (assignedEmployee.phoneNumber) {
-      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nPlease follow up with them as soon as possible.`;
+      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://web.jutasoftware.co/login \n\nThank you.\n\nJuta Teknologi`;
       if(companyId == '042'){
-        employeeMessage = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://web.jutasoftware.co/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
+        employeeMessage = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://zahintravel.chat/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
       }
       await sendWhatsAppMessage(assignedEmployee.phoneNumber, employeeMessage);
     }
@@ -3250,13 +3627,6 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     toast.success("Assignment notifications sent successfully!");
   } catch (error) {
     console.error('Error sending assignment notifications:', error);
-    
-    if (error instanceof TypeError && error.message === 'Failed to fetch') {
-      toast.error('Network error. Please check your connection and try again.');
-    } else {
-      toast.error('Failed to send assignment notifications. Please try again.');
-    }
-    
     console.log('Assigned Employee Name:', assignedEmployeeName);
     console.log('Contact:', contact);
     console.log('Employee List:', employeeList);
@@ -3329,7 +3699,7 @@ const sendDailyLeadsSummary = async (companyId: string) => {
 
     // Get all admin users
     const usersRef = collection(firestore, 'user');
-    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', 'in', ['1', '2']));
+    const adminQuery = query(usersRef, where('companyId', '==', companyId), where('role', '==', '1'));
     const adminSnapshot = await getDocs(adminQuery);
     const adminUsers = adminSnapshot.docs.map(doc => doc.data());
 
@@ -3360,34 +3730,50 @@ const sendDailyLeadsSummary = async (companyId: string) => {
   }
 };
 
+
 const sendWhatsAppMessage = async (phoneNumber: string, message: string, companyId: string, companyData: any) => {
-  const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
-  let url;
-  let requestBody;
-  if (companyData.v2 === true) {
-    url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`;
-    requestBody = { message };
-  } else {
-    url = `https://mighty-dane-newly.ngrok-free.app/api/messages/text/${chatId}/${companyData.whapiToken}`;
-    requestBody = { message };
+  try {
+    const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
+    
+    // Get current user's phone index, defaulting to 0 if invalid
+    let userPhoneIndex = userData?.phone >= 0 ? userData?.phone : 0;
+    const userName = userData?.name || userData?.email || '';
+
+    if (userPhoneIndex === -1) {
+      userPhoneIndex = 0;
+    }
+
+    console.log('Sending WhatsApp message:', {
+      url: `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`,
+      phoneIndex: userPhoneIndex, // Using adjusted phone index
+      userName,
+      chatId
+    });
+
+    const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${chatId}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+        phoneIndex: userPhoneIndex, // Using adjusted phone index
+        userName
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
+    }
+
+    return await response.json();
+  } catch (error) {
+    console.error('Error sending WhatsApp message:', error);
+    throw error;
   }
-
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(requestBody),
-  });
-
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error('Error response:', response.status, errorText);
-    throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
-  }
-
-  return await response.json();
 };
 
-//end of sending daily summary code
  
 const formatText = (text: string) => {
   const parts = text.split(/(\*[^*]+\*|\*\*[^*]+\*\*)/g);
@@ -3437,27 +3823,48 @@ const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
 
 useEffect(() => {
-  setLoadingMessage("Loading contacts...");
-  const timer = setTimeout(() => {
-    if (paginatedContacts.length === 0) {
-      setLoadingMessage("There are a lot of contacts, fetching them might take some time...");
-    }
-  }, 15000);
+  if (filteredContacts.length === 0) {
+    setLoadingMessage("Fetching contacts...");
+  } else {
+    setLoadingMessage("Fetching contacts...");
+    const timer = setTimeout(() => {
+      if (paginatedContacts.length === 0) {
+        setLoadingMessage("There are a lot of contacts, fetching them might take some time...");
+      }
+    }, 15000);
 
-  return () => clearTimeout(timer);
-}, [paginatedContacts]);
+    return () => clearTimeout(timer);
+  }
+}, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
+  console.log('Filtering contacts', { 
+    contactsLength: contacts.length, 
+    userRole, 
+    userName: userData?.name,
+    activeTags,
+    searchQuery
+  });
+
   let filtered = contacts;
+
+  // Apply role-based filtering
+  if (userRole === "3") {
+    filtered = filtered.filter(contact => 
+      contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+      contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase())
+    );
+  }
 
   // Apply tag filter
   if (activeTags.length > 0) {
     filtered = filtered.filter((contact) => {
       if (activeTags.includes('Mine')) {
-        return contact.tags?.includes(currentUserName);
+        return contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+               contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase());
       }
       if (activeTags.includes('Unassigned')) {
-        return !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
+        return !contact.assignedTo && !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
       }
       if (activeTags.includes('All')) {
         return true;
@@ -3485,7 +3892,7 @@ useEffect(() => {
   }
 
   console.log('Filtered contacts updated:', filtered);
-}, [contacts, searchQuery, activeTags, currentUserName, employeeList]);
+}, [contacts, searchQuery, activeTags, currentUserName, employeeList, userRole, userData]);
 
 // Update the pagination logic
 useEffect(() => {
@@ -3521,20 +3928,28 @@ const sortContacts = (contacts: Contact[]) => {
     userPhoneIndex = 0;
   }
   console.log("userPhoneIndex", userPhoneIndex);
+  
   // Filter by user's selected phone first
   if (userPhoneIndex !== -1) {
-    fil = fil.filter(contact => contact.phoneIndex === userPhoneIndex);
+    fil = fil.filter(contact => 
+      contact.phoneIndexes 
+        ? contact.phoneIndexes.includes(userPhoneIndex)
+        : contact.phoneIndex === userPhoneIndex
+    );
   }
-
+  
   // Check if the active tag matches any of the phone names
   const phoneIndex = Object.entries(phoneNames).findIndex(([_, name]) => 
     name.toLowerCase() === activeTag
   );
-
+  
   if (phoneIndex !== -1) {
-    fil = fil.filter(contact => contact.phoneIndex === phoneIndex);
+    fil = fil.filter(contact => 
+      contact.phoneIndexes 
+        ? contact.phoneIndexes.includes(phoneIndex)
+        : contact.phoneIndex === phoneIndex
+    );
   }
-
   // Apply search filter
   if (searchQuery.trim() !== '') {
     fil = fil.filter((contact) =>
@@ -3576,12 +3991,122 @@ const sortContacts = (contacts: Contact[]) => {
 
   };
 
-  // Update this function
-  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const query = e.target.value.toLowerCase();
-    setSearchQuery(query);
-    // We'll handle the filtering in the useEffect
+  const searchTimeoutRef = useRef<NodeJS.Timeout>();
+
+  const handleGlobalMessageSearch = async (searchQuery: string, page: number = 1) => {
+    if (!searchQuery.trim()) {
+      setGlobalSearchResults([]);
+      setIsGlobalSearchActive(false);
+      setGlobalSearchLoading(false);
+      return;
+    }
+
+    setGlobalSearchLoading(true);
+    setIsGlobalSearchActive(true);
+
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error('No authenticated user');
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('No user document found');
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get all contacts for the company
+      const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
+      const contactsSnapshot = await getDocs(contactsRef);
+
+      let allResults: any[] = [];
+
+      // Search through each contact's messages
+      for (const contactDoc of contactsSnapshot.docs) {
+        const messagesRef = collection(firestore, 'companies', companyId, 'contacts', contactDoc.id, 'messages');
+        
+        // Simplified query that only uses orderBy
+        const messagesQuery = query(
+          messagesRef,
+          orderBy('timestamp', 'desc'),
+          limit(100)
+        );
+
+        const messagesSnapshot = await getDocs(messagesQuery);
+        
+        // Filter messages client-side
+        const contactResults = messagesSnapshot.docs
+          .filter(doc => {
+            const data = doc.data() as { text?: { body?: string } };
+            const messageText = data.text?.body?.toLowerCase() || '';
+            return messageText.includes(searchQuery.toLowerCase());
+          })
+          .map(doc => ({
+            ...(doc.data() as Record<string, any>),
+            id: doc.id,
+            contactId: contactDoc.id
+          }));
+
+        allResults = [...allResults, ...contactResults];
+      }
+
+      // Format and sort results
+      const formattedResults = allResults.map(result => ({
+        ...result,
+        text: {
+          body: result.text?.body || result.message || result.content || '',
+        },
+        timestamp: result.timestamp || result.created_at || Date.now(),
+        from_me: result.from_me || false,
+        chat_id: result.chat_id || result.chatId || '',
+        type: result.type || 'text'
+      }));
+
+      const sortedResults = formattedResults.sort((a, b) => {
+        const timestampA = typeof a.timestamp === 'number' ? a.timestamp : new Date(a.timestamp).getTime();
+        const timestampB = typeof b.timestamp === 'number' ? b.timestamp : new Date(b.timestamp).getTime();
+        return timestampB - timestampA;
+      });
+
+      setGlobalSearchResults(sortedResults);
+      toast.success(`Found ${sortedResults.length} message${sortedResults.length === 1 ? '' : 's'}`);
+
+    } catch (error) {
+      console.error('Search failed:', error);
+      setGlobalSearchResults([]);
+      toast.error('Search failed. Please try again.');
+    } finally {
+      setGlobalSearchLoading(false);
+    }
   };
+
+  const loadMoreSearchResults = (page: number) => {
+    handleGlobalMessageSearch(searchQuery, page);
+  };
+
+  // Update the search handler to use debouncing more effectively
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const query = e.target.value;
+    setSearchQuery(query);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    if (!query.trim()) {
+      setGlobalSearchResults([]);
+      setIsGlobalSearchActive(false);
+      setGlobalSearchLoading(false);
+      return;
+    }
+    
+    setGlobalSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(() => {
+      handleGlobalMessageSearch(query);
+    }, 750); // Increased debounce time to reduce API calls
+  };
+
 
   const filterForwardDialogContacts = (tag: string) => {
     setForwardDialogTags(prevTags => 
@@ -3618,14 +4143,30 @@ const sortContacts = (contacts: Contact[]) => {
   const totalPages = Math.ceil(filteredContactsSearch.length / contactsPerPage);
   
   useEffect(() => {
-    const tag = activeTags[0].toLowerCase();
+    console.log('Filtering contacts - Start', { 
+      contactsLength: contacts.length, 
+      activeTags,
+      searchQuery,
+      userRole,
+      userData
+    });
+  
+    const tag = activeTags[0]?.toLowerCase() || 'all';
     let filteredContacts = filterContactsByUserRole(contacts, userRole, userData?.name || '');
     setMessageMode('reply');
-
+  
+    console.log('After filterContactsByUserRole:', filteredContacts.length);
+  
     // First, filter contacts based on the employee's assigned phone
     if (userData?.phone !== undefined && userData.phone !== -1) {
       const userPhoneIndex = parseInt(userData.phone, 10);
       setMessageMode(`phone${userPhoneIndex + 1}`);
+      filteredContacts = filteredContacts.filter(contact => 
+        contact.phoneIndexes 
+          ? contact.phoneIndexes.includes(userPhoneIndex)
+          : contact.phoneIndex === userPhoneIndex
+      );
+      console.log('After phone filter:', filteredContacts.length);
     }
   
     // Filtering logic
@@ -3638,6 +4179,7 @@ const sortContacts = (contacts: Contact[]) => {
         filteredContacts = filteredContacts.filter(contact => 
           contact.phoneIndex === phoneIndex
         );
+        console.log('After phone name filter:', filteredContacts.length);
       }
     } else {
       // Existing filtering logic for other tags
@@ -3648,7 +4190,7 @@ const sortContacts = (contacts: Contact[]) => {
               !contact.chat_id?.endsWith('@g.us') && 
               !contact.tags?.includes('snooze')
             );
-          }else{
+          } else {
             filteredContacts = filteredContacts.filter(contact => 
               !contact.tags?.includes('snooze')
             );
@@ -3687,19 +4229,32 @@ const sortContacts = (contacts: Contact[]) => {
             !contact.tags?.includes('snooze')
           );
           break;
+        case 'resolved':
+          filteredContacts = filteredContacts.filter(contact => 
+            contact.tags?.includes('resolved') && 
+            !contact.tags?.includes('snooze')
+          );
+          break;
+        case 'active bot':
+          filteredContacts = filteredContacts.filter(contact => 
+            !contact.tags?.includes('stop bot') && 
+            !contact.tags?.includes('snooze')
+          );
+          break;
         default:
           filteredContacts = filteredContacts.filter(contact => 
             contact.tags?.some(t => t.toLowerCase() === tag.toLowerCase()) && 
             !contact.tags?.includes('snooze')
           );
       }
+      console.log('After tag filter:', filteredContacts.length);
     }
+  
     filteredContacts = sortContacts(filteredContacts);
-    console.log("MESSAGE MODE", messageMode)
-    let filtered = filteredContacts;
+    console.log("MESSAGE MODE", messageMode);
   
     if (searchQuery) {
-      filtered = filteredContacts.filter((contact) => {
+      filteredContacts = filteredContacts.filter((contact) => {
         const name = (contact.contactName || contact.firstName || '').toLowerCase();
         const phone = (contact.phone || '').toLowerCase();
         const tags = (contact.tags || []).join(' ').toLowerCase();
@@ -3708,11 +4263,12 @@ const sortContacts = (contacts: Contact[]) => {
               phone.includes(searchQuery.toLowerCase()) || 
               tags.includes(searchQuery.toLowerCase());
       });
+      console.log('After search filter:', filteredContacts.length);
     }
-
-    const filteredAndSortedContacts = sortContacts(filteredContacts);
-    setFilteredContacts(filteredAndSortedContacts);
-    // Don't reset the current page here
+  
+    console.log('Final filtered contacts:', filteredContacts.length);
+    setFilteredContacts(filteredContacts);
+  
   }, [contacts, searchQuery, activeTags, showAllContacts, showUnreadContacts, showMineContacts, showUnassignedContacts, showSnoozedContacts, showGroupContacts, currentUserName, employeeList, userData, userRole]);
   
   const handleSnoozeContact = async (contact: Contact) => {
@@ -3797,6 +4353,91 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to unsnooze contact');
     }
   };
+
+  const handleResolveContact = async (contact: Contact) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Update Firestore
+      if (companyId && contact.id) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        await updateDoc(contactRef, {
+          tags: arrayUnion('resolved')
+        });
+      } else {
+        console.error('Invalid companyId or contact.id');
+      }
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), 'resolved'] }
+            : c
+        )
+      );
+  
+      toast.success('Contact marked as resolved');
+    } catch (error) {
+      console.error('Error resolving contact:', error);
+      toast.error('Failed to mark contact as resolved');
+    }
+  };
+
+  const handleUnresolveContact = async (contact: Contact) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Update Firestore
+      if (companyId && contact.id) {
+        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
+        await updateDoc(contactRef, {
+          tags: arrayRemove('resolved')
+        });
+      } else {
+        console.error('Invalid companyId or contact.id');
+      }
+      // Update local state
+      setContacts(prevContacts =>
+        prevContacts.map(c =>
+          c.id === contact.id
+            ? { ...c, tags: c.tags?.filter(tag => tag !== 'resolved') }
+            : c
+        )
+      );
+  
+      toast.success('Contact unmarked as resolved');
+    } catch (error) {
+      console.error('Error unresolving contact:', error);
+      toast.error('Failed to unmark contact as resolved');
+    }
+  };
+
   const handleSelectMessage = (message: Message) => {
     setSelectedMessages(prevSelectedMessages =>
         prevSelectedMessages.includes(message)
@@ -3823,12 +4464,23 @@ const sortContacts = (contacts: Contact[]) => {
         for (const message of selectedMessages) {
           try {
             if (message.type === 'image') {
-              // Ensure we have a valid image link
-              const imageLink = message.image?.link || message.image?.url;
-              if (!imageLink) {
-                throw new Error('Invalid image link');
+              let imageUrl = message.image?.link || message.image?.url;
+              
+              if (!imageUrl && message.image?.data) {
+                // If we have base64 data, upload it to get a URL
+                const base64Data = message.image.data.startsWith('data:') 
+                  ? message.image.data 
+                  : `data:${message.image?.mimetype};base64,${message.image?.data}`;
+                imageUrl = await uploadBase64Image(base64Data, message.image?.mimetype || '');
               }
-              await sendImageMessage(contact.chat_id ?? '', imageLink, message.image?.caption ?? '');
+  
+              if (!imageUrl) {
+                console.error('No valid image data found for message:', message);
+                toast.error(`Failed to forward image: No valid image data`);
+                continue;
+              }
+
+              await sendImageMessage(contact.chat_id ?? '', imageUrl, message.image?.caption ?? '');
             } else if (message.type === 'document') {
               // Ensure we have a valid document link
               const documentLink = message.document?.link;
@@ -3874,6 +4526,24 @@ const sortContacts = (contacts: Contact[]) => {
     } catch (error) {
       console.error('Error in forward process:', error);
       toast.error(`Error in forward process: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
+  const uploadBase64Image = async (base64Data: string, mimeType: string): Promise<string> => {
+    try {
+      const response = await fetch(base64Data);
+      const blob = await response.blob();
+  
+      const storage = getStorage();
+      const storageRef = ref(storage, `images/${Date.now()}.${mimeType.split('/')[1]}`);
+      
+      await uploadBytes(storageRef, blob);
+      const downloadURL = await getDownloadURL(storageRef);
+      
+      return downloadURL;
+    } catch (error) {
+      console.error('Error uploading base64 image:', error);
+      throw error;
     }
   };
 
@@ -3954,7 +4624,6 @@ const sortContacts = (contacts: Contact[]) => {
     return downloadURL;
   };
   
-  
   const sendImageMessage = async (chatId: string, imageUrl: string, caption?: string) => {
     try {
       console.log(`Sending image message. ChatId: ${chatId}`);
@@ -3968,10 +4637,13 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
-      const userName = userData.name || userData.email || '';
       
-      console.log(`Using phoneIndex: ${phoneIndex}`);
+      // Use selectedContact's phoneIndex
+      if (!selectedContact) throw new Error('No contact selected');
+      const phoneIndex = selectedContact.phoneIndex ?? 0;
+      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
+      const userName = userData.name || userData.email || '';
   
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -4010,7 +4682,6 @@ const sortContacts = (contacts: Contact[]) => {
       throw error;
     }
   };
-  
   const sendDocumentMessage = async (chatId: string, documentUrl: string, mimeType: string, fileName: string, caption?: string) => {
     try {
       console.log(`Sending document message. ChatId: ${chatId}`);
@@ -4024,10 +4695,13 @@ const sortContacts = (contacts: Contact[]) => {
   
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      const phoneIndex = userData.phone || 0; // Use the same approach as in sendMessage
-      const userName = userData.name || userData.email || '';
       
-      console.log(`Using phoneIndex: ${phoneIndex}`);
+      // Use selectedContact's phoneIndex
+      if (!selectedContact) throw new Error('No contact selected');
+      const phoneIndex = selectedContact.phoneIndex ?? 0;
+      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
+      const userName = userData.name || userData.email || '';
   
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -4223,7 +4897,7 @@ const sortContacts = (contacts: Contact[]) => {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
-
+  
   const handleRemoveTag = async (contactId: string, tagName: string) => {
     try {
       const user = auth.currentUser;
@@ -4236,6 +4910,21 @@ const sortContacts = (contacts: Contact[]) => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
+      // Check if tag is a trigger tag
+      const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+      const templatesSnapshot = await getDocs(templatesRef);
+      
+      let matchingTemplate: any = null;
+      templatesSnapshot.forEach(doc => {
+        const template = doc.data();
+        if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+          matchingTemplate = { 
+            id: doc.id, 
+            ...template 
+          };
+        }
+      });
+  
       // Update Firestore
       const contactRef = doc(firestore, 'companies', companyId, 'contacts', contactId);
       const contactSnapshot = await getDoc(contactRef);
@@ -4243,6 +4932,36 @@ const sortContacts = (contacts: Contact[]) => {
       await updateDoc(contactRef, {
         tags: arrayRemove(tagName)
       });
+  
+      // If this was a trigger tag, call the follow-up API to remove the template
+      if (matchingTemplate) {
+        try {
+          const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              requestType: 'removeTemplate',
+              phone: contact.phone,
+              first_name: contact.contactName || contact.firstName || contact.phone,
+              phoneIndex: contact.phoneIndex || 0,
+              templateId: matchingTemplate.id,
+              idSubstring: companyId
+            }),
+          });
+  
+          if (!response.ok) {
+            throw new Error(`Follow-up API error: ${response.statusText}`);
+          }
+  
+          console.log('Follow-up template removed successfully');
+          toast.success('Follow-up sequence stopped');
+        } catch (error) {
+          console.error('Error stopping follow-up sequence:', error);
+          toast.error('Failed to stop follow-up sequence');
+        }
+      }
   
       // Check if the removed tag is an employee name
       const isEmployeeTag = employeeList.some(employee => employee.name.toLowerCase() === tagName.toLowerCase());
@@ -4286,40 +5005,20 @@ const sortContacts = (contacts: Contact[]) => {
       } else if (tagName === 'Before Quote Follow Up BM') {
         removeTagBeforeQuote(contact);
       } else if (tagName === 'Before Quote Follow Up CN') {
-        removeTagBeforeQuote(contact);
-      } else if (tagName === 'After Quote Follow Up') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up EN') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up CN') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === 'After Quote Follow Up BM') {
-        removeTagAfterQuote(contact);
-      } else if (tagName === '5 Days Follow Up EN') {
-        removeTag5Days(contact);
-      } else if (tagName === '5 Days Follow Up CN') {
-        removeTag5Days(contact);
-      } else if (tagName === '5 Days Follow Up BM') {
-        removeTag5Days(contact);
+        removeTagBeforeQuote(contact); 
       } else if (tagName === 'Pause Follow Up') {
         removeTagPause(contact);
+      } else if (tagName === 'Edward Follow Up') {
+        removeTagEdward(contact);
       }
+  
       // Update state
       setContacts(prevContacts => {
-        if (userData?.role === '3') {
-          // For role 3, remove the contact if the removed tag matches their name
-          return prevContacts.filter(contact => 
-            contact.id !== contactId || 
-            (contact.tags && contact.tags.some(tag => tag.toLowerCase() === userData.name.toLowerCase()))
-          );
-        } else {
-          // For other roles, just update the tags
-          return prevContacts.map(contact =>
-            contact.id === contactId
-              ? { ...contact, tags: contact.tags!.filter(tag => tag !== tagName), assignedTo: undefined }
-              : contact
-          );
-        }
+        return prevContacts.map(contact =>
+          contact.id === contactId
+            ? { ...contact, tags: contact.tags!.filter(tag => tag !== tagName), assignedTo: undefined }
+            : contact
+        );
       });
   
       const updatedContacts = contacts.map((contact: Contact) =>
@@ -4338,6 +5037,7 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to remove tag.');
     }
   };
+
 
   const adjustHeight = (textarea: HTMLTextAreaElement, reset = false) => {
     if (reset) {
@@ -4370,36 +5070,47 @@ const sortContacts = (contacts: Contact[]) => {
   
   const handleEditMessage = async () => {
     if (!editedMessageText.trim() || !editingMessage) return;
-    
+
     try {
+      const messageTimestamp = new Date(editingMessage.timestamp).getTime();
+      const currentTime = new Date().getTime();
+      const diffInMinutes = (currentTime - messageTimestamp) / (1000 * 60);
+
+      if (diffInMinutes > 15) {
+        toast.error('Message cannot be edited as it has been more than 15 minutes since it was sent.');
+        return;
+      }
+
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
-  
+
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) throw new Error('No such document for user');
-  
+
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       const chatId = editingMessage.id.split('_')[1];
-      console.log('editing this chat id', chatId)
+      console.log('editing this chat id', chatId);
       const response = await axios.put(
         `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
-        { newMessage: editedMessageText }
+        { newMessage: editedMessageText,
+          phoneIndex: userData.phoneIndex || 0
+         }
       );
-  
+
       if (response.data.success) {
         toast.success('Message edited successfully');
-        
+
         // Update the message locally
-        setMessages(prevMessages => 
-          prevMessages.map(msg => 
-            msg.id === editingMessage.id 
+        setMessages(prevMessages =>
+          prevMessages.map(msg =>
+            msg.id === editingMessage.id
               ? { ...msg, text: { ...msg.text, body: editedMessageText }, edited: true }
               : msg
           )
         );
-  
+
         setEditingMessage(null);
         setEditedMessageText("");
       } else {
@@ -4410,37 +5121,6 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to edit message. Please try again.');
     }
   };
-  
-  const DeleteConfirmationPopup = () => (
-    <div className="fixed inset-0 bg-gray-500 bg-opacity-75 dark:bg-gray-900 dark:bg-opacity-75 flex items-center justify-center z-50 rounded-lg">
-      <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-        <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4 rounded-lg">
-          <div className="sm:flex sm:items-start">
-            <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-              <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-100 mb-4">Delete message</h3>
-              <p className="text-gray-700 dark:text-gray-300">Are you sure you want to delete this message?</p>
-            </div>
-          </div>
-        </div>
-        <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse rounded-b-lg">
-          <Button
-            type="button"
-            className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 dark:bg-red-700 dark:hover:bg-red-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 dark:focus:ring-red-600 sm:ml-3 sm:w-auto sm:text-sm"
-           onClick={deleteMessages}
-          >
-            Delete
-          </Button>
-          <Button
-            type="button"
-            className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 dark:focus:ring-indigo-600 sm:mt-0 sm:w-auto sm:text-sm"
-            onClick={closeDeletePopup}
-          >
-            Cancel
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
   
   const sendDocument = async (file: File, caption: string) => {
     setLoading(true);
@@ -4570,15 +5250,10 @@ const sortContacts = (contacts: Contact[]) => {
     checkBotsStatus();
   }, [contacts]);
 
-
- 
-
-
-  const toggleBot = async () => {
-    if (userRole === "3") {
-      toast.error("You don't have permission to control the bot.");
-      return;
-    }
+  const [companyStopBot, setCompanyStopBot] = useState(false);
+// Update the useEffect that fetches company stop bot status
+useEffect(() => {
+  const fetchCompanyStopBot = async () => {
     try {
       const user = auth.currentUser;
       if (!user) return;
@@ -4589,19 +5264,71 @@ const sortContacts = (contacts: Contact[]) => {
 
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
+      const currentPhoneIndex = userData.phone || 0;
 
       const companyRef = doc(firestore, 'companies', companyId);
-      await updateDoc(companyRef, {
-        stopbot: !stopbot
-      });
-      setStopbot(!stopbot);
-      toast.success(`Bot ${stopbot ? 'activated' : 'deactivated'} successfully!`);
+      const companySnapshot = await getDoc(companyRef);
+      if (!companySnapshot.exists()) return;
+
+      const companyData = companySnapshot.data();
+      const stopbots = companyData.stopbots || {};
+      setCompanyStopBot(stopbots[currentPhoneIndex] || false);
     } catch (error) {
-      console.error('Error toggling bot:', error);
-      toast.error('Failed to toggle bot status.');
+      console.error('Error fetching company stopbot status:', error);
     }
   };
 
+  fetchCompanyStopBot();
+}, [userData?.phone]); // Add userData?.phone as dependency
+
+const toggleBot = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user) return;
+
+    const docUserRef = doc(firestore, 'user', user.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) return;
+
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+    const currentPhoneIndex = userData.phone || 0;
+
+    const companyRef = doc(firestore, 'companies', companyId);
+    const companySnapshot = await getDoc(companyRef);
+    if (!companySnapshot.exists()) return;
+
+    const companyData = companySnapshot.data();
+    
+    // Initialize or get existing stopbots object
+    const currentStopbots = companyData.stopbots || {};
+    
+    if (currentStopbots[currentPhoneIndex]) {
+      // If bot is currently stopped (true), remove the entry to enable it
+      const { [currentPhoneIndex]: _, ...newStopbots } = currentStopbots;
+      await updateDoc(companyRef, {
+        stopbots: newStopbots
+      });
+      setCompanyStopBot(false);
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} enabled successfully`);
+    } else {
+      // If bot is currently running (no entry or false), add entry with true to disable it
+      const newStopbots = {
+        ...currentStopbots,
+        [currentPhoneIndex]: true
+      };
+      await updateDoc(companyRef, {
+        stopbots: newStopbots
+      });
+      setCompanyStopBot(true);
+      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} disabled successfully`);
+    }
+
+  } catch (error) {
+    console.error('Error toggling bot status:', error);
+    toast.error('Failed to toggle bot status');
+  }
+};
 
   const { show } = useContextMenu({
     id: 'contact-context-menu',
@@ -4616,6 +5343,9 @@ const sortContacts = (contacts: Contact[]) => {
         onSnooze: () => handleSnoozeContact(contact),
         onUnsnooze: () => handleUnsnoozeContact(contact),
         isSnooze: contact.tags?.includes('snooze'),
+        onResolve: () => handleResolveContact(contact),
+        onUnresolve: () => handleUnresolveContact(contact),
+        isResolved: contact.tags?.includes('resolved'),
       },
     });
   };
@@ -4855,9 +5585,10 @@ const sortContacts = (contacts: Contact[]) => {
         status: "scheduled",
         v2: isV2,
         whapiToken: isV2 ? null : whapiToken,
-    
       };
-
+  
+      console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
+  
       // Make API call to schedule the message
       const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}`, scheduledMessageData);
 
@@ -4865,6 +5596,7 @@ const sortContacts = (contacts: Contact[]) => {
 
       toast.success('Reminder set successfully');
       setIsReminderModalOpen(false);
+      setReminderText('');
       setReminderDate(null);
 
     } catch (error) {
@@ -4872,6 +5604,7 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error("An error occurred while setting the reminder. Please try again.");
     }
   };
+  
   const handleGenerateAIResponse = async () => {
     if (messages.length === 0) return;
   
@@ -5135,6 +5868,30 @@ console.log(prompt);
     }
   };
 
+  useEffect(() => {
+    const fetchTotalContacts = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+
+        const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+        const snapshot = await getCountFromServer(contactsRef);
+        setTotalContacts(snapshot.data().count);
+      } catch (error) {
+        console.error('Error fetching total contacts:', error);
+      }
+    };
+
+    fetchTotalContacts();
+  }, []);
+
   return (
     <div className="flex flex-col md:flex-row overflow-y-auto bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" style={{ height: '100vh' }}>
       <audio ref={audioRef} src={noti} />
@@ -5145,23 +5902,108 @@ console.log(prompt);
               {userData?.company}
             </div>
             <div className="text-start text-lg font-medium text-gray-600 dark:text-gray-400">
-              Total Contacts: {initialContacts.length}
+              Total Contacts: {totalContacts}
             </div>
           </div>
           {userData?.phone !== undefined && (
-            <div className="flex items-center space-x-2 text-lg font-semibold opacity-75">
-              <Lucide icon="Phone" className="w-5 h-5 text-gray-800 dark:text-white" />
-              <span className="text-gray-800 font-medium dark:text-white">
-                {phoneNames[userData.phone] || 'No phone assigned'}
-              </span>
-            </div>
+            <Menu as="div" className="relative inline-block text-left">
+              <div>
+                <Menu.Button className="flex items-center space-x-2 text-lg font-semibold opacity-75 bg-white dark:bg-gray-800 px-3 py-2 rounded-md shadow-sm hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-100 focus:ring-blue-500">
+                  <Lucide icon="Phone" className="w-5 h-5 text-gray-800 dark:text-white" />
+                  <span className="text-gray-800 font-medium dark:text-white">
+                    {phoneNames[userData.phone] || 'No phone assigned'}
+                  </span>
+                  <Lucide icon="ChevronDown" className="w-4 h-4 text-gray-500" />
+                </Menu.Button>
+              </div>
+           
+                <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5">
+                  <div className="py-1 max-h-60 overflow-y-auto" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                    {Object.entries(phoneNames).map(([index, phoneName]) => (
+                      <Menu.Item key={index}>
+                        {({ active }) => (
+                          <button
+                            onClick={() => handlePhoneChange(parseInt(index))}
+                            className={`${
+                              active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-200'
+                            } block w-full text-left px-4 py-2 text-sm`}
+                          >
+                            {phoneName}
+                          </button>
+                        )}
+                      </Menu.Item>
+                    ))}
+                  </div>
+                </Menu.Items>
+           
+            </Menu>
           )}
   
         </div>
-        <div className="sticky top-20 z-10 bg-gray-100 dark:bg-gray-900 p-2">
+        {companyPlan === 'enterprise' && (
+  <div className="px-4 py-2">
+    <div className="flex items-center justify-between mb-1">
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        Monthly Message Usage
+      </span>
+      <span className="text-xs font-medium text-gray-700 dark:text-gray-300">
+        {messageUsage}/500
+      </span>
+    </div>
+    <div className="w-full bg-gray-200 rounded-full h-2.5 dark:bg-gray-700">
+      <div 
+        className={`h-2.5 rounded-full ${
+          messageUsage > 450 ? 'bg-red-600' : 
+          messageUsage > 350 ? 'bg-yellow-400' : 
+          'bg-green-600'
+        }`}
+        style={{ width: `${Math.min((messageUsage / 500) * 100, 100)}%` }}
+      ></div>
+    </div>
+  </div>
+)}
+        <div className="sticky top-20 bg-gray-100 dark:bg-gray-900 p-2">
           <div className="flex items-center space-x-2 bg-gray-100 dark:bg-gray-900">
             {notifications.length > 0 && <NotificationPopup notifications={notifications} />}
-            {isDeletePopupOpen && <DeleteConfirmationPopup />}
+
+            <Dialog
+              open={isDeletePopupOpen}
+              onClose={closeDeletePopup}
+              className="fixed inset-0 z-100 overflow-y-auto"
+            >
+              <div className="flex items-center justify-center min-h-screen">
+                <div className="fixed inset-0 bg-black opacity-30" />
+                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
+                  <Dialog.Title
+                    as="h3"
+                    className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 px-4 pt-5"
+                  >
+                    Delete Messages
+                  </Dialog.Title>
+                  <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Are you sure you want to delete {selectedMessages.length} message(s)? This action cannot be undone.
+                    </p>
+                  </div>
+                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse rounded-b-lg">
+                    <Button
+                      type="button"
+                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-red-600 text-base font-medium text-white hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 sm:ml-3 sm:w-auto sm:text-sm"
+                      onClick={deleteMessages}
+                    >
+                      Delete
+                    </Button>
+                    <Button
+                      type="button"
+                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
+                      onClick={closeDeletePopup}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </Dialog>
             <Dialog open={blastMessageModal} onClose={() => setBlastMessageModal(false)}>
             <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
               <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-md mt-40 text-gray-900 dark:text-white">
@@ -5287,147 +6129,164 @@ console.log(prompt);
               </div>
             </Dialog>
             <PDFModal isOpen={isPDFModalOpen} onClose={closePDFModal} pdfUrl={pdfUrl} />
-            {editingMessage && (
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-                  <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div className="sm:flex sm:items-start">
-                      <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">Edit message</h3>
-                        <textarea
-                          className="w-full h-24 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-info text-md resize-none overflow-hidden bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                          placeholder="Edit your message"
-                          value={editedMessageText}
-                          onChange={(e) => setEditedMessageText(e.target.value)}
-                          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <Button
-                      type="button"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-500 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      onClick={handleEditMessage}
-                    >
-                      Save
-                    </Button>
-                    <Button
-                      type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      onClick={cancelEditMessage}
-                    >
-                      Cancel
-                    </Button>
-              </div>
-              </div>
-              </div>
-            )}
+            <Dialog
+  open={editingMessage !== null}
+  onClose={cancelEditMessage}
+  className="fixed inset-0 z-100 overflow-y-auto"
+>
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="fixed inset-0 bg-black opacity-30" />
+    <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
+      <Dialog.Title
+        as="h3"
+        className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 px-4 pt-5"
+      >
+        Edit message
+      </Dialog.Title>
+      <div className="px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <textarea
+          className="w-full h-24 px-2 py-1.5 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:border-info text-md resize-none overflow-hidden bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+          placeholder="Edit your message"
+          value={editedMessageText}
+          onChange={(e) => setEditedMessageText(e.target.value)}
+          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        />
+      </div>
+      <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <Button
+          type="button"
+          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-blue-500 text-base font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+          onClick={handleEditMessage}
+        >
+          Save
+        </Button>
+        <Button
+          type="button"
+          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 dark:border-gray-600 shadow-sm px-4 py-2 bg-white dark:bg-gray-800 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500 sm:mt-0 sm:w-auto sm:text-sm"
+          onClick={cancelEditMessage}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  </div>
+</Dialog>
 
-            {isForwardDialogOpen && (
-              <div className="fixed inset-0 bg-gray-500 bg-opacity-75 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full">
-                  <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
-                    <div className="sm:flex sm:items-start">
-                      <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
-                        <h3 className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">Forward message to</h3>
-                        <div className="relative mb-4">
-                          <input
-                            type="text"
-                            className="w-full py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                            placeholder="Search..."
-                            value={searchQuery2}
-                            onChange={handleSearchChange2}
-                          />
-                          <Lucide
-                            icon="Search"
-                            className="absolute top-2 right-3 w-5 h-5 text-gray-500 dark:text-gray-400"
-                          />
-                        </div>
-                        <div className="mb-4">
-                          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by tags:</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {visibleForwardTags.map((tag) => (
-                              <button
-                                key={tag.id}
-                                onClick={() => filterForwardDialogContacts(tag.name)}
-                                className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
-                                  forwardDialogTags.includes(tag.name)
-                                    ? 'bg-primary text-white dark:bg-primary dark:text-white'
-                                    : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
-                                } transition-colors duration-200`}
-                              >
-                                {tag.name}
-                              </button>
-                            ))}
-                          </div>
-                          {tagList.length > 5 && (
-                            <button
-                              onClick={toggleForwardTagsVisibility}
-                              className="mt-2 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
-                            >
-                              {showAllForwardTags ? 'Show Less' : 'Show More'}
-                            </button>
-                          )}
-                        </div>
-                        <div className="max-h-60 overflow-y-auto">
-                          {getFilteredForwardingContacts().map((contact, index) => (
-                            <div
-                              key={contact.id || `${contact.phone}-${index}`}
-                              className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
-                            >
-                              <input
-                                type="checkbox"
-                                className="mr-3"
-                                checked={selectedContactsForForwarding.includes(contact)}
-                                onChange={() => handleSelectContactForForwarding(contact)}
-                              />
-                              <div className="flex items-center">
-                                <div className="w-8 h-8 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full mr-3 text-white">
-                                  {contact.contactName ? contact.contactName.charAt(0).toUpperCase() : "?"}
-                                </div>
-                                <div className="flex-grow">
-                                  <div className="font-semibold capitalize">{contact.contactName || contact.firstName || contact.phone}</div>
-                                  {contact.tags && contact.tags.length > 0 && (
-                                    <div className="text-xs text-gray-500 dark:text-gray-400">
-                                      Tags: {contact.tags.join(', ')}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
+
+
+<Dialog
+  open={isForwardDialogOpen}
+  onClose={() => handleCloseForwardDialog()}
+  className="fixed inset-0 z-50 overflow-y-auto"
+>
+  <div className="flex items-center justify-center min-h-screen">
+    <div className="fixed inset-0 bg-gray-500 bg-opacity-75" />
+    <div className="bg-white dark:bg-gray-800 rounded-lg text-left shadow-xl transform transition-all sm:my-8 sm:max-w-lg sm:w-full relative z-10">
+      <div className="bg-white dark:bg-gray-800 px-4 pt-5 pb-4 sm:p-6 sm:pb-4">
+        <div className="sm:flex sm:items-start">
+          <div className="mt-3 text-center sm:mt-0 sm:ml-4 sm:text-left w-full">
+            <Dialog.Title as="h3" className="text-lg leading-6 font-medium text-gray-900 dark:text-gray-200 mb-4">
+              Forward message to
+            </Dialog.Title>
+            <div className="relative mb-4">
+              <input
+                type="text"
+                className="w-full py-2 px-4 border border-gray-300 dark:border-gray-600 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                placeholder="Search..."
+                value={searchQuery2}
+                onChange={handleSearchChange2}
+              />
+              <Lucide
+                icon="Search"
+                className="absolute top-2 right-3 w-5 h-5 text-gray-500 dark:text-gray-400"
+              />
+            </div>
+            <div className="mb-4">
+              <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Filter by tags:</h4>
+              <div className="flex flex-wrap gap-2">
+                {visibleForwardTags.map((tag) => (
+                  <button
+                    key={tag.id}
+                    onClick={() => filterForwardDialogContacts(tag.name)}
+                    className={`px-3 py-1 rounded-full text-sm flex-shrink-0 ${
+                      forwardDialogTags.includes(tag.name)
+                        ? 'bg-primary text-white dark:bg-primary dark:text-white'
+                        : 'bg-gray-200 text-gray-700 hover:bg-gray-300 dark:bg-gray-700 dark:text-gray-200 dark:hover:bg-gray-600'
+                    } transition-colors duration-200`}
+                  >
+                    {tag.name}
+                  </button>
+                ))}
+              </div>
+              {tagList.length > 5 && (
+                <button
+                  onClick={toggleForwardTagsVisibility}
+                  className="mt-2 text-sm text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300"
+                >
+                  {showAllForwardTags ? 'Show Less' : 'Show More'}
+                </button>
+              )}
+            </div>
+            <div className="max-h-60 overflow-y-auto">
+              {getFilteredForwardingContacts().map((contact, index) => (
+                <div
+                  key={contact.id || `${contact.phone}-${index}`}
+                  className="flex items-center p-2 border-b border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700"
+                >
+                  <input
+                    type="checkbox"
+                    className="mr-3"
+                    checked={selectedContactsForForwarding.includes(contact)}
+                    onChange={() => handleSelectContactForForwarding(contact)}
+                  />
+                  <div className="flex items-center">
+                    <div className="w-8 h-8 flex items-center justify-center bg-gray-300 dark:bg-gray-600 rounded-full mr-3 text-white">
+                      {contact.contactName ? contact.contactName.charAt(0).toUpperCase() : "?"}
                     </div>
-                  </div>
-                  <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
-                    <Button
-                      type="button"
-                      className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
-                      onClick={handleForwardMessage}
-                    >
-                      Forward
-                    </Button>
-                    <Button
-                      type="button"
-                      className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
-                      onClick={() => handleCloseForwardDialog()}
-                    >
-                      Cancel
-                    </Button>
+                    <div className="flex-grow">
+                      <div className="font-semibold capitalize">{contact.contactName || contact.firstName || contact.phone}</div>
+                      {contact.tags && contact.tags.length > 0 && (
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Tags: {contact.tags.join(', ')}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+      <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse">
+        <Button
+          type="button"
+          className="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-primary text-base font-medium text-white hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:ml-3 sm:w-auto sm:text-sm"
+          onClick={handleForwardMessage}
+        >
+          Forward
+        </Button>
+        <Button
+          type="button"
+          className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white dark:bg-gray-600 text-base font-medium text-gray-700 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-500 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 sm:mt-0 sm:w-auto sm:text-sm"
+          onClick={() => handleCloseForwardDialog()}
+        >
+          Cancel
+        </Button>
+      </div>
+    </div>
+  </div>
+</Dialog>
 
-    <div className="flex justify-end space-x-3">
+    <div className="flex justify-end space-x-2 w-full mr-2">
+      
     {(
+      // Replace or update the existing search input section
       <div className="relative flex-grow">
         <input
           type="text"
-          className="!box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
-          placeholder="Search..."
+          className="flex-grow box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
+          placeholder="Search messages..."
           value={searchQuery}
           onChange={handleSearchChange}
         />
@@ -5435,20 +6294,85 @@ console.log(prompt);
           icon="Search"
           className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400"
         />
+        
+        {/* Global Search Results Dropdown */}
+        {isGlobalSearchActive && searchQuery && (
+          <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 rounded-md shadow-lg max-h-96 overflow-y-auto">
+            {globalSearchLoading ? (
+              <div className="w-full p-4 text-center text-gray-500">
+                Searching...
+              </div>
+            ) : globalSearchResults.length > 0 ? (
+              <>
+                {globalSearchResults.map((result) => (
+                  <div
+                    key={result.id}
+                    className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
+                    onClick={async () => {
+                      // Find and select the contact
+                      const contact = contacts.find(c => c.id === result.contactId);
+                      if (contact) {
+                        await selectChat(contact.chat_id!, contact.id!, contact);
+                        setIsGlobalSearchActive(false);
+                        setSearchQuery('');
+                      }
+                      // Scroll to the message that was clicked on in the chat
+                      scrollToMessage(result.id);
+                    }}
+                  >
+                    <div className="flex-grow w-full justify-between items-start">
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium">
+                          {contacts.find(c => c.id === result.contactId)?.contactName || result.contactId}
+                        </div>
+                        <div className="text-sm text-gray-500 truncate">
+                          {result.text?.body ? (
+                            <span dangerouslySetInnerHTML={{ __html: result.text.body.replace(new RegExp(`(${searchQuery})`, 'gi'), '<mark>$1</mark>') }} />
+                          ) : (
+                            result.caption || 'Media message'
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+                
+                {/* Pagination */}
+                {totalGlobalSearchPages > 1 && (
+                  <div className="pagination">
+                    {Array.from({ length: totalGlobalSearchPages }, (_, i) => i + 1).map(pageNum => (
+                      <button
+                        key={pageNum}
+                        onClick={() => loadMoreSearchResults(pageNum)}
+                        disabled={pageNum === globalSearchPage}
+                      >
+                        {pageNum}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="p-4 text-center text-gray-500">
+                No messages found
+              </div>
+            )}
+          </div>
+        )}
       </div>
     )}
     {isAssistantAvailable && (
       <button 
         className={`flex items-center justify-start p-2 !box ${
-          stopbot ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
+          companyStopBot ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'
         } ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`} 
         onClick={toggleBot}
         disabled={userRole === "3"}
       >
         <Lucide 
-          icon={stopbot ? 'PowerOff' : 'Power'} 
+          icon={companyStopBot ? 'PowerOff' : 'Power'} 
           className={`w-5 h-5 ${
-            stopbot ? 'text-red-500' : 'text-green-500'
+            companyStopBot ? 'text-red-500' : 'text-green-500'
           }`}
         />                
       </button>
@@ -5502,13 +6426,13 @@ console.log(prompt);
 <div className="flex flex-wrap gap-2">
   {['Mine', 'All', 'Unassigned',
     ...(isTagsExpanded ? [
-      'Group', 'Unread', 'Snooze', 'Stop Bot',
+      'Group', 'Unread', 'Snooze', 'Stop Bot', 'Active Bot', 'Resolved', // Added 'Active Bot'
       ...(userData?.phone !== undefined && userData.phone !== -1 ? 
         [phoneNames[userData.phone] || `Phone ${userData.phone + 1}`] : 
         Object.values(phoneNames)
       ),
       ...visibleTags.filter(tag => 
-        !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot'].includes(tag.name) && 
+        !['All', 'Unread', 'Mine', 'Unassigned', 'Snooze', 'Group', 'stop bot', 'Active Bot'].includes(tag.name) && // Added 'Active Bot'
         !visiblePhoneTags.includes(tag.name)
       )
     ] : [])
@@ -5531,15 +6455,15 @@ console.log(prompt);
         tagLower === 'mine' ? contactTags.includes(currentUserName.toLowerCase()) :
         tagLower === 'unassigned' ? !contactTags.some(t => employeeList.some(e => e.name.toLowerCase() === t)) :
         tagLower === 'snooze' ? contactTags.includes('snooze') :
+        tagLower === 'resolved' ? contactTags.includes('resolved') :
         tagLower === 'group' ? isGroup :
         tagLower === 'stop bot' ? contactTags.includes('stop bot') :
+        tagLower === 'active bot' ? !contactTags.includes('stop bot') : // Added Active Bot condition
         phoneIndex !== -1 ? contact.phoneIndex === phoneIndex :
         contactTags.includes(tagLower)) &&
         (tagLower !== 'all' && tagLower !== 'unassigned' ? contact.unreadCount && contact.unreadCount > 0 : true)
       );
     }).length;
-
-    // ... rest of the code
 
     return (
       <button
@@ -5554,7 +6478,8 @@ console.log(prompt);
         <span>{tagName}</span>
         {userData?.role === '1' && unreadCount > 0 && (
           <span className={`ml-2 px-1.5 py-0.5 rounded-full text-xs ${
-            tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' : 'bg-primary'
+            tagName.toLowerCase() === 'stop bot' ? 'bg-red-700' :
+            tagName.toLowerCase() === 'active bot' ? 'bg-green-700' : 'bg-primary'
           } text-white`}>
             {unreadCount}
           </span>
@@ -5573,8 +6498,15 @@ console.log(prompt);
   <div className="bg-gray-100 dark:bg-gray-900 flex-1 overflow-y-scroll h-full" ref={contactListRef}>
   {paginatedContacts.length === 0 ? ( // Check if paginatedContacts is empty
     <div className="flex items-center justify-center h-full">
-    {loadingMessage && <span className="text-gray-500 dark:text-gray-400 ml-2">{loadingMessage}</span>}
-  </div>
+      {paginatedContacts.length === 0 && (
+        <div className="flex flex-col items-center">
+          <div>
+            <Lucide icon="MessageCircle" className="h-10 w-10 text-gray-500 dark:text-gray-400 mb-2" />
+          </div>
+          <div className="text-gray-500 text-2xl dark:text-gray-400 mt-2">No contacts found</div>
+        </div>
+      )}
+    </div>
   ) : ((paginatedContacts).map((contact, index) => (
     <React.Fragment key={`${contact.id}-${index}` || `${contact.phone}-${index}`}>
     <div
@@ -5597,36 +6529,38 @@ console.log(prompt);
     >
     </div>
     <div className="relative w-14 h-14">
-    <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
-    {contact && (
-      contact.chat_id && contact.chat_id.includes('@g.us') ? (
-        contact.profilePicUrl ? (
-          <img 
-            src={contact.profilePicUrl} 
-            alt={contact.contactName || "Group"} 
-            className="w-full h-full object-cover"
-          />
-        ) : (
-          <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
-        )
-      ) : contact.profilePicUrl ? (
-        <img 
-          src={contact.profilePicUrl} 
-          alt={contact.contactName || "Profile"} 
-          className="w-full h-full object-cover"
-        />
-      ) : (
-        <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
-          {<Lucide icon="User" className="w-10 h-10" />}
-        </div>
-      )
-    )}
+    <div className="flex items-center space-x-3">
+      <div className="w-14 h-14 bg-gray-400 dark:bg-gray-600 rounded-full flex items-center justify-center text-white text-xl overflow-hidden">
+        {contact && (
+          contact.chat_id && contact.chat_id.includes('@g.us') ? (
+            contact.profilePicUrl ? (
+              <img 
+                src={contact.profilePicUrl} 
+                alt={contact.contactName || "Group"} 
+                className="w-full h-full object-cover"
+              />
+            ) : (
+              <Lucide icon="Users" className="w-8 h-8 text-white dark:text-gray-200" />
+            )
+          ) : contact.profilePicUrl ? (
+            <img 
+              src={contact.profilePicUrl} 
+              alt={contact.contactName || "Profile"} 
+              className="w-full h-full object-cover"
+            />
+          ) : (
+            <div className="w-full h-full flex items-center justify-center bg-gray-400 dark:bg-gray-600 text-white">
+              {<Lucide icon="User" className="w-10 h-10" />}
+            </div>
+          )
+        )}
+      </div>
+      {(contact.unreadCount ?? 0) > 0 && (
+        <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
+          {contact.unreadCount}
+        </span>
+      )}
     </div>
-    {(contact.unreadCount ?? 0) > 0 && (
-      <span className="absolute -top-1 -right-1 bg-primary text-white dark:bg-blue-600 dark:text-gray-200 text-xs rounded-full px-2 py-1 min-w-[20px] h-[20px] flex items-center justify-center">
-        {contact.unreadCount}
-      </span>
-    )}
   </div>
       <div className="flex-1 min-w-0">
         <div className="flex justify-between items-center">
@@ -5635,7 +6569,7 @@ console.log(prompt);
               {((contact.contactName ?? contact.firstName ?? contact.phone ?? "").slice(0, 20))}
               {((contact.contactName ?? contact.firstName ?? contact.phone ?? "").length > 20 ? '...' : '')}
             </span>
-            {!contact.chat_id?.includes('@g.us') && userData?.role === '1' && (
+            {!contact.chat_id?.includes('@g.us') && (userData?.role === '1' || userData?.role === '2') && (
               <span className="text-xs text-gray-600 dark:text-gray-400 truncate" style={{ 
                 visibility: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'hidden' : 'visible',
                 display: (contact.contactName === contact.phone || contact.firstName === contact.phone) ? 'flex' : 'block',
@@ -5683,9 +6617,9 @@ console.log(prompt);
                     </svg>
                   )}
                   </button>
-                    {uniqueTags.length > 0 && (
+                    {uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length > 0 && (
                       <Tippy
-                        content={uniqueTags.join(', ')}
+                        content={uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').map(tag => tag.charAt(0).toUpperCase() + tag.slice(1)).join(', ')}
                         options={{ 
                           interactive: true,
                           appendTo: () => document.body
@@ -5693,7 +6627,7 @@ console.log(prompt);
                       >
                         <span className="bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
                           <Lucide icon="Tag" className="w-4 h-4 inline-block" />
-                          <span className="ml-1">{uniqueTags.length}</span>
+                          <span className="ml-1">{uniqueTags.filter(tag => tag.toLowerCase() !== 'stop bot').length}</span>
                         </span>
                       </Tippy>
                     )}
@@ -5710,7 +6644,7 @@ console.log(prompt);
                       >
                         <span className="bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200 text-xs font-semibold mr-1 px-2.5 py-0.5 rounded-full cursor-pointer">
                           <Lucide icon="Users" className="w-4 h-4 inline-block" />
-                          <span className="ml-1 text-xxs">
+                          <span className="ml-1 text-xxs capitalize">
                             {employeeTags.length === 1 
                               ? (employeeList.find(e => e.name.toLowerCase() === employeeTags[0].toLowerCase())?.employeeId || 
                                  (employeeTags[0].length > 8 ? employeeTags[0].slice(0, 6) : employeeTags[0]))
@@ -5857,11 +6791,11 @@ console.log(prompt);
     <Lucide icon="Send" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
   </span>
 </button>
-            <button className="p-2 m-0 !box" onClick={handleReminderClick}>
+            {/* <button className="p-2 m-0 !box" onClick={handleReminderClick}>
               <span className="flex items-center justify-center w-5 h-5">
                 <Lucide icon="BellRing" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
               </span>
-            </button>
+            </button> */}
             <Menu as="div" className="relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
                 <span className="flex items-center justify-center w-5 h-5">
@@ -5869,33 +6803,52 @@ console.log(prompt);
                 </span>
               </Menu.Button>
               <Menu.Items className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
-  <div className="mb-2">
-    <input
-      type="text"
-      placeholder="Search employees..."
-      value={employeeSearch}
-      onChange={(e) => setEmployeeSearch(e.target.value)}
-      className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-    />
-  </div>
-  {employeeList
-    .filter(employee => employee.name.toLowerCase().includes(employeeSearch.toLowerCase()))
-    .map((employee) => (
-      <Menu.Item key={employee.id}>
-        <button
-          className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-          onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-        >
-          <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
-            {employee.name}
-          </span>
-          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
-            Leads Quota: {employee.quotaLeads}
-          </span>
-        </button>
-      </Menu.Item>
-    ))}
-</Menu.Items>
+                <div className="mb-2">
+                  <input
+                    type="text"
+                    placeholder="Search employees..."
+                    value={employeeSearch}
+                    onChange={(e) => setEmployeeSearch(e.target.value)}
+                    className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                  />
+                </div>
+                {employeeList
+                  .filter(employee => {
+                    if (userRole === '4') {
+                      if (userData?.group) {
+                        return employee.role === '2' && 
+                              employee.group === userData.group && 
+                              employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      } else {
+                        return employee.role === '2' && 
+                              employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                      }
+                    } else if (userRole === '1' || userRole === '5') {
+                      return employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                    } else if (userRole === '2' || userRole === '3') {
+                      return employee.role === userRole && 
+                            employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                    }
+                    return false;
+                  })
+                  .map((employee) => {
+                    return (
+                      <Menu.Item key={employee.id}>
+                        <button
+                          className="flex items-center justify-between w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                          onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                        >
+                          <span className="text-gray-800 dark:text-gray-200 truncate flex-grow mr-2" style={{ maxWidth: '70%' }}>
+                            {employee.name}
+                          </span>
+                          <span className="text-xs text-gray-500 dark:text-gray-400 whitespace-nowrap">
+                            Leads Quota: {employee.quotaLeads}
+                          </span>
+                        </button>
+                      </Menu.Item>
+                    );
+                  })}
+              </Menu.Items>
             </Menu>
             <Menu as="div" className="relative inline-block text-left">
               <Menu.Button as={Button} className="p-2 !box m-0">
@@ -5937,50 +6890,59 @@ console.log(prompt);
               </span>
             </Menu.Button>
             <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-              <Menu.Item>
+              {/* <Menu.Item>
                 <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md" onClick={handleReminderClick}>
                   <Lucide icon="BellRing" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
                   <span className="text-gray-800 dark:text-gray-200">Reminder</span>
                 </button>
-              </Menu.Item>
+              </Menu.Item> */}
               <Menu.Item>
-  <Menu as="div" className="relative inline-block text-left w-full">
-    <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-      <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
-      <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
-    </Menu.Button>
-    <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
-      <div className="mb-2">
-        <input
-          type="text"
-          placeholder="Search employees..."
-          value={employeeSearch}
-          onChange={(e) => setEmployeeSearch(e.target.value)}
-          className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-        />
-      </div>
-      {employeeList
-        .filter(employee => employee.name.toLowerCase().includes(employeeSearch.toLowerCase()))
-        .map((employee) => (
-          <Menu.Item key={employee.id}>
-            <button
-              className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
-              onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
-            >
-              <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
-            </button>
-          </Menu.Item>
-        ))}
-    </Menu.Items>
-  </Menu>
-</Menu.Item>
+                <Menu as="div" className="relative inline-block text-left w-full">
+                  <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                    <Lucide icon="Users" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
+                    <span className="text-gray-800 dark:text-gray-200">Assign Employee</span>
+                  </Menu.Button>
+                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 overflow-y-auto max-h-96">
+                    <div className="mb-2">
+                      <input
+                        type="text"
+                        placeholder="Search employees..."
+                        value={employeeSearch}
+                        onChange={(e) => setEmployeeSearch(e.target.value)}
+                        className="w-full px-2 py-1 text-sm border rounded focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+                      />
+                    </div>
+                    {employeeList
+                      .filter(employee => {
+                        if (userRole === '4' || userRole === '2') {
+                          const shouldInclude = employee.role === '2' && employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                          return shouldInclude;
+                        }
+                        const shouldInclude = employee.name.toLowerCase().includes(employeeSearch.toLowerCase());
+                        return shouldInclude;
+                      })
+                      .map((employee) => {
+                        return (
+                          <Menu.Item key={employee.id}>
+                            <button
+                              className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md"
+                              onClick={() => handleAddTagToSelectedContacts(employee.name, selectedContact)}
+                            >
+                              <span className="text-gray-800 dark:text-gray-200">{employee.name}</span>
+                            </button>
+                          </Menu.Item>
+                        );
+                      })}
+                  </Menu.Items>
+                </Menu>
+              </Menu.Item>
               <Menu.Item>
                 <Menu as="div" className="relative inline-block text-left w-full">
                   <Menu.Button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
                     <Lucide icon="Tag" className="w-4 h-4 mr-2 text-gray-800 dark:text-gray-200" />
                     <span className="text-gray-800 dark:text-gray-200">Add Tag</span>
                   </Menu.Button>
-                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10">
+                  <Menu.Items className="absolute right-0 mt-2 w-40 bg-white dark:bg-gray-800 shadow-lg rounded-md p-2 z-10 max-h-60 overflow-y-auto">
                     {tagList.map((tag) => (
                       <Menu.Item key={tag.id}>
                         <button
@@ -6024,7 +6986,7 @@ console.log(prompt);
               <div role="status">
                 <div className="flex flex-col items-center justify-end col-span-6 sm:col-span-3 xl:col-span-2">
                   <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Data...</div>
+                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Conversation...</div>
                 </div>
               </div>
             </div>
@@ -6097,6 +7059,18 @@ console.log(prompt);
                       onMouseEnter={() => setHoveredMessageId(message.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
+                      {/* {hoveredMessageId === message.id && (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setReactionMessage(message);
+                            setShowReactionPicker(true);
+                          }}
+                          className="absolute top-0 right-0 -mt-2 -mr-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        >
+                          <Lucide icon="Smile" className="w-5 h-5 text-gray-600 dark:text-gray-400" />
+                        </button>
+                      )} */}
                       {message.isPrivateNote && (
                         <div className="flex items-center mb-1">
                           <Lock size={16} className="mr-1" />
@@ -6112,14 +7086,54 @@ console.log(prompt);
                         </div>
                       )}
                       {message.type === 'text' && message.text?.context && (
-                        <div className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800">
+                        <div 
+                          className="p-2 mb-2 rounded bg-gray-200 dark:bg-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-700"
+                          onClick={() => {
+                            const quotedMessageId = message.text?.context?.quoted_message_id;
+                            const quotedContent = message.text?.context?.quoted_content?.body;
+
+                            // First try by ID if available
+                            if (quotedMessageId) {
+                              scrollToMessage(quotedMessageId);
+                              const element = messageListRef.current?.querySelector(`[data-message-id="${quotedMessageId}"]`);
+                              if (element) {
+                                element.classList.add('highlight-message');
+                                setTimeout(() => {
+                                  element.classList.remove('highlight-message');
+                                }, 2000);
+                                return;
+                              }
+                            }
+
+                            // If ID not found or no match, search by content
+                            if (quotedContent) {
+                              const matchingMessage = messages.find(msg => 
+                                msg.type === 'text' && 
+                                msg.text?.body === quotedContent
+                              );
+
+                              if (matchingMessage) {
+                                scrollToMessage(matchingMessage.id);
+                                const element = messageListRef.current?.querySelector(`[data-message-id="${matchingMessage.id}"]`);
+                                if (element) {
+                                  element.classList.add('highlight-message');
+                                  setTimeout(() => {
+                                    element.classList.remove('highlight-message');
+                                  }, 2000);
+                                }
+                              }
+                            }
+                          }}
+                        >
                           <div 
                             className="text-sm font-medium" 
                             style={{ color: getAuthorColor(message.text.context.quoted_author) }}
                           >
                             {message.text.context.quoted_author || ''}
                           </div>
-                          <div className="text-sm text-gray-700 dark:text-gray-300">{message.text.context.quoted_content?.body || ''}</div>
+                          <div className="text-sm text-gray-700 dark:text-gray-300">
+                            {message.text.context.quoted_content?.body || ''}
+                          </div>
                         </div>
                       )}
                        {/* {message.chat_id && message.chat_id.includes('@g') && message.phoneIndex != null && phoneCount >= 2 && (
@@ -6175,8 +7189,8 @@ console.log(prompt);
                             }}
                           />
                             {message.image?.caption && (
-                <p className="mt-2 text-sm">{message.image.caption}</p>
-              )}
+                              <p className="mt-2 text-sm">{message.image.caption}</p>
+                            )}
                         </div>
                       )}
                       {message.type === 'video' && message.video && (
@@ -6345,19 +7359,24 @@ console.log(prompt);
                           )}
                         </div>
                       )}
+
+                      {showReactionPicker && reactionMessage?.id === message.id && (
+                        <ReactionPicker
+                          onSelect={(emoji) => handleReaction(message, emoji)}
+                          onClose={() => setShowReactionPicker(false)}
+                        />
+                      )}
                       {message.reactions && message.reactions.length > 0 && (
-                        <div className="flex items-center space-x-2 mt-1">
-                          {message.reactions.map((reaction, index) => (
-                            <div key={index} className="text-gray-500 dark:text-gray-400 text-sm flex items-center space-x-1">
-                              <span
-                                className="inline-flex items-center justify-center border border-white rounded-full bg-gray-200 dark:bg-gray-700"
-                                style={{ padding: '10px' }}
-                              >
-                                {reaction.emoji}
-                              </span>
-            </div>
-          ))}
-        </div>
+                        <div className="flex flex-wrap gap-1 mt-1 rounded-full px-2 py-0.5 w-fit">
+                          {message.reactions.map((reaction: any, index: number) => (
+                            <span 
+                              key={index}
+                              className="text-lg"
+                            >
+                              {reaction.emoji}
+                            </span>
+                          ))}
+                        </div>
                       )}
                       <div className="flex justify-between items-center mt-1">
                       
@@ -6365,11 +7384,25 @@ console.log(prompt);
                           <div className="flex items-center mr-2">
                             {(hoveredMessageId === message.id || selectedMessages.includes(message)) && (
                               <>
-                                <input type="checkbox" className="form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
-                                <button className="ml-2 text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageSquare" className="w-5 h-5 fill-current" /></button>
-                                {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-black hover:text-black dark:text-gray-300 dark:hover:text-black transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                <button className="ml-2 text-white hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
+                                <button 
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setReactionMessage(message);
+                                    setShowReactionPicker(true);
+                                  }}
+                                  className="mr-2 p-1 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300"
+                                ><Lucide icon="Heart" className="w-6 h-6" /></button>
+                                {showReactionPicker && reactionMessage?.id === message.id && (
+                                  <ReactionPicker
+                                    onSelect={(emoji) => handleReaction(message, emoji)}
+                                    onClose={() => setShowReactionPicker(false)}
+                                  />
                                 )}
+                                {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
+                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                )}
+                                <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
@@ -6767,7 +7800,9 @@ console.log(prompt);
                           if (reply.image) {
                             const imageFile = new File([reply.image], "image.png", { type: "image/png" });
                             const imageUrl = URL.createObjectURL(imageFile);
-                            setPastedImageUrl(imageUrl);
+                            console.log("reply image:", JSON.stringify(reply, null, 2));
+                            setPastedImageUrl(reply.image);
+                            setDocumentCaption(reply.text);
                             setImageModalOpen2(true);
                           }
                           if (reply.document) {
@@ -6884,8 +7919,8 @@ console.log(prompt);
   ) : (
     <div className="hidden md:flex flex-col w-full h-full bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 items-center justify-center">
       <div className="flex flex-col items-center justify-center p-8 rounded-lg shadow-lg bg-gray-100 dark:bg-gray-700">
-        <Lucide icon="MessageSquare" className="w-16 h-16 text-blue-500 dark:text-blue-400 mb-4" />
-        <p className="text-gray-700 dark:text-gray-300 text-lg text-center mb-6">Select a chat to start messaging</p>
+        <Lucide icon="MessageSquare" className="w-16 h-16 text-black dark:text-white mb-4" />
+        <p className="text-black dark:text-white text-lg text-center mb-6">Select a chat to start messaging</p>
         <button
           onClick={openNewChatModal}
           className="bg-primary hover:bg-primary-dark text-white font-bold py-2 px-4 rounded transition duration-200"
@@ -6975,6 +8010,7 @@ console.log(prompt);
     </span>
   )}
 </div>
+
           <div className="flex flex-col">
             {isEditing ? (
               <div className="flex items-center">
@@ -7046,15 +8082,81 @@ console.log(prompt);
               )}
             </div>
           </div>
+          
           <div className="p-4">
+              {/* Phone Index Selector */}
+              <div className="mb-4 flex justify-between items-center">
+    <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
+    <select
+      value={selectedContact.phoneIndex ?? 0}
+      onChange={async (e) => {
+        const newPhoneIndex = parseInt(e.target.value);
+        // Update local state
+        setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
+        const user = auth.currentUser;
+        const docUserRef = doc(firestore, 'user', user?.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) {
+          console.log('No such document for user!');
+          return;
+        }
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+        // Update Firestore
+        try {
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+          await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
+          toast.success('Phone updated successfully');
+        } catch (error) {
+          console.error('Error updating phone:', error);
+          toast.error('Failed to update phone');
+          // Revert local state on error
+          setSelectedContact({ ...selectedContact });
+        }
+      }}
+      className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
+    >
+      {Object.entries(phoneNames).map(([index, name]) => (
+        <option key={index} value={index}>
+          {name}
+        </option>
+      ))}
+    </select>
+  </div>
             <div className="grid grid-cols-2 gap-4">
+
               {[
-                { label: "First Name", key: "contactName" },
-                { label: "Last Name", key: "lastName" },
-                { label: "Email", key: "email" },
-                { label: "Company", key: "companyName" },
-                { label: "Address", key: "address1" },
-                { label: "Website", key: "website" }
+                  { label: "First Name", key: "contactName" },
+                  { label: "Last Name", key: "lastName" },
+                  { label: "Email", key: "email" },
+                  { label: "Phone", key: "phone" },
+                  { label: "Company", key: "companyName" },
+                  { label: "Address", key: "address1" },
+                  { label: "Website", key: "website" },
+                  ...(userData?.companyId === '095' ? [
+                    { label: "Country", key: "country" },
+                    { label: "Nationality", key: "nationality" },
+                    { label: "Highest Education", key: "highestEducation" },
+                    { label: "Program of Study", key: "programOfStudy" },
+                    { label: "Intake Preference", key: "intakePreference" },
+                    { label: "English Proficiency", key: "englishProficiency" },
+                    { label: "Passport Validity", key: "passport" },
+                  ] : []),
+                  ...((['079', '001'].includes(userData?.companyId ?? '')) ? [
+                    { label: "IC", key: "ic" },
+                    { label: "Points", key: "points" },
+                    { label: "Branch", key: "branch" },
+                    { label: "Expiry Date", key: "expiryDate" },
+                    { label: "Vehicle Number", key: "vehicleNumber" },
+                  ] : []),
+                  ...(userData?.companyId === '001' ? [
+                    { label: "Assistant ID", key: "assistantId" },
+                    { label: "Thread ID", key: "threadid" },
+                  ] : []),
+                  ...(selectedContact.customFields ? Object.entries(selectedContact.customFields).map(([key, value]) => (
+                    { label: key, key: `customFields.${key}`, isCustom: true }
+                  )) : []),
+                  
               ].map((item, index) => (
                 <div key={index} className="col-span-1">
                   <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">{item.label}</p>
@@ -7105,7 +8207,10 @@ console.log(prompt);
               {selectedContact && selectedContact.tags && selectedContact.tags.length > 0 ? (
                 <>
                   {selectedContact.tags
-                    .filter((tag: string) => !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()))
+                    .filter((tag: string) => 
+                      tag.toLowerCase() !== 'stop bot' && 
+                      !employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase())
+                    )
                     .map((tag: string, index: number) => (
                       <div key={index} className="inline-flex items-center bg-blue-100 dark:bg-blue-800 text-blue-800 dark:text-blue-200 text-sm font-semibold px-3 py-1 rounded-full border border-blue-400 dark:border-blue-600">
                         <span>{tag}</span>
@@ -7184,7 +8289,7 @@ console.log(prompt);
   initialCaption={documentCaption}
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
-      <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage} />
+      <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage}  initialCaption={documentCaption} />
 
       <ToastContainer
         position="top-right"
@@ -7208,53 +8313,57 @@ console.log(prompt);
         >
           Snooze/Unsnooze
         </Item>
+        <Separator />
+        <Item onClick={({ props }) => props.isResolved ? props.onUnresolve(props.contact) : props.onResolve(props.contact)}>
+          Resolve/Unresolve
+        </Item>
       </ContextMenu>
       {isReminderModalOpen && (
-  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsReminderModalOpen(false)}>
-    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
-      <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Set Reminder</h2>
-      <textarea
-        placeholder="Enter reminder message..."
-        className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700 mb-4"
-        rows={3}
-        onChange={(e) => setReminderText(e.target.value)}
-        value={reminderText}
-      />
-      <div className="mb-4">
-        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-          Reminder Date and Time
-        </label>
-        <DatePicker
-          selected={reminderDate}
-          onChange={(date: Date) => setReminderDate(date)}
-          showTimeSelect
-          timeFormat="HH:mm"
-          timeIntervals={15}
-          dateFormat="MMMM d, yyyy h:mm aa"
-          className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700"
-          placeholderText="Select date and time"
-        />
-      </div>
-      <div className="flex justify-end space-x-2 mt-4">
-        <button
-          onClick={() => {
-            setIsReminderModalOpen(false);
-            setReminderText('');
-          }}
-          className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-500 transition duration-200"
-        >
-          Cancel
-        </button>
-        <button
-          onClick={() => handleSetReminder(reminderText)}
-          className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded transition duration-200"
-        >
-          Set Reminder
-        </button>
-      </div>
-    </div>
-  </div>
-)}
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50" onClick={() => setIsReminderModalOpen(false)}>
+          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Set Reminder</h2>
+            <textarea
+              placeholder="Enter reminder message..."
+              className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700 mb-4"
+              rows={3}
+              onChange={(e) => setReminderText(e.target.value)}
+              value={reminderText}
+            />
+            <div className="mb-4">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                Reminder Date and Time
+              </label>
+              <DatePicker
+                selected={reminderDate}
+                onChange={(date: Date) => setReminderDate(date)}
+                showTimeSelect
+                timeFormat="HH:mm"
+                timeIntervals={15}
+                dateFormat="MMMM d, yyyy h:mm aa"
+                className="w-full md:w-96 lg:w-120 p-2 border rounded text-gray-800 dark:text-gray-200 bg-white dark:bg-gray-700"
+                placeholderText="Select date and time"
+              />
+            </div>
+            <div className="flex justify-end space-x-2 mt-4">
+              <button
+                onClick={() => {
+                  setIsReminderModalOpen(false);
+                  setReminderText('');
+                }}
+                className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded hover:bg-gray-400 dark:hover:bg-gray-500 transition duration-200"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSetReminder(reminderText)}
+                className="px-4 py-2 bg-primary hover:bg-primary-dark text-white rounded transition duration-200"
+              >
+                Set Reminder
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -7263,16 +8372,22 @@ interface ImageModalProps2 {
   onClose: () => void;
   imageUrl: string;
   onSend: (url: string | null, caption: string) => void;
+  initialCaption?: string; // Add this line
 }
 
-const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, onSend }) => {
-  const [caption, setCaption] = useState('');
+const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, onSend, initialCaption }) => {
+  const [caption, setCaption] = useState(initialCaption); // Initialize with initialCaption
+
+  useEffect(() => {
+    // Update caption when initialCaption changes
+    setCaption(initialCaption || "" );
+  }, [initialCaption]);
 
 
   const handleSendClick = () => {
     setCaption('');
-    onSend(imageUrl, caption);
-   onClose(); // Close the modal after sending
+    onSend(imageUrl, caption || ''); // Provide empty string fallback for caption
+    onClose(); // Close the modal after sending
   };
 
   if (!isOpen) return null;

@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from "react";
 import { getAuth, User, onAuthStateChanged, setPersistence, browserLocalPersistence } from "firebase/auth";
 import {orderBy, getFirestore, doc, getDoc, collection, getDocs,setDoc,query, startAfter, limit, QueryDocumentSnapshot, DocumentData ,Query,CollectionReference} from "firebase/firestore";
 import { initializeApp } from "firebase/app";
@@ -54,6 +54,8 @@ interface Contact {
   city?: string | null;
   companyName?: string | null;
   threadid?: string;
+  phoneIndex?: number;
+  firstName?: string | null;
 }
 
 const app = initializeApp(firebaseConfig);
@@ -63,11 +65,14 @@ const auth = getAuth(app);
 setPersistence(auth, browserLocalPersistence);
 
 interface ContactsContextProps {
-  contacts: any[];
+  contacts: Contact[];
+  filteredContacts: Contact[];  // Add this
   isLoading: boolean;
   refetchContacts: () => Promise<void>;
-  dataUser: any | null;  // Add this line
-  companyData: any | null;  // Add this line
+  dataUser: any | null;
+  companyData: any | null;
+  setSearchQuery: (query: string) => void;  // Add this
+  setActiveTags: (tags: string[]) => void;  // Add this
 }
 
 const ContactsContext = createContext<ContactsContextProps | undefined>(undefined);
@@ -78,22 +83,26 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
   const [v2, setV2] = useState<boolean | undefined>(undefined);
   const [dataUser, setDataUser] = useState<any | null>(null);  // Add this line
   const [companyData, setCompanyData] = useState<any | null>(null);  // Add this line
+  const [searchQuery, setSearchQuery] = useState('');
+  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
+  const [employeeList, setEmployeeList] = useState<Array<{name: string}>>([]);
   const navigate = useNavigate();
   const location = useLocation();
 
   const fetchContacts = async (user: User) => {
     try {
       setIsLoading(true);
-    
-      // Clear all localStorage and sessionStorage data
-      sessionStorage.removeItem('contactsFetched');
-      sessionStorage.removeItem('contacts');
-      localStorage.removeItem('contacts');
-      Object.keys(sessionStorage).forEach(key => {
-        if (key.startsWith('messages_')) {
-          sessionStorage.removeItem(key);
-        }
-      });
+      
+      const storedContacts = localStorage.getItem('contacts');
+      if (storedContacts) {
+        const parsedContacts = JSON.parse(LZString.decompress(storedContacts)!);
+        setContacts(parsedContacts);
+        setIsLoading(false);
+        return;
+      }
+  
+      // If no stored contacts, fetch from Firestore (existing code)
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
@@ -102,89 +111,56 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
       }
     
       const dataUser = docUserSnapshot.data();
-      setDataUser(dataUser);  // Add this line
+      setDataUser(dataUser);
       const companyId = dataUser?.companyId;
       if (!companyId) {
         setIsLoading(false);
         return;
       }
-
+  
       // Check for v2
       const companyDocRef = doc(firestore, 'companies', companyId);
       const companyDocSnapshot = await getDoc(companyDocRef);
       if (companyDocSnapshot.exists()) {
         const companyData = companyDocSnapshot.data();
-        setCompanyData(companyData);  // Add this line
+        setCompanyData(companyData);
+        setEmployeeList(companyData.employees || []);
         setV2(companyData.v2 || false);
         if (companyData.v2) {
-          // If v2 is true, navigate to loading page and return
-          if (location.pathname.includes('/chat')) {
-            
-          }
-          else{
+          if (!location.pathname.includes('/chat')) {
             navigate('/loading');
             return;
           }
-       
         }
       }
-    
-      // Fetch 200 contacts with the latest last message timestamp
-      const contactLimit = 200;
-      let allContacts: Contact[] = [];
-    
+  
+      // Fetch all contacts without pagination
       const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`) as CollectionReference<DocumentData>;
-      const queryRef = query(
-        contactsCollectionRef,
-        orderBy('last_message.timestamp', 'desc'),
-        //limit(contactLimit)
-      );
-    
-      const contactsSnapshot = await getDocs(queryRef);
-      allContacts = contactsSnapshot.docs.map(doc => {
-        const data = doc.data();
-        return {
-          ...data,
-          id: doc.id,
-          additionalEmails: data.additionalEmails || [],
-          address1: data.address1 || null,
-          assignedTo: data.assignedTo || null,
-          businessId: data.businessId || null,
-          chat: data.chat || {},
-          name: data.name || '',
-          not_spam: data.not_spam || false,
-          timestamp: data.timestamp || 0,
-          type: data.type || '',
-          city: data.city || null,
-          companyName: data.companyName || null,
-          threadid: data.threadid || '',
-          unreadCount: data.unreadCount || 0,
-        } as Contact;
-      });
-
-      // Sort contactsData by pinned status
+      const contactsSnapshot = await getDocs(contactsCollectionRef);
+      
+      let allContacts: Contact[] = contactsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
+  
+      // Sort contactsData by pinned status and last_message timestamp
       allContacts.sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        return 0;
+        const dateA = a.last_message?.createdAt
+          ? new Date(a.last_message.createdAt)
+          : a.last_message?.timestamp
+            ? new Date(a.last_message.timestamp * 1000)
+            : new Date(0);
+        const dateB = b.last_message?.createdAt
+          ? new Date(b.last_message.createdAt)
+          : b.last_message?.timestamp
+            ? new Date(b.last_message.timestamp * 1000)
+            : new Date(0);
+        return dateB.getTime() - dateA.getTime();
       });
-    
+  
       console.log("Fetched contacts:", allContacts.length);
-    
       setContacts(allContacts);
-
-      // Fetch and store formatted messages for each contact
-      /*for (const contact of allContacts) {
-        try {
-          const rawMessages = await fetchMessagesFromFirebase(companyId, contact.chat_id);
-          const formattedMessages = formatMessages(rawMessages);
-          
-          // Store formatted messages in sessionStorage
-          sessionStorage.setItem(`messages_${contact.chat_id}`, LZString.compress(JSON.stringify(formattedMessages)));
-        } catch (messageError) {
-          console.warn(`Failed to fetch or store messages for contact ${contact.chat_id}:`, messageError);
-        }
-      }*/
+      localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
+  
     } catch (error) {
       console.error('Error fetching contacts:', error);
     } finally {
@@ -255,8 +231,103 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
     return () => unsubscribe();
   };
 
+  // Consolidated sorting function
+  const sortContacts = (contacts: Contact[]) => {
+    return contacts.sort((a, b) => {
+      if (a.pinned && !b.pinned) return -1;
+      if (!a.pinned && b.pinned) return 1;
+      
+      const timestampA = a.last_message?.timestamp 
+        ? new Date(a.last_message.timestamp).getTime() 
+        : 0;
+      const timestampB = b.last_message?.timestamp 
+        ? new Date(b.last_message.timestamp).getTime() 
+        : 0;
+      
+      return timestampB - timestampA;
+    });
+  };
+
+  // Consolidated filtering function
+  const filterContacts = useCallback((contactsToFilter: Contact[]) => {
+    let filtered = contactsToFilter;
+    const activeTag = activeTags[0]?.toLowerCase();
+
+    // Filter by user role
+    if (dataUser?.role === "3") {
+      filtered = filtered.filter(contact => 
+        contact.assignedTo?.toLowerCase() === dataUser?.name?.toLowerCase() ||
+        contact.tags?.some(tag => tag.toLowerCase() === dataUser?.name?.toLowerCase())
+      );
+    }
+
+    // Filter by phone index if user has assigned phone
+    if (dataUser?.phone !== undefined && dataUser.phone !== -1) {
+      const userPhoneIndex = parseInt(dataUser.phone, 10);
+      filtered = filtered.filter(contact => contact.phoneIndex === userPhoneIndex);
+    }
+
+    // Apply tag filters
+    if (activeTags.length > 0) {
+      filtered = filtered.filter((contact) => {
+        switch (activeTag) {
+          case 'all':
+            return !contact.tags?.includes('snooze');
+          case 'unread':
+            return contact.unreadCount > 0 && !contact.tags?.includes('snooze');
+          case 'mine':
+            return contact.tags?.some(t => t.toLowerCase() === dataUser?.name?.toLowerCase()) 
+              && !contact.tags?.includes('snooze');
+          case 'unassigned':
+            return !contact.assignedTo && !contact.tags?.some(tag => 
+              employeeList?.some(employee => 
+                employee.name.toLowerCase() === tag.toLowerCase()
+              )
+            );
+          case 'snooze':
+            return contact.tags?.includes('snooze');
+          case 'group':
+            return contact.chat_id?.endsWith('@g.us');
+          default:
+            // Check if tag matches phone names or custom tags
+            return contact.tags?.includes(activeTag);
+        }
+      });
+    }
+
+    // Apply search filter
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter((contact) =>
+        contact.contactName?.toLowerCase().includes(query) ||
+        contact.firstName?.toLowerCase().includes(query) ||
+        contact.phone?.toLowerCase().includes(query) ||
+        contact.tags?.some(tag => tag.toLowerCase().includes(query))
+      );
+    }
+
+    return sortContacts(filtered);
+  }, [activeTags, searchQuery, dataUser, employeeList]);
+
+  // Apply filtering when contacts or filter criteria change
+  useEffect(() => {
+    if (contacts.length > 0) {
+      const filtered = filterContacts(contacts);
+      setFilteredContacts(filtered);
+    }
+  }, [contacts, filterContacts]);
+
   return (
-    <ContactsContext.Provider value={{ contacts, isLoading, refetchContacts, dataUser, companyData }}>
+    <ContactsContext.Provider value={{ 
+      contacts, 
+      filteredContacts,
+      isLoading, 
+      refetchContacts, 
+      dataUser, 
+      companyData,
+      setSearchQuery,
+      setActiveTags
+    }}>
       {children}
     </ContactsContext.Provider>
   );

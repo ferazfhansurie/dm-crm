@@ -140,13 +140,7 @@ function Main() {
   
       setCompanyName(data.companyName); // Set companyName
   
-      // Fetch notifications from the notifications subcollection
-      const notificationsRef = collection(firestore, 'user', userEmail, 'notifications');
-      const notificationsSnapshot = await getDocs(notificationsRef);
-      const notifications = notificationsSnapshot.docs.map((doc: { data: () => DocumentData; }) => doc.data());
-  
-      // Update state with the fetched notifications
-      setNotifications(notifications);
+
     } catch (error) {
       console.error('Error fetching config:', error);
       throw error;

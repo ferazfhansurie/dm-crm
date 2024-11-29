@@ -15,11 +15,7 @@ const menu: Array<Menu | "divider"> = [
     pathname: "/crud-data-list",
     title: "Contacts",
   },
-  {
-    icon: "Globe",
-    pathname: "/opp",
-    title: "Opportunities",
-  },
+
   {
     icon: "AreaChart",
     pathname: "/dashboard",
@@ -46,7 +42,12 @@ const menu: Array<Menu | "divider"> = [
       title: "Users",
       pathname: "/users-layout-2",
     },
+   
   /* {
+      icon: "Database",
+      pathname: "/database-manager",
+      title: "Database Manager",
+    }, {
       icon: "Trello",
       title: "Profile",
       pathname: "/dashboard/profile-overview-1",

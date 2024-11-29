@@ -85,6 +85,9 @@ function LoadingPage2() {
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [isPairingCodeLoading, setIsPairingCodeLoading] = useState(false);
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
+
+  const [loadingPhase, setLoadingPhase] = useState<string>('initializing');
+  const [loadingProgress, setLoadingProgress] = useState(0);
   
   const fetchQRCode = async () => {
     const auth = getAuth(app);
@@ -243,109 +246,110 @@ function LoadingPage2() {
   }, [contactsFetched, fetchedChats, totalChats, contacts, navigate]);
 
   const fetchContacts = async () => {
-    console.log("fetchContacts function called");
     try {
-      setIsLoading(true);
+      setLoadingPhase('fetching_contacts');
       const user = auth.currentUser;
-      if (!user) {
-        throw new Error("No authenticated user found");
-      }
+      if (!user) throw new Error("No authenticated user found");
 
+      // Get company ID
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        setIsLoading(false);
-        return;
+        throw new Error("User document not found");
       }
-    
+
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser?.companyId;
-      if (!companyId) {
-        setIsLoading(false);
-        return;
-      }
-    
-      // Pagination settings
-      const batchSize = 4000;
-      let lastVisible: QueryDocumentSnapshot<DocumentData> | undefined = undefined;
-      const phoneSet = new Set<string>();
+      if (!companyId) throw new Error("Company ID not found");
+
+      // Fetch contacts with progress tracking
+      const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsSnapshot = await getDocs(contactsCollectionRef);
       let allContacts: Contact[] = [];
-    
-      // Fetch contacts in batches
-      while (true) {
-        let queryRef: Query<DocumentData>;
-        const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`) as CollectionReference<DocumentData>;
-          
-        if (lastVisible) {
-          queryRef = query(contactsCollectionRef, startAfter(lastVisible), limit(batchSize));
-        } else {
-          queryRef = query(contactsCollectionRef, limit(batchSize));
-        }
-    
-        const contactsSnapshot = await getDocs(queryRef);
-        const contactsBatch: Contact[] = contactsSnapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
-    
-        if (contactsBatch.length === 0) break; // Exit if no more documents
-    
-        contactsBatch.forEach(contact => {
-          if (contact.phone && !phoneSet.has(contact.phone)) {
-            phoneSet.add(contact.phone);
-            allContacts.push(contact);
-          }
-        });
-    
-        lastVisible = contactsSnapshot.docs[contactsSnapshot.docs.length - 1];
+      
+      const totalDocs = contactsSnapshot.docs.length;
+      let processedDocs = 0;
+
+      for (const doc of contactsSnapshot.docs) {
+        allContacts.push({ ...doc.data(), id: doc.id } as Contact);
+        processedDocs++;
+        setLoadingProgress((processedDocs / totalDocs) * 100);
       }
-    
-      // Fetch pinned chats
+
+      // Fetch and process pinned chats
+      setLoadingPhase('processing_pinned');
       const pinnedChatsRef = collection(firestore, `user/${user.email!}/pinned`);
       const pinnedChatsSnapshot = await getDocs(pinnedChatsRef);
       const pinnedChats = pinnedChatsSnapshot.docs.map(doc => doc.data() as Contact);
-    
-      // Add pinned status to contactsData and update in Firebase
-      const updatePromises = allContacts.map(async contact => {
+
+      // Update contacts with pinned status
+      setLoadingPhase('updating_pins');
+      const updatePromises = allContacts.map(async (contact, index) => {
         const isPinned = pinnedChats.some(pinned => pinned.chat_id === contact.chat_id);
         if (isPinned) {
           contact.pinned = true;
           const contactDocRef = doc(firestore, `companies/${companyId}/contacts`, contact.id);
           await setDoc(contactDocRef, contact, { merge: true });
         }
+        setLoadingProgress((index / allContacts.length) * 100);
       });
-    
+
       await Promise.all(updatePromises);
-    
-      // Sort contactsData by pinned status and last_message timestamp
+
+      // Sort contacts
+      setLoadingPhase('sorting_contacts');
       allContacts.sort((a, b) => {
         if (a.pinned && !b.pinned) return -1;
         if (!a.pinned && b.pinned) return 1;
-        const dateA = a.last_message?.createdAt
-          ? new Date(a.last_message.createdAt)
-          : a.last_message?.timestamp
-            ? new Date(a.last_message.timestamp * 1000)
-            : new Date(0);
-        const dateB = b.last_message?.createdAt
-          ? new Date(b.last_message.createdAt)
-          : b.last_message?.timestamp
-            ? new Date(b.last_message.timestamp * 1000)
-            : new Date(0);
+        const dateA = a.last_message?.timestamp ? new Date(a.last_message.timestamp * 1000) : new Date(0);
+        const dateB = b.last_message?.timestamp ? new Date(b.last_message.timestamp * 1000) : new Date(0);
         return dateB.getTime() - dateA.getTime();
       });
-    
-      console.log("Contacts fetched:", allContacts.length);
-      setContacts(allContacts);
 
+      // Cache the contacts
+      setLoadingPhase('caching');
       localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
-      sessionStorage.setItem('contactsFetched', 'true'); // Mark that contacts have been fetched in this session
-      setContactsFetched(true);
+      sessionStorage.setItem('contactsFetched', 'true');
+      sessionStorage.setItem('contactsCacheTimestamp', Date.now().toString());
 
-      // After fetching contacts, fetch chats
-      await fetchChatsData();
+      setContacts(allContacts);
+      setContactsFetched(true);
+      setLoadingPhase('complete');
+
+      // Navigate only when everything is ready
+      if (processingComplete && !isLoading) {
+        navigate('/chat');
+      }
 
     } catch (error) {
       console.error('Error fetching contacts:', error);
       setError('Failed to fetch contacts. Please try again.');
-    } finally {
-      setIsLoading(false);
+      setLoadingPhase('error');
+    }
+  };
+
+  // Modify the useEffect that handles navigation
+  useEffect(() => {
+    if (processingComplete && contactsFetched && !isLoading) {
+      const timer = setTimeout(() => {
+        navigate('/chat');
+      }, 1000); // Add a small delay to ensure smooth transition
+      return () => clearTimeout(timer);
+    }
+  }, [processingComplete, contactsFetched, isLoading, navigate]);
+
+  // Update the loading status display in your JSX
+  const getLoadingMessage = () => {
+    switch (loadingPhase) {
+      case 'initializing': return 'Initializing...';
+      case 'fetching_contacts': return 'Fetching contacts...';
+      case 'processing_pinned': return 'Processing pinned chats...';
+      case 'updating_pins': return 'Updating pin status...';
+      case 'sorting_contacts': return 'Organizing contacts...';
+      case 'caching': return 'Caching data...';
+      case 'complete': return 'Loading complete!';
+      case 'error': return 'Error loading contacts';
+      default: return 'Loading...';
     }
   };
 
@@ -480,18 +484,13 @@ function LoadingPage2() {
                     <Progress className="w-full">
                       <Progress.Bar 
                         className="transition-all duration-300 ease-in-out"
-                        style={{ width: `${(fetchedChats / totalChats) * 100}%` }}
+                        style={{ width: `${loadingProgress}%` }}
                       >
-                        {Math.round((fetchedChats / totalChats) * 100)}%
+                        {Math.round(loadingProgress)}%
                       </Progress.Bar>
                     </Progress>
                     <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {processingComplete 
-                        ? contactsFetched
-                          ? "Chats loaded. Preparing to navigate..."
-                          : "Processing complete. Loading contacts..."
-                        : `Processing ${fetchedChats} of ${totalChats} chats`
-                      }
+                      {getLoadingMessage()}
                     </div>
                   </div>
                 )}

@@ -67,12 +67,19 @@ import Chart from "../pages/Chart";
 import Slider from "../pages/Slider";
 import ImageZoom from "../pages/ImageZoom";
 import Opportunities from "../pages/Opportunities";
-
+import QuickReplies from "../pages/QuickReplies";
+import Automations from "../pages/Automations";
+import Builder from "../pages/Builder";
+import FollowUps from "../pages/FollowUps";
+import OldFollowUps from "../pages/FollowUpsOld";
+import SelectFollowUpMode from "../pages/FollowUpsSelect";
+import BlastHistory from "../pages/BlastHistory"
 import Layout from "../themes";
 import { getAuth } from "firebase/auth";
 import { useState, useEffect } from "react";
+import AIImageResponse from "../pages/AIImageResponse";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
-
+import DatabaseManager from "../pages/DatabaseManager";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -101,6 +108,18 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        {
+          path: "/database-manager",
+          element: <DatabaseManager />
+        },
+        { path: "/dashboard/blast-history", element: <BlastHistory /> },
+        { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
+        { path: "users-layout-2/automations", element: <Automations /> },
+        { path: "users-layout-2/follow-ups", element: <FollowUps /> },
+        { path: "users-layout-2/follow-ups-select", element: <SelectFollowUpMode /> },
+        { path: "users-layout-2/follow-ups-old", element: <OldFollowUps /> },
+        { path: "users-layout-2/a-i-image-response", element: <AIImageResponse /> },
+        { path: "users-layout-2/builder", element: <Builder /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
         { path: "dashboard-overview-4", element: <DashboardOverview4 /> },
         { path: "profile", element: <ProfileOverview1 /> },

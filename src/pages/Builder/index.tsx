@@ -7,10 +7,11 @@ import { DocumentReference, updateDoc, getDoc, getDocs, deleteDoc } from 'fireba
 import { getFirestore, collection, doc, setDoc, DocumentSnapshot } from 'firebase/firestore';
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import logoUrl from "@/assets/images/logo.png";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Tab } from '@headlessui/react'
 import { getStorage, ref, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
-import { Link } from "react-router-dom";
+import { useNavigate } from 'react-router-dom';
 
 
 const firebaseConfig = {
@@ -34,6 +35,7 @@ interface ChatMessage {
   type: string;
   text: string;
   createdAt: string;
+  isLoading?: boolean; // Add this new property
 }
 
 interface AssistantInfo {
@@ -56,7 +58,7 @@ interface MessageListProps {
 const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assistantName, deleteThread, threadId }) => {
   const [newMessage, setNewMessage] = useState('');
 
-  const myMessageClass = "flex flex-col w-full max-w-[320px] leading-1.5 p-1 bg-[#dcf8c6] dark:bg-green-700 text-black dark:text-white rounded-tr-xl rounded-tl-xl rounded-br-sm rounded-bl-xl self-end ml-auto mr-2 text-left";
+  const myMessageClass = "flex flex-col w-full max-w-[320px] leading-1.5 p-1 bg-blue-500 dark:bg-blue-600 text-black dark:text-white rounded-tr-xl rounded-tl-xl rounded-br-sm rounded-bl-xl self-end ml-auto mr-2 text-left";
   const otherMessageClass = "bg-gray-700 text-white dark:bg-gray-600 rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-sm p-1 self-start text-left";
 
   const handleSendMessage = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -73,11 +75,11 @@ const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assi
     <div className="flex flex-col w-full h-full bg-white dark:bg-gray-900 relative">
       <div className="flex items-center justify-between p-2 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
         <div className="flex items-center">
-          <div className="w-8 h-8 overflow-hidden rounded-full shadow-lg bg-gray-700 dark:bg-gray-600 flex items-center justify-center text-white mr-3">
-            <span className="text-lg capitalize">{assistantName.charAt(0)}</span>
+        <div className="w-8 h-8 overflow-hidden rounded-full shadow-lg flex items-center justify-center mr-3">
+            <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
           </div>
           <div>
-            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">{assistantName}</div>
+            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">Juta Prompt Builder</div>
           </div>
         </div>
         <div>
@@ -86,7 +88,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assi
             className={`px-4 py-2 text-white rounded flex items-center ${!threadId ? 'bg-gray-500 dark:bg-gray-600 cursor-not-allowed' : 'bg-red-500 dark:bg-red-600'} active:scale-95`}
             disabled={!threadId}
           >
-            Delete Thread
+            Reset Bot
           </button>
         </div>
       </div>
@@ -102,14 +104,24 @@ const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assi
               minWidth: '75px'
             }}
           >
-            {message.type === 'text' && (
-              <div className="whitespace-pre-wrap break-words">
-                {message.text}
+            {message.isLoading ? (
+              <div className="flex items-center space-x-2">
+                <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                <div className="w-1 h-1 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
               </div>
+            ) : (
+              <>
+                {message.type === 'text' && (
+                  <div className="whitespace-pre-wrap break-words">
+                    {message.text}
+                  </div>
+                )}
+                <div className="message-timestamp text-xs text-gray-500 dark:text-gray-300 mt-1">
+                  {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </div>
+              </>
             )}
-            <div className="message-timestamp text-xs text-gray-500 dark:text-gray-300 mt-1">
-              {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
           </div>
         ))}
       </div>
@@ -159,7 +171,7 @@ const Main: React.FC = () => {
   const [isWideScreen, setIsWideScreen] = useState(false);
   const [files, setFiles] = useState<Array<{id: string, name: string, url: string}>>([]);
   const [uploading, setUploading] = useState(false);
-
+  const navigate = useNavigate();
   useEffect(() => {
     fetchCompanyId();
   }, []);
@@ -234,7 +246,7 @@ const Main: React.FC = () => {
         setAssistantId(companyData.assistantId);
         setApiKey(tokenData.openai);
   
-        console.log("Fetched Assistant ID:", companyData.assistantId);
+        console.log("Fetched Assistant ID:",companyData.assistantId);
         // console.log("Fetched API Key:", tokenData.openai);
       } else {
         console.error("Company or token document does not exist");
@@ -298,6 +310,7 @@ const Main: React.FC = () => {
 
       console.log('Assistant info updated successfully:', response.data);
       toast.success('Assistant updated successfully');
+      navigate('/inbox');
     } catch (error) {
       if (axios.isAxiosError(error)) {
         // Error is an AxiosError
@@ -318,18 +331,18 @@ const Main: React.FC = () => {
       text: messageText,
       createdAt: new Date().toISOString(),
     };
-  
-    // Clear dummy messages if they are present
-    setMessages(prevMessages => {
-      if (prevMessages.some(message => message.createdAt === '2024-05-29T10:00:00Z' || message.createdAt === '2024-05-29T10:01:00Z')) {
-        return [newMessage];
-      } else {
-        return [newMessage, ...prevMessages];
-      }
-    });
-  
-    console.log("Sending message with Assistant ID:", assistantId); // Log assistantId
-  
+
+    // Add loading message
+    const loadingMessage: ChatMessage = {
+      from_me: false,
+      type: 'text',
+      text: '',
+      createdAt: new Date().toISOString(),
+      isLoading: true,
+    };
+
+    setMessages(prevMessages => [loadingMessage, newMessage, ...prevMessages]);
+
     try {
       const user = getAuth().currentUser;
       if (!user) {
@@ -337,30 +350,49 @@ const Main: React.FC = () => {
         setError("User not authenticated");
         return;
       }
-  
+      const realMessage = messageText + "\n\n" +'Current Instructions: ' + assistantInfo.instructions;
       const res = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/assistant-test/`, {
         params: {
-          message: messageText,
+          message: realMessage,
           email: user.email!,
-          assistantid: assistantId
+          assistantid: 'asst_zQ3klGmHLZFI9DmH0uofet0F',
         },
       });
-      const data = res.data;
-      console.log(data);
-  
+      
+      const fullResponse = res.data.answer;
+      const helpfulResponse = fullResponse.split('Formatted Prompt:')[0].replace('Helpful Response:', '').trim();
+      const formattedResponse = fullResponse
+        .split('Formatted Prompt:')[1]
+        .trim()
+        .replace(/```bash\n/, '')
+        .replace(/```$/, '')
+        .trim();
+      
+      setAssistantInfo(prevInfo => ({
+        ...prevInfo,
+        instructions: formattedResponse
+      }));
+
       const assistantResponse: ChatMessage = {
         from_me: false,
         type: 'text',
-        text: data.answer,
+        text: helpfulResponse,
         createdAt: new Date().toISOString(),
       };
-  
-      setMessages(prevMessages => [assistantResponse, ...prevMessages]);
-      setThreadId(user.email!); // Update the threadId to user email as a placeholder
-  
+
+      // Remove loading message and add the real response
+      setMessages(prevMessages => {
+        const filteredMessages = prevMessages.filter(msg => !msg.isLoading);
+        return [assistantResponse, ...filteredMessages];
+      });
+
+      setThreadId(user.email!);
+
     } catch (error) {
       console.error('Error:', error);
       setError("Failed to send message");
+      // Remove loading message on error
+      setMessages(prevMessages => prevMessages.filter(msg => !msg.isLoading));
     }
   };
 
@@ -545,17 +577,38 @@ const Main: React.FC = () => {
       }
     }
   };
+  useEffect(() => {
+    // Add initial welcome message
+    const welcomeMessage: ChatMessage = {
+      from_me: false,
+      type: 'text',
+      text: "Hello! I'm here to help you build your prompt. Just start chatting with me, and I'll help you create and refine the perfect instructions for your AI assistant.",
+      createdAt: '2024-05-29T10:00:00Z'
+    };
 
+    setMessages([welcomeMessage]);
+  }, []); // Empty dependency array means this runs once on component mount
   return (
     <div className="flex justify-center h-screen bg-gray-100 dark:bg-gray-900">
       <div className={`w-full ${isWideScreen ? 'max-w-6xl flex' : 'max-w-lg'}`}>
         {isWideScreen ? (
           <>
+            {/* Chat section moved to left side */}
+            <div className="w-1/2 pr-2">
+              <MessageList 
+                messages={messages} 
+                onSendMessage={sendMessageToAssistant} 
+                assistantName={assistantInfo?.name} 
+                deleteThread={deleteThread} 
+                threadId={threadId}
+              />
+            </div>
+            {/* Assistant details moved to right side */}
             <div className="w-1/2 pl-2 pr-2 ml-2 mr-2 mt-4 overflow-auto">
               {loading ? (
                 <div className="flex items-center justify-center h-full">
                   <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-4">
-               
+                    <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
                     <div className="mt-2 text-xs p-2 dark:text-gray-200">Fetching Assistant...</div>
                     <LoadingIcon icon="three-dots" className="w-20 h-20 p-4" />
                   </div>
@@ -565,41 +618,7 @@ const Main: React.FC = () => {
                   <div className="mb-4">
                     <h1 className="text-2xl font-bold dark:text-gray-200">{assistantInfo.name || "Assistant Name"}</h1>
                   </div>
-                  <div className="mb-4">
-                    <label className="mb-2 text-lg font-medium capitalize dark:text-gray-200" htmlFor="name">
-                      Name
-                    </label>
-                    <div className="relative">
-                      <input
-                        id="name"
-                        name="name"
-                        type="text"
-                        className="w-full p-3 border border-gray-300 rounded-lg text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500 pr-10"
-                        placeholder="Name your assistant"
-                        value={assistantInfo.name}
-                        onChange={handleInputChange}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                      />
-                    </div>
-                  </div>
-                  <div className="mb-4">
-                    <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="description">
-                      Description
-                    </label>
-                    <div className="relative">
-                      <textarea
-                        id="description"
-                        name="description"
-                        className="w-full p-3 border border-gray-300 rounded-lg h-24 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Add a short description of what this assistant does"
-                        value={assistantInfo.description}
-                        onChange={handleInputChange}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                      />
-                    </div>
-                  </div>
+               
                   <div className="mb-4">
                     <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="instructions">
                       Instructions
@@ -608,7 +627,7 @@ const Main: React.FC = () => {
                       <textarea
                         id="instructions"
                         name="instructions"
-                        className="w-full p-3 border border-gray-300 rounded-lg h-32 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full p-3 border border-gray-300 rounded-lg h-164 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Tell your assistant what to do"
                         value={assistantInfo.instructions}
                         onChange={handleInputChange}
@@ -647,35 +666,19 @@ const Main: React.FC = () => {
                     </ul>
                   </div>
                   <div>
-                  <div className="flex items-center gap-4">
-                      <button 
-                        ref={updateButtonRef}
-                        onClick={updateAssistantInfo} 
-                        className={`px-4 py-2 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary active:scale-95 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                      >
-                        Update Assistant
-                      </button>
-                      <Link to="/users-layout-2/builder">
-                        <Button variant="primary" className="shadow-md">
-                          Prompt Builder
-                        </Button>
-                      </Link>
-                    </div>
+                    <button 
+                      ref={updateButtonRef}
+                      onClick={updateAssistantInfo} 
+                      className={`px-4 py-2 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary active:scale-95 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
+                      onFocus={handleFocus}
+                      disabled={userRole === "3"}
+                    >
+                      Update Assistant
+                    </button>
                   </div>
                   {error && <div className="mt-4 text-red-500">{error}</div>}
                 </>
               )}
-            </div>
-            <div className="w-1/2 pr-2">
-              <MessageList 
-                messages={messages} 
-                onSendMessage={sendMessageToAssistant} 
-                assistantName={assistantInfo?.name} 
-                deleteThread={deleteThread} 
-                threadId={threadId}
-              />
             </div>
           </>
         ) : (
@@ -709,7 +712,7 @@ const Main: React.FC = () => {
                 {loading ? (
                   <div className="flex items-center justify-center h-full">
                     <div className="flex flex-col items-center w-3/4 max-w-lg text-center p-15">
-                    
+                      <img alt="Logo" className="w-24 h-24 p-15" src={logoUrl} />
                       <div className="mt-2 text-xs p-15 dark:text-gray-200">Fetching Assistant...</div>
                       <LoadingIcon icon="three-dots" className="w-20 h-20 p-4" />
                     </div>
@@ -751,7 +754,6 @@ const Main: React.FC = () => {
                       <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="instructions">
                         Instructions
                       </label>
-                   
                       <textarea
                         id="instructions"
                         name="instructions"
@@ -802,11 +804,6 @@ const Main: React.FC = () => {
                       >
                         Update Assistant
                       </button>
-                      <Link to="builder">
-              <Button variant="primary" className="mr-2 shadow-md">
-                Prompt Builder
-              </Button>
-            </Link>
                     </div>
                     {error && <div className="mt-4 text-red-500">{error}</div>}
                   </>

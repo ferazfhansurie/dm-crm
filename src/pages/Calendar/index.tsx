@@ -120,7 +120,7 @@ function Main() {
   const [filterDate, setFilterDate] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const { contacts: initialContacts } = useContacts();
-  const [contacts, setContacts] = useState<Contact[]>(initialContacts);
+  const [contacts, setContacts] = useState<Contact[]>([]);
   const [selectedStaff, setSelectedStaff] = useState<string>('');
   const [selectedContacts, setSelectedContacts] = useState<Contact[]>([]);
   const [contactSessions, setContactSessions] = useState<{ [key: string]: number }>({});
@@ -179,7 +179,7 @@ function Main() {
 
   const generateTimeSlots = (isWeekend: boolean): string[] => {
     const start = 8;
-    const end = isWeekend ? 13 : 20;
+    const end = isWeekend ? 20 : 20;
     const slots: string[] = [];
   
     for (let hour = start; hour < end; hour++) {

@@ -76,6 +76,7 @@
     "react-tooltip": "^5.26.4",
     "react-transition-group": "^4.4.5",
     "react-virtualized": "^9.22.5",
+    "recharts": "^2.13.0",
     "simplebar": "^6.2.5",
     "socket.io-client": "^4.7.5",
     "tabulator-tables": "^5.5.2",

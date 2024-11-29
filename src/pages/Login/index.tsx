@@ -1,5 +1,4 @@
 import logoUrl from "@/assets/images/logo.png";
-import logoUrl2 from "@/assets/images/logo3.png";
 import illustrationUrl from "@/assets/images/illustration.svg";
 import { FormInput, FormCheck } from "@/components/Base/Form";
 import Button from "@/components/Base/Button";
@@ -120,15 +119,9 @@ const firebaseConfig = {
               <div className="flex-col hidden min-h-screen xl:flex">
               <div className="my-auto flex flex-col items-center w-full">
                   <img
-<<<<<<< HEAD
                     alt="Logo"
                     className="w-2/4 -mt-16"
                     src={logoUrl}
-=======
-                    alt="Juta Software Logo"
-                    className="w-[80%] -mt-16 -ml-64"
-                    src={logoUrl2}
->>>>>>> 130fa6377572bb6aec551e242061d19e16ded04c
                   />
                 </div>
               </div>

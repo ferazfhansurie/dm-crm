@@ -200,25 +200,7 @@ function Main() {
                     onKeyDown={handleKeyDown}
                   />
                 
-                  {/* New Plan Selection Section */}
-                  <div className="grid grid-cols-1 gap-2 mt-4 md:grid-cols-2">
-                    {[
-                      ['blaster', 'WhatsApp Blaster', '50'],
-                      ['enterprise', 'Standard AI', '168']
-                    ].map(([id, name, price]) => (
-                      <div 
-                        key={id}
-                        className={clsx(
-                          "p-2 border rounded cursor-pointer",
-                          selectedPlan === id ? 'border-primary bg-primary/10' : 'border-gray-200'
-                        )}
-                        onClick={() => setSelectedPlan(id as 'blaster' | 'enterprise')}
-                      >
-                        <div className="text-sm font-bold">{name}</div>
-                        <div className="text-xs">RM {price}/month</div>
-                      </div>
-                    ))}
-                  </div>
+               
                 </div>
                 <div className="mt-5 text-center intro-x xl:mt-8 xl:text-left">
                   <Button
@@ -226,7 +208,7 @@ function Main() {
                     className="w-full px-4 py-3 align-top xl:w-32 xl:mr-3"
                     onClick={handleRegister}
                   >
-                    Start Free Trial
+                    Register
                   </Button>
                   <Link to="/login">
                     <Button

@@ -166,18 +166,11 @@ const firebaseConfig = {
                       className="w-full px-4 py-3 align-top xl:mr-3"
                       onClick={handleStartFreeTrial}
                     >
-                      Start Free Trial
+                      Register
                     </Button>
                     
                   </div>
-                  <div className="mt-4 text-center intro-x">
-                    <button 
-                      onClick={() => setShowResetModal(true)} 
-                      className="text-primary hover:underline"
-                    >
-                      Forgot Password?
-                    </button>
-                  </div>
+                
                   {error && (
                     <div className="mt-5 text-center text-red-500">{error}</div>
                   )}

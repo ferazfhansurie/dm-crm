@@ -82,6 +82,7 @@ function LoadingPage() {
 
   const [loadingPhase, setLoadingPhase] = useState<string>('initializing');
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [trialExpired, setTrialExpired] = useState(false);
   
   const fetchQRCode = async () => {
     const auth = getAuth(app);
@@ -99,8 +100,8 @@ function LoadingPage() {
 
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
-      setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      setCompanyId(companyId);
+
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -108,6 +109,17 @@ function LoadingPage() {
       }
 
       const companyData = docSnapshot.data();
+      
+      if (companyData.trialEndDate) {
+        const trialEnd = companyData.trialEndDate.toDate();
+        const now = new Date();
+        if (now > trialEnd) {
+          setTrialExpired(true);
+        
+          return;
+        }
+      }
+
       v2 = companyData.v2;
       setV2(v2);
       if (!v2) {
@@ -234,7 +246,7 @@ function LoadingPage() {
           ws.current.onmessage = async (event) => {
             const data = JSON.parse(event.data);
             console.log('WebSocket message received:', data);
-            setBotStatus(data.status);
+      
             if (data.type === 'auth_status') {
               console.log(`Bot status: ${data.status}`);
               setBotStatus(data.status);
@@ -246,15 +258,18 @@ function LoadingPage() {
                 
               }
             } else if (data.type === 'progress') {
+              setBotStatus(data.status);
               setCurrentAction(data.action);
               setFetchedChats(data.fetchedChats);
               setTotalChats(data.totalChats);
 
               if (data.action === 'done_process') {
+                setBotStatus(data.status);
                 setProcessingComplete(true);
               }
             }
             if(data.status === 'authenticated' || data.status === 'ready'){
+              setBotStatus(data.status);
               navigate('/chat');
             }
           };
@@ -292,7 +307,7 @@ function LoadingPage() {
     console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
     if (shouldFetchContacts && !isLoading) {
       console.log("Conditions met, calling fetchContacts");
-      fetchContacts();
+      navigate('/chat');
     }
   }, [shouldFetchContacts, isLoading]);
 
@@ -512,132 +527,156 @@ useEffect(() => {
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
-      <div className="flex flex-col items-center w-full max-w-lg text-center px-4">
-        {(
-          <>
-            {botStatus === 'qr' ? (
-              <>
-                <div className="mt-2 text-md text-gray-800 dark:text-gray-200">
-                  Please use your WhatsApp QR scanner to scan the code or enter your phone number for a pairing code.
-                </div>
-                <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
-                {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
-                {isQRLoading ? (
-                  <div className="mt-4">
-                   
-                    <p className="mt-2 text-gray-600 dark:text-gray-400">Loading QR Code...</p>
+      {trialExpired ? (
+        <div className="text-center p-8">
+          <h2 className="text-2xl font-bold text-red-600 mb-4">Trial Period Expired</h2>
+          <p className="text-gray-600 mb-4">Your trial period has ended. Please contact support to continue using the service.</p>
+          <a
+    href="https://wa.link/jopopm"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full inline-block text-center"
+  >
+    Pay Now
+  </a>
+         
+
+          <button
+            onClick={handleLogout}
+            className="mt-6 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors"
+          >
+            Back to Login
+          </button>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center w-full max-w-lg text-center px-4">
+          {(
+            <>
+              {botStatus === 'qr' ? (
+                <>
+                  <div className="mt-2 text-md text-gray-800 dark:text-gray-200">
+                    Please use your WhatsApp QR scanner to scan the code or enter your phone number for a pairing code.
                   </div>
-                ) : qrCodeImage ? (
-                  <div className="bg-white p-4 rounded-lg mt-4">
-                    <img src={qrCodeImage} alt="QR Code" className="max-w-full h-auto" />
-                  </div>
-                ) : (
-                  <div className="mt-4 text-gray-600 dark:text-gray-400">
-                    No QR Code available. Please try refreshing or use the pairing code option below.
-                  </div>
-                )}
-                
-                <div className="mt-4 w-full">
-                  <input
-                    type="tel"
-                    value={phoneNumber}
-                    onChange={(e) => setPhoneNumber(e.target.value)}
-                    placeholder="Enter phone number with country code eg: 60123456789"
-                    className="w-full px-4 py-2 border rounded-md text-gray-700 focus:outline-none focus:border-blue-500"
-                  />
-                  <button
-                    onClick={requestPairingCode}
-                    disabled={isPairingCodeLoading || !phoneNumber}
-                    className="mt-2 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full disabled:bg-gray-400"
-                  >
-                    {isPairingCodeLoading ? (
-                      <span className="flex items-center justify-center">
-                        <LoadingIcon className="w-5 h-5 mr-2" />
-                        Generating...
-                      </span>
-                    ) : 'Get Pairing Code'}
-                  </button>
-                </div>
-                
-                {isPairingCodeLoading && (
-                  <div className="mt-4 text-gray-600 dark:text-gray-400">
-                    Generating pairing code...
-                  </div>
-                )}
-                
-                {pairingCode && (
-                  <div className="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
-                    Your pairing code: <strong>{pairingCode}</strong>
-                    <p className="text-sm mt-2">Enter this code in your WhatsApp app to authenticate.</p>
-                  </div>
-                )}
-              </>
-            ) : (
-              <>
-                <div className="mt-2 text-xs text-gray-800 dark:text-gray-200">
-                  {botStatus === 'authenticated' || botStatus === 'ready' 
-                    ? 'Authentication successful. Loading contacts...' 
-                    : botStatus === 'initializing'
-                      ? 'Initializing WhatsApp connection...'
-                      : 'Fetching Data...'}
-                </div>
-                {isProcessingChats && (
-                  <div className="space-y-2 mt-4">
-                    <Progress className="w-full">
-                      <Progress.Bar 
-                        className="transition-all duration-300 ease-in-out"
-                        style={{ width: `${(fetchedChats / totalChats) * 100}%` }}
-                      >
-                        {Math.round((fetchedChats / totalChats) * 100)}%
-                      </Progress.Bar>
-                    </Progress>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">
-                      {processingComplete 
-                        ? contactsFetched
-                          ? "Chats loaded. Preparing to navigate..."
-                          : "Processing complete. Loading contacts..."
-                        : `Processing ${fetchedChats} of ${totalChats} chats`
-                      }
+                  <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
+                  {error && <div className="text-red-500 dark:text-red-400 mt-2">{error}</div>}
+                  {isQRLoading ? (
+                    <div className="mt-4">
+                      <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 10s linear infinite' }} />
+                      <p className="mt-2 text-gray-600 dark:text-gray-400">Loading QR Code...</p>
                     </div>
+                  ) : qrCodeImage ? (
+                    <div className="bg-white p-4 rounded-lg mt-4">
+                      <img src={qrCodeImage} alt="QR Code" className="max-w-full h-auto" />
+                    </div>
+                  ) : (
+                    <div className="mt-4 text-gray-600 dark:text-gray-400">
+                      No QR Code available. Please try refreshing or use the pairing code option below.
+                    </div>
+                  )}
+                  
+                  <div className="mt-4 w-full">
+                    <input
+                      type="tel"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      placeholder="Enter phone number with country code eg: 60123456789"
+                      className="w-full px-4 py-2 border rounded-md text-gray-700 focus:outline-none focus:border-blue-500"
+                    />
+                    <button
+                      onClick={requestPairingCode}
+                      disabled={isPairingCodeLoading || !phoneNumber}
+                      className="mt-2 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full disabled:bg-gray-400"
+                    >
+                      {isPairingCodeLoading ? (
+                        <span className="flex items-center justify-center">
+                          <LoadingIcon className="w-5 h-5 mr-2" />
+                          Generating...
+                        </span>
+                      ) : 'Get Pairing Code'}
+                    </button>
                   </div>
-                )}
-                {(isLoading || !processingComplete || isFetchingChats) && (
-                <div className="mt-4 flex flex-col items-center">
-                  <p className="mt-2 text-gray-600 dark:text-gray-400">
-                    {isQRLoading ? "Please wait while QR code is loading..." : "Please wait while QR Code is loading..."}
-                  </p>
-                </div>
-                )}
-              </>
-            )}
-            
-            <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
-            
-            <button
-              onClick={handleRefresh}
-              className="mt-4 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full"
-            >
-              Refresh
-            </button>
-            <a
-  href="https://wa.link/pcgo1k"
-  target="_blank"
-  rel="noopener noreferrer"
-  className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full inline-block text-center"
->
-  Need Help?
-</a>
-            <button
-              onClick={handleLogout}
-              className="mt-4 px-6 py-3 bg-red-500 text-white text-lg font-semibold rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 w-full"
-            >
-              Logout
-            </button>
-    
-            {error && <div className="mt-2 text-red-500 dark:text-red-400">{error}</div>}
-          </>
-        )}
-      </div>
+                  
+                  {isPairingCodeLoading && (
+                    <div className="mt-4 text-gray-600 dark:text-gray-400">
+                      Generating pairing code...
+                    </div>
+                  )}
+                  
+                  {pairingCode && (
+                    <div className="mt-4 p-4 bg-green-100 border border-green-400 text-green-700 rounded">
+                      Your pairing code: <strong>{pairingCode}</strong>
+                      <p className="text-sm mt-2">Enter this code in your WhatsApp app to authenticate.</p>
+                    </div>
+                  )}
+                </>
+              ) : (
+                <>
+                  <div className="mt-2 text-xs text-gray-800 dark:text-gray-200">
+                    {botStatus === 'authenticated' || botStatus === 'ready' 
+                      ? 'Authentication successful. Loading contacts...' 
+                      : botStatus === 'initializing'
+                        ? 'Initializing WhatsApp connection...'
+                        : 'Fetching Data...'}
+                  </div>
+                  {isProcessingChats && (
+                    <div className="space-y-2 mt-4">
+                      <Progress className="w-full">
+                        <Progress.Bar 
+                          className="transition-all duration-300 ease-in-out"
+                          style={{ width: `${(fetchedChats / totalChats) * 100}%` }}
+                        >
+                          {Math.round((fetchedChats / totalChats) * 100)}%
+                        </Progress.Bar>
+                      </Progress>
+                      <div className="text-sm text-gray-600 dark:text-gray-400">
+                        {processingComplete 
+                          ? contactsFetched
+                            ? "Chats loaded. Preparing to navigate..."
+                            : "Processing complete. Loading contacts..."
+                          : `Processing ${fetchedChats} of ${totalChats} chats`
+                        }
+                      </div>
+                    </div>
+                  )}
+                  {(isLoading || !processingComplete || isFetchingChats) && (
+                  <div className="mt-4 flex flex-col items-center">
+                    <img alt="Logo" className="w-32 h-32 animate-spin mx-auto" src={logoUrl} style={{ animation: 'spin 3s linear infinite' }} />
+                    <p className="mt-2 text-gray-600 dark:text-gray-400">
+                      {isQRLoading ? "Please wait while QR code is loading..." : "Please wait while QR Code is loading..."}
+                    </p>
+                  </div>
+                  )}
+                </>
+              )}
+              
+              <hr className="w-full my-4 border-t border-gray-300 dark:border-gray-700" />
+              
+              <button
+                onClick={handleRefresh}
+                className="mt-4 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full"
+              >
+                Refresh
+              </button>
+              <a
+    href="https://wa.link/pcgo1k"
+    target="_blank"
+    rel="noopener noreferrer"
+    className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full inline-block text-center"
+  >
+    Need Help?
+  </a>
+              <button
+                onClick={handleLogout}
+                className="mt-4 px-6 py-3 bg-red-500 text-white text-lg font-semibold rounded hover:bg-red-600 transition-colors focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-opacity-50 w-full"
+              >
+                Logout
+              </button>
+      
+              {error && <div className="mt-2 text-red-500 dark:text-red-400">{error}</div>}
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 }

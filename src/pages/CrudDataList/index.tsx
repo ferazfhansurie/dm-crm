@@ -2791,6 +2791,27 @@ const sendBlastMessage = async () => {
     );
   };
 
+  const handleSelectCurrentPage = () => {
+    const areAllCurrentSelected = currentContacts.every(contact => 
+      selectedContacts.some(sc => sc.id === contact.id)
+    );
+  
+    if (areAllCurrentSelected) {
+      // If all current page contacts are selected, deselect them
+      setSelectedContacts(prevSelected => 
+        prevSelected.filter(contact => 
+          !currentContacts.some(cc => cc.id === contact.id)
+        )
+      );
+    } else {
+      // If not all current page contacts are selected, select them all
+      const currentPageContacts = currentContacts.filter(contact => 
+        !selectedContacts.some(sc => sc.id === contact.id)
+      );
+      setSelectedContacts(prevSelected => [...prevSelected, ...currentPageContacts]);
+    }
+  };
+
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
     return (
@@ -3516,6 +3537,18 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
                     />
                     <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
                       Select All
+                    </span>
+                  </button>
+                  <button
+                    onClick={() => handleSelectCurrentPage()}
+                    className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+                  >
+                    <Lucide 
+                      icon={currentContacts.every(contact => selectedContacts.some(sc => sc.id === contact.id)) ? "CheckSquare" : "Square"} 
+                      className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" 
+                    />
+                    <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                      Select Page
                     </span>
                   </button>
                   {selectedContacts.length > 0 && currentContacts.some(contact => 

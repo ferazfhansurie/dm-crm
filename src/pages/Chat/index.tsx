@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo, Fragment } from "react";
-import { getAuth } from "firebase/auth";
+import { getAuth, signOut } from "firebase/auth";
 import { initializeApp } from "firebase/app";
 import logoImage from '@/assets/images/placeholder.svg';
 import { getFirestore,Timestamp,  collection, doc, getDoc, onSnapshot, setDoc, getDocs, addDoc, updateDoc, deleteDoc, query, where, orderBy, arrayRemove,arrayUnion, writeBatch, serverTimestamp, runTransaction, increment, getCountFromServer } from "firebase/firestore";
@@ -547,8 +547,58 @@ function Main() {
   const [totalGlobalSearchPages, setTotalGlobalSearchPages] = useState(1);
   const [messageUsage, setMessageUsage] = useState<number>(0);
   const [companyPlan, setCompanyPlan] = useState<string>('');
-
-
+  const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
+  const [videoModalOpen, setVideoModalOpen] = useState(false);
+  const [videoCaption, setVideoCaption] = useState('');
+  const [trialExpired, setTrialExpired] = useState(false);
+  useEffect(() => {
+    const checkTrialStatus = async () => {
+      try {
+        const auth = getAuth();
+        const user = auth.currentUser;
+        
+        if (!user?.email) {
+          return;
+        }
+  
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        
+        if (!docUserSnapshot.exists()) {
+          throw new Error("User document not found");
+        }
+  
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+  
+        const companyRef = doc(firestore, 'companies', companyId);
+        const companySnapshot = await getDoc(companyRef);
+  
+        if (!companySnapshot.exists()) {
+          throw new Error("Company document not found");
+        }
+  
+        const companyData = companySnapshot.data();
+        
+        if (companyData.trialEndDate) {
+          const trialEnd = companyData.trialEndDate.toDate();
+          const now = new Date();
+          
+          if (now > trialEnd) {
+            setTrialExpired(true);
+            toast.error("Your trial period has expired. Please contact support to continue using the service.");
+            await signOut(auth);
+            navigate('/login');
+          }
+        }
+      } catch (error) {
+        console.error("Error checking trial status:", error);
+        toast.error("Error checking subscription status");
+      }
+    };
+  
+    checkTrialStatus();
+  }, []); // Run once when component mounts
   useEffect(() => {
     if (contextContacts.length > 0) {
       setContacts(contextContacts as Contact[]);
@@ -654,7 +704,47 @@ function Main() {
       setAudioBlob(null);
     }
   };
+// Add a handler for video uploads
+const handleVideoUpload = async (caption: string = '') => {
+  if (!selectedVideo || !selectedChatId || !userData) return;
 
+  try {
+    // First upload the video file to get a URL
+    const videoFile = new File([selectedVideo], `video_${Date.now()}.mp4`, { type: selectedVideo.type });
+    const videoUrl = await uploadFile(videoFile);
+
+    // Get company ID and other necessary data
+    const docUserRef = doc(firestore, 'user', userData.email);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      throw new Error('No such document for user!');
+    }
+    const userDataFromDb = docUserSnapshot.data();
+    const companyId = userDataFromDb.companyId;
+
+    // Format chat ID
+    const phoneNumber = selectedChatId.split('+')[1];
+    const chat_id = phoneNumber + "@s.whatsapp.net";
+
+    // Call the video message API
+    const response = await axios.post(`/api/v2/messages/video/${companyId}/${chat_id}`, {
+      videoUrl,
+      caption,
+      phoneIndex: selectedContact.phoneIndex || 0,
+      userName: userData.name
+    });
+
+    if (response.data.success) {
+      setVideoModalOpen(false);
+      setSelectedVideo(null);
+      setVideoCaption('');
+      toast.success('Video sent successfully');
+    }
+  } catch (error) {
+    console.error('Error uploading video:', error);
+    toast.error('Failed to send video message');
+  }
+};
   const convertToOggOpus = async (blob: Blob): Promise<Blob> => {
     const ffmpeg = new FFmpeg();
     await ffmpeg.load();
@@ -2298,6 +2388,16 @@ useEffect(() => {
                           } : null
                         };                
                         break;
+                        case 'chat':
+                          formattedMessage.text = {
+                              body: message.text ? message.text.body : '', // Include the message body
+                              context: message.text && message.text.context ? {
+                                  quoted_author: message.text.context.quoted_author,
+                                  quoted_content: {
+                                      body: message.text.context.quoted_content?.body || ''
+                                  }
+                              } : null
+                          }; 
                     case 'image':
                         formattedMessage.image = message.image ? message.image : undefined;
                         break;
@@ -2531,6 +2631,16 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
                 } : null // Include the context with quoted content
             };
             break;
+            case 'chat':
+              formattedMessage.text = {
+                  body: message.text ? message.text.body : '', // Include the message body
+                  context: message.text && message.text.context ? {
+                      quoted_author: message.text.context.quoted_author,
+                      quoted_content: {
+                          body: message.text.context.quoted_content?.body || ''
+                      }
+                  } : null
+              }; 
           case 'image':
             formattedMessage.image = message.image ? message.image : undefined;
             break;
@@ -6997,7 +7107,13 @@ console.log(prompt);
             {messages
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
-              message.type !== 'notification_template')
+              message.type !== 'notification_template'&&
+              (userData?.phone === undefined || 
+                phoneCount === undefined || 
+                phoneCount === 0 ||
+                message.phoneIndex === undefined || 
+                message.phoneIndex === null || 
+                message.phoneIndex === userData?.phone))
               .slice()
               .reverse()
               .map((message, index, array) => {
@@ -7157,7 +7273,7 @@ console.log(prompt);
                           })()}
                         </div>
                       )}
-                      {message.type === 'text' && message.text?.body && (
+                      {(message.type === 'text' || message.type === 'chat') && message.text?.body && (
                         <div>
                         {message.from_me && message.userName && message.userName !== '' && (
                           <div className="text-sm text-gray-300 dark:text-gray-300 mb-1 capitalize font-medium">{message.userName}</div>
@@ -7193,6 +7309,28 @@ console.log(prompt);
                             )}
                         </div>
                       )}
+{message.type === 'order' && message.order && (
+  <div className="p-0 message-content">
+    <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
+      <img
+        src={`data:image/jpeg;base64,${message.order.thumbnail}`}
+        alt="Order"
+        className="w-12 h-12 rounded-lg object-cover"
+        onError={(e) => {
+          console.error("Error loading order image:", e.currentTarget.src);
+          e.currentTarget.src = logoImage;
+        }}
+      />
+      <div className="text-white">
+        <div className="flex items-center">
+          <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
+          <span className="text-sm">{message.order.itemCount} item</span>
+        </div>
+        <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
+      </div>
+    </div>
+  </div>
+)}
                       {message.type === 'video' && message.video && (
                         <div className="video-content p-0 message-content image-message">
                           <video
@@ -7250,63 +7388,50 @@ console.log(prompt);
                       )}
                       {message.type === 'document' && message.document && (
                         <div className="document-content flex flex-col items-center p-4 rounded-md shadow-md bg-white dark:bg-gray-800">
-                          {message.document.mimetype && message.document.mimetype.startsWith('video/') ? (
-                            <video
-                              src={message.document.link || `data:${message.document.mimetype};base64,${message.document.data}`}
-                              controls
-                              className="w-full max-w-md h-auto rounded cursor-pointer"
-                              onClick={() => openPDFModal(message.document?.link ?? `data:${message.document?.mimetype};base64,${message.document?.data}`)}
-                            />
-                          ) : message.document.link ? (
-                            <iframe
-                              src={message.document.link}
-                              width="auto"
-                              height="auto"
-                              title="Document"
-                              className="border rounded cursor-pointer"
-                              onClick={() => openPDFModal(message.document?.link || '')}
-                            />
-                          ) : message.document.data ? (
-                            <iframe
-                              src={`data:${message.document.mimetype};base64,${message.document.data}`}
-                              width="auto"
-                              height="auto"
-                              title="Document"
-                              className="border rounded cursor-pointer"
-                              onClick={() => message.document && openPDFModal(`data:${message.document.mimetype};base64,${message.document.data}`)}
-                            />
-                          ) : (
-                            <div className="text-gray-600 dark:text-gray-400">Document preview not available</div>
-                          )}
-                          <div className="flex-1 text-justify mt-3 w-full">
-                            <div className="font-semibold text-gray-800 dark:text-gray-200 truncate">
-                              {message.document.file_name || message.document.filename || 'Document'}
-                            </div>
-                            <div className="text-gray-600 dark:text-gray-400">
-                              {message.document.page_count && `${message.document.page_count} page${message.document.page_count > 1 ? 's' : ''} • `}
-                              {message.document.mimetype || 'Unknown'} •{' '}
-                              {((message.document.file_size || message.document.fileSize || 0) / (1024 * 1024)).toFixed(2)} MB
-                            </div>
-                      
-                          </div>
-                  
-                          <button
+                          <div 
+                            className="w-full cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200 p-4 rounded-lg"
                             onClick={() => {
                               if (message.document) {
-                                openPDFModal(message.document.link || `data:${message.document.mimetype};base64,${message.document.data}`);
+                                const docUrl = message.document.link || 
+                                  (message.document.data ? `data:${message.document.mimetype};base64,${message.document.data}` : null);
+                                if (docUrl) {
+                                  openPDFModal(docUrl);
+                                }
                               }
                             }}
-                            className="mt-3"
                           >
-                            <Lucide icon="ExternalLink" className="w-6 h-6 text-gray-800 dark:text-gray-200" />
-                          </button>
-                   
+                            <div className="flex items-center">
+                              {message.document.mimetype?.startsWith('video/') ? (
+                                <Lucide icon="Video" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : message.document.mimetype?.startsWith('image/') ? (
+                                <Lucide icon="Image" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : message.document.mimetype?.includes('pdf') ? (
+                                <Lucide icon="FileText" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              ) : (
+                                <Lucide icon="File" className="w-8 h-8 text-gray-500 dark:text-gray-400 mr-3" />
+                              )}
+                              
+                              <div className="flex-1">
+                                <div className="font-semibold text-gray-800 dark:text-gray-200 truncate">
+                                  {message.document.file_name || message.document.filename || 'Document'}
+                                </div>
+                                <div className="text-sm text-gray-600 dark:text-gray-400">
+                                  {message.document.page_count && `${message.document.page_count} page${message.document.page_count > 1 ? 's' : ''} • `}
+                                  {message.document.mimetype || 'Unknown'} •{' '}
+                                  {((message.document.file_size || message.document.fileSize || 0) / (1024 * 1024)).toFixed(2)} MB
+                                </div>
+                              </div>
+                              <Lucide icon="ExternalLink" className="w-5 h-5 text-gray-400 dark:text-gray-500 ml-3" />
+                            </div>
+                          </div>
+
+                          {message.document?.caption && (
+                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                              {message.document.caption}
+                            </p>
+                          )}
                         </div>
-                        
                       )}
-                             {message.document?.caption && (
-                <p className="mt-2 text-sm">{message.document.caption}</p>
-              )}
                       {message.type === 'link_preview' && message.link_preview && (
                         <div className="link-preview-content p-0 message-content image-message rounded-lg overflow-hidden text-gray-800 dark:text-gray-200">
                           <a href={message.link_preview.body} target="_blank" rel="noopener noreferrer" className="block">
@@ -7323,17 +7448,17 @@ console.log(prompt);
                           </a>
                         </div>
                       )}
-                    {message.type === 'sticker' && message.sticker && (
-  <div className="sticker-content p-0 message-content image-message">
-    <img
-      src={`data:${message.sticker.mimetype};base64,${message.sticker.data}`}
-      alt="Sticker"
-      className="rounded-lg message-image cursor-pointer"
-      style={{ maxWidth: 'auto', maxHeight: 'auto', objectFit: 'contain' }}
-      onClick={() => openImageModal(`data:${message.sticker?.mimetype};base64,${message.sticker?.data}`)}
-    />
-  </div>
-)}
+                      {message.type === 'sticker' && message.sticker && (
+                        <div className="sticker-content p-0 message-content image-message">
+                          <img
+                            src={`data:${message.sticker.mimetype};base64,${message.sticker.data}`}
+                            alt="Sticker"
+                            className="rounded-lg message-image cursor-pointer"
+                            style={{ maxWidth: 'auto', maxHeight: 'auto', objectFit: 'contain' }}
+                            onClick={() => openImageModal(`data:${message.sticker?.mimetype};base64,${message.sticker?.data}`)}
+                          />
+                        </div>
+                      )}
                       {message.type === 'location' && message.location && (
                         <div className="location-content p-0 message-content image-message">
                           <div className="text-sm text-gray-800 dark:text-gray-200">Location: {message.location.latitude}, {message.location.longitude}</div>
@@ -7406,8 +7531,15 @@ console.log(prompt);
                               </>
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
+                            {message.phoneIndex !== undefined && (
+                            <div className="text-xs text-white-500 dark:text-gray-400 px-2 py-1">
+                              {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
+                            </div>
+                          )}
                             {formatTimestamp(message.createdAt || message.dateAdded)}
+                          
                           </div>
+                          
                         </div>
                       </div>
                     </div>
@@ -7525,6 +7657,25 @@ console.log(prompt);
     />
   </label>
 </button>
+<button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+    <label htmlFor="videoUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
+      <Lucide icon="Video" className="w-4 h-4 mr-2" />
+      Video
+      <input
+        type="file"
+        id="videoUpload"
+        accept="video/*"
+        className="hidden"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            setSelectedVideo(file);
+            setVideoModalOpen(true);
+          }
+        }}
+      />
+    </label>
+  </button>
 <button className="flex items-center w-full text-left p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
   <label htmlFor="documentUpload" className="flex items-center cursor-pointer text-gray-800 dark:text-gray-200 w-full">
     <Lucide icon="File" className="w-4 h-4 mr-2" />
@@ -8290,7 +8441,43 @@ console.log(prompt);
 />
       <ImageModal isOpen={isImageModalOpen} onClose={closeImageModal} imageUrl={modalImageUrl} />
       <ImageModal2 isOpen={isImageModalOpen2} onClose={() => setImageModalOpen2(false)} imageUrl={pastedImageUrl} onSend={sendImage}  initialCaption={documentCaption} />
-
+      {videoModalOpen && selectedVideo && (
+  <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
+      <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
+      <video
+        src={URL.createObjectURL(selectedVideo)}
+        controls
+        className="w-full mb-4 rounded"
+        style={{ maxHeight: '400px' }}
+      />
+      <textarea
+        value={videoCaption}
+        onChange={(e) => setVideoCaption(e.target.value)}
+        placeholder="Add a caption..."
+        className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+      />
+      <div className="flex justify-end space-x-2">
+        <button
+          onClick={() => {
+            setVideoModalOpen(false);
+            setSelectedVideo(null);
+            setVideoCaption('');
+          }}
+          className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+        >
+          Cancel
+        </button>
+        <button
+          onClick={() => handleVideoUpload(videoCaption)}
+          className="px-4 py-2 bg-primary text-white rounded"
+        >
+          Send
+        </button>
+      </div>
+    </div>
+  </div>
+)}
       <ToastContainer
         position="top-right"
         autoClose={5000}

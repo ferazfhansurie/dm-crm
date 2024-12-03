@@ -10,6 +10,7 @@ import { getFirestore } from "firebase/firestore";
 import { signOut } from "firebase/auth";
 import Progress from '@/components/Base/Progress'; // Assuming you have a Progress component
 import LZString from 'lz-string';
+import logoUrl from '@/assets/images/logo.png';
 
 // Firebase configuration
 const firebaseConfig = {

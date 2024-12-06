@@ -11,18 +11,18 @@ import Table from "@/components/Base/Table";
 import { useAppSelector } from "@/stores/hooks";
 import { selectDarkMode } from "@/stores/darkModeSlice";
 
-interface AIImageResponse {
+interface AIVoiceResponse {
     id: string;
     keyword: string;
-    imageUrls: string[];
+    voiceUrls: string[];
     createdAt: Date;
     status: 'active' | 'inactive';
 }
 
-function AIImageResponses() {
-    const [responses, setResponses] = useState<AIImageResponse[]>([]);
-    const [selectedImages, setSelectedImages] = useState<File[]>([]);
-    const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([]);
+function AIVoiceResponses() {
+    const [responses, setResponses] = useState<AIVoiceResponse[]>([]);
+    const [selectedAudios, setSelectedAudios] = useState<File[]>([]);
+    const [selectedAudioUrls, setSelectedAudioUrls] = useState<string[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -31,6 +31,8 @@ function AIImageResponses() {
         status: 'active' as const
     });
 
+    const [audioElements, setAudioElements] = useState<{ [key: string]: HTMLAudioElement }>({});
+
     // Firebase setup
     const firestore = getFirestore();
     const auth = getAuth();
@@ -38,15 +40,18 @@ function AIImageResponses() {
 
     const darkMode = useAppSelector(selectDarkMode);
 
+    // Add this state to track blob URLs
+    const [blobUrls, setBlobUrls] = useState<string[]>([]);
+
     useEffect(() => {
         fetchResponses();
     }, []);
 
     useEffect(() => {
-        const urls = selectedImages.map(image => URL.createObjectURL(image));
-        setSelectedImageUrls(urls);
+        const urls = selectedAudios.map(audio => URL.createObjectURL(audio));
+        setSelectedAudioUrls(urls);
         return () => urls.forEach(url => URL.revokeObjectURL(url));
-    }, [selectedImages]);
+    }, [selectedAudios]);
 
     const fetchResponses = async () => {
         try {
@@ -59,14 +64,14 @@ function AIImageResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const responsesRef = collection(firestore, `companies/${companyId}/aiImageResponses`);
+            const responsesRef = collection(firestore, `companies/${companyId}/aiVoiceResponses`);
             const responsesQuery = query(responsesRef, orderBy('createdAt', 'desc'));
             const responsesSnapshot = await getDocs(responsesQuery);
 
-            const fetchedResponses: AIImageResponse[] = responsesSnapshot.docs.map(doc => ({
+            const fetchedResponses: AIVoiceResponse[] = responsesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 keyword: doc.data().keyword || '',
-                imageUrls: doc.data().imageUrls || [],
+                voiceUrls: doc.data().voiceUrls || [],
                 createdAt: doc.data().createdAt.toDate(),
                 status: doc.data().status || 'active',
             }));
@@ -78,9 +83,9 @@ function AIImageResponses() {
         }
     };
 
-    const uploadImages = async (files: File[]): Promise<string[]> => {
+    const uploadAudios = async (files: File[]): Promise<string[]> => {
         const uploadPromises = files.map(async file => {
-            const storageRef = ref(storage, `aiResponses/${file.name}`);
+            const storageRef = ref(storage, `aiVoiceResponses/${file.name}`);
             await uploadBytes(storageRef, file);
             return await getDownloadURL(storageRef);
         });
@@ -88,8 +93,8 @@ function AIImageResponses() {
     };
 
     const addResponse = async () => {
-        if (newResponse.keyword.trim() === '' || selectedImages.length === 0) {
-            toast.error('Please provide both keyword and at least one image');
+        if (newResponse.keyword.trim() === '' || selectedAudios.length === 0) {
+            toast.error('Please provide both keyword and at least one audio');
             return;
         }
 
@@ -103,24 +108,24 @@ function AIImageResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const imageUrls = await uploadImages(selectedImages);
+            const voiceUrls = await uploadAudios(selectedAudios);
 
             const newResponseData = {
                 keyword: newResponse.keyword.toLowerCase(),
-                imageUrls,
+                voiceUrls,
                 status: newResponse.status,
                 createdAt: serverTimestamp(),
             };
 
-            const responseRef = collection(firestore, `companies/${companyId}/aiImageResponses`);
+            const responseRef = collection(firestore, `companies/${companyId}/aiVoiceResponses`);
             await addDoc(responseRef, newResponseData);
 
             setNewResponse({
                 keyword: '',
                 status: 'active'
             });
-            setSelectedImages([]);
-            setSelectedImageUrls([]);
+            setSelectedAudios([]);
+            setSelectedAudioUrls([]);
             fetchResponses();
             toast.success('Response added successfully');
         } catch (error) {
@@ -139,21 +144,21 @@ function AIImageResponses() {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const responseRef = doc(firestore, `companies/${companyId}/aiImageResponses`, id);
+            const responseRef = doc(firestore, `companies/${companyId}/aiVoiceResponses`, id);
 
-            const updatedData: Partial<AIImageResponse> = {
+            const updatedData: Partial<AIVoiceResponse> = {
                 keyword: keyword.toLowerCase(),
                 status
             };
 
-            if (selectedImages.length > 0) {
-                updatedData.imageUrls = await uploadImages(selectedImages);
+            if (selectedAudios.length > 0) {
+                updatedData.voiceUrls = await uploadAudios(selectedAudios);
             }
 
             await updateDoc(responseRef, updatedData);
             setIsEditing(null);
-            setSelectedImages([]);
-            setSelectedImageUrls([]);
+            setSelectedAudios([]);
+            setSelectedAudioUrls([]);
             fetchResponses();
             toast.success('Response updated successfully');
         } catch (error) {
@@ -174,7 +179,7 @@ function AIImageResponses() {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const responseRef = doc(firestore, `companies/${companyId}/aiImageResponses`, id);
+            const responseRef = doc(firestore, `companies/${companyId}/aiVoiceResponses`, id);
             await deleteDoc(responseRef);
             fetchResponses();
             toast.success('Response deleted successfully');
@@ -188,10 +193,32 @@ function AIImageResponses() {
         response.keyword.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    // Add new function to handle audio preview
+    const handleAudioSelect = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        
+        // Clean up old blob URLs
+        blobUrls.forEach(url => URL.revokeObjectURL(url));
+        
+        // Create new blob URLs
+        const newBlobUrls = files.map(file => URL.createObjectURL(file));
+        setBlobUrls(newBlobUrls);
+        setSelectedAudios(files);
+        setSelectedAudioUrls(newBlobUrls);
+    };
+
+    // Add cleanup effect
+    useEffect(() => {
+        return () => {
+            // Cleanup blob URLs when component unmounts
+            blobUrls.forEach(url => URL.revokeObjectURL(url));
+        };
+    }, [blobUrls]);
+
     return (
         <>
         <div className="h-screen overflow-y-auto pb-10">
-            <h2 className="mt-10 text-lg font-medium intro-y">AI Image Responses</h2>
+            <h2 className="mt-10 text-lg font-medium intro-y">AI Voice Responses</h2>
             <div className="grid grid-cols-12 gap-6 mt-5">
                 <div className="intro-y col-span-12 lg:col-span-6">
                     {/* Add new response form */}
@@ -213,17 +240,57 @@ function AIImageResponses() {
                                     />
                                 </div>
                                 <div className="col-span-12">
-                                    <FormLabel className="dark:text-slate-200">Images</FormLabel>
+                                    <FormLabel className="dark:text-slate-200">Audios</FormLabel>
                                     <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
-                                        <div className="flex flex-wrap px-4">
-                                            {selectedImageUrls.map((url, index) => (
-                                                <div key={index} className="w-24 h-24 relative image-fit mb-5 mr-5">
-                                                    <img className="rounded-md" src={url} alt={`Preview ${index + 1}`} />
+                                        <div className="px-4 pb-4">
+                                            {selectedAudioUrls.map((url, index) => (
+                                                <div key={index} className="mb-3 flex items-center justify-between">
+                                                    <audio 
+                                                        controls
+                                                        className="w-full"
+                                                        preload="auto"
+                                                        key={url}
+                                                        onLoadedData={(e) => {
+                                                            const audio = e.currentTarget;
+                                                            audio.volume = 1.0;
+                                                            console.log('Audio loaded:', {
+                                                                duration: audio.duration,
+                                                                volume: audio.volume,
+                                                                muted: audio.muted,
+                                                                readyState: audio.readyState
+                                                            });
+                                                        }}
+                                                        onPlay={(e) => {
+                                                            const audio = e.currentTarget;
+                                                            console.log('Audio playing:', {
+                                                                currentTime: audio.currentTime,
+                                                                volume: audio.volume,
+                                                                muted: audio.muted
+                                                            });
+                                                        }}
+                                                        onError={(e) => {
+                                                            const audio = e.currentTarget;
+                                                            console.error('Audio error:', {
+                                                                error: audio.error,
+                                                                networkState: audio.networkState,
+                                                                readyState: audio.readyState
+                                                            });
+                                                            toast.error(`Error loading audio file ${index + 1}`);
+                                                        }}
+                                                    >
+                                                        <source 
+                                                            src={url} 
+                                                            type={selectedAudios[index]?.type || 'audio/mpeg'} 
+                                                        />
+                                                        Your browser does not support the audio element.
+                                                    </audio>
                                                     <button
-                                                        className="absolute top-0 right-0 bg-danger text-white rounded-full p-1"
+                                                        className="ml-2 bg-danger text-white rounded-full p-1"
                                                         onClick={() => {
-                                                            setSelectedImages(prev => prev.filter((_, i) => i !== index));
-                                                            setSelectedImageUrls(prev => prev.filter((_, i) => i !== index));
+                                                            URL.revokeObjectURL(url); // Revoke the blob URL
+                                                            setBlobUrls(prev => prev.filter((_, i) => i !== index));
+                                                            setSelectedAudios(prev => prev.filter((_, i) => i !== index));
+                                                            setSelectedAudioUrls(prev => prev.filter((_, i) => i !== index));
                                                         }}
                                                     >
                                                         <Lucide icon="X" className="w-4 h-4" />
@@ -232,14 +299,14 @@ function AIImageResponses() {
                                             ))}
                                         </div>
                                         <div className="px-4 pb-4 flex items-center cursor-pointer relative">
-                                            <Lucide icon="Image" className="w-4 h-4 mr-2 dark:text-slate-200" />
-                                            <span className="text-primary mr-1 dark:text-slate-200">Upload images</span>
+                                            <Lucide icon="Music" className="w-4 h-4 mr-2 dark:text-slate-200" />
+                                            <span className="text-primary mr-1 dark:text-slate-200">Upload audios</span>
                                             <FormInput
                                                 type="file"
-                                                accept="image/*"
+                                                accept="audio/*"
                                                 multiple
                                                 className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
+                                                onChange={handleAudioSelect}
                                             />
                                         </div>
                                     </div>
@@ -265,7 +332,7 @@ function AIImageResponses() {
                     </div>
                 </div>
 
-                <div className="intro-y col-span-12 lg:col-span-6 overflow-y-auto">
+                <div className="intro-y col-span-12 lg:col-span-6">
                     {/* Search and list */}
                     <div className="intro-y box dark:bg-gray-700">
                         <div className="p-5">
@@ -277,7 +344,7 @@ function AIImageResponses() {
                                 className="mb-5 dark:bg-darkmode-800 dark:border-darkmode-400 dark:text-slate-200"
                             />
 
-                            <div className="grid grid-cols-12 gap-5 max-h-[calc(100vh-300px)] overflow-y-auto">
+                            <div className="grid grid-cols-12 gap-5">
                                 {filteredResponses.map((response) => (
                                     <div key={response.id} className="intro-y col-span-12">
                                         <div className="box p-5 dark:bg-gray-700">
@@ -293,22 +360,22 @@ function AIImageResponses() {
                                                             setResponses(updatedResponses);
                                                         }}
                                                     />
-                                                    <div>
-                                                        <FormLabel>New Images (optional)</FormLabel>
-                                                        <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
-                                                            <div className="px-4 pb-4 flex items-center cursor-pointer relative">
-                                                                <Lucide icon="Image" className="w-4 h-4 mr-2" />
-                                                                <span className="text-primary mr-1">Upload new images</span>
-                                                                <FormInput
-                                                                    type="file"
-                                                                    accept="image/*"
-                                                                    multiple
-                                                                    className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                                    onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
-                                                                />
+                                                    <div className="col-span-12">
+                                                            <FormLabel className="dark:text-slate-200">Audio Files</FormLabel>
+                                                            <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
+                                                                <div className="px-4 pb-4 flex items-center cursor-pointer relative">
+                                                                    <Lucide icon="Music" className="w-4 h-4 mr-2" />
+                                                                    <span className="text-primary mr-1">Upload audio files</span>
+                                                                    <FormInput
+                                                                        type="file"
+                                                                        accept="audio/*"
+                                                                        multiple
+                                                                        className="w-full h-full top-0 left-0 absolute opacity-0"
+                                                                        onChange={(e) => setSelectedAudios(Array.from(e.target.files || []))}
+                                                                    />
+                                                                </div>
                                                             </div>
                                                         </div>
-                                                    </div>
                                                     <FormSelect
                                                         value={response.status}
                                                         onChange={(e) => {
@@ -364,17 +431,19 @@ function AIImageResponses() {
                                                         </div>
                                                     </div>
                                                     <div className="rounded-md border border-slate-200/60 dark:border-darkmode-400 p-2">
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            {response.imageUrls.map((url, index) => (
-                                                                <img 
-                                                                    key={index}
-                                                                    src={url} 
-                                                                    alt={`${response.keyword} ${index + 1}`} 
-                                                                    className="w-full h-48 object-contain"
-                                                                />
-                                                            ))}
-                                                        </div>
+                                                    <div className="space-y-2">
+                                                        {response.voiceUrls.map((url, index) => (
+                                                            <audio 
+                                                                key={index}
+                                                                controls
+                                                                className="w-full"
+                                                            >
+                                                                <source src={url} type="audio/mpeg" />
+                                                                Your browser does not support the audio element.
+                                                            </audio>
+                                                        ))}
                                                     </div>
+                                                </div>
                                                 </div>
                                             )}
                                         </div>
@@ -385,10 +454,10 @@ function AIImageResponses() {
                     </div>
                 </div>
             </div>
-            <ToastContainer theme={darkMode ? "dark" : "light"} />
+                <ToastContainer theme={darkMode ? "dark" : "light"} />
             </div>
         </>
     );
 }
 
-export default AIImageResponses;
+export default AIVoiceResponses;

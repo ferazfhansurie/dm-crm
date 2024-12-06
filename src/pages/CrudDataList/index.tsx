@@ -248,6 +248,8 @@ function Main() {
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
   const [employeeSearch, setEmployeeSearch] = useState('');
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
+  const [showRecipients, setShowRecipients] = useState<string | null>(null);
+  const [recipientSearch, setRecipientSearch] = useState('');
 
  
 
@@ -1496,6 +1498,7 @@ const handleConfirmDeleteTag = async () => {
   };
   
   const handleRemoveTag = async (contactId: string, tagName: string) => {
+    console.log('removing tag', tagName);
     if (userRole === "3") {
       toast.error("You don't have permission to perform this action.");
       return;
@@ -1512,11 +1515,60 @@ const handleConfirmDeleteTag = async () => {
       const companyId = userData.companyId;
   
       const contactRef = doc(firestore, `companies/${companyId}/contacts`, contactId);
+      const contactDoc = await getDoc(contactRef);
+      const contactData = contactDoc.data();
       
       // Remove the tag from the contact's tags array
       await updateDoc(contactRef, {
         tags: arrayRemove(tagName)
       });
+  
+    // Check if tag is a trigger tag
+    const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+    const templatesSnapshot = await getDocs(templatesRef);
+    
+    // Find all templates where this tag is a trigger
+    const matchingTemplates = templatesSnapshot.docs
+      .filter(doc => {
+        const template = doc.data();
+        return template.triggerTags?.includes(tagName) && template.status === 'active';
+      })
+      .map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
+
+    // If we found matching templates, call the follow-up API for each one
+    for (const template of matchingTemplates) {
+      try {
+        const phoneNumber = contactId.replace(/\D/g, '');
+        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestType: 'removeTemplate',
+            phone: phoneNumber,
+            first_name: contactData?.contactName || phoneNumber,
+            phoneIndex: userData.phone || 0,
+            templateId: template.id, // Using the actual template document ID
+            idSubstring: companyId
+          }),
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('Failed to remove template messages:', errorText);
+        } else {
+          console.log(`Follow-up template ${template.id} removed successfully`);
+          toast.success('Follow-up sequence stopped');
+        }
+      } catch (error) {
+        console.error('Error removing template messages:', error);
+      }
+    }
+
   
       // Update local state
       setContacts(prevContacts =>
@@ -1541,7 +1593,6 @@ const handleConfirmDeleteTag = async () => {
       toast.error('Failed to remove tag.');
     }
   };
-  
 
   async function updateContactTags(contactId: string, accessToken: string, tags: string[], tagName:string) {
     try {
@@ -1715,6 +1766,51 @@ const chatId = tempphone + "@c.us"
         }
         const userData = docUserSnapshot.data();
         const companyId = userData.companyId;
+  
+        // Check for active templates
+        const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
+        const templatesSnapshot = await getDocs(templatesRef);
+        
+        // Get all active templates
+        const activeTemplates = templatesSnapshot.docs
+          .filter(doc => doc.data().status === 'active')
+          .map(doc => ({
+            id: doc.id,
+            ...doc.data()
+          }));
+  
+        // Remove templates for this contact
+        if (activeTemplates.length > 0) {
+          const phoneNumber = currentContact.phone?.replace(/\D/g, '');
+          
+          for (const template of activeTemplates) {
+            try {
+              const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                  requestType: 'removeTemplate',
+                  phone: phoneNumber,
+                  first_name: currentContact.contactName || phoneNumber,
+                  phoneIndex: userData.phone || 0,
+                  templateId: template.id,
+                  idSubstring: companyId
+                }),
+              });
+  
+              if (!response.ok) {
+                const errorText = await response.text();
+                console.error('Failed to remove template messages:', errorText);
+              } else {
+                console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+              }
+            } catch (error) {
+              console.error('Error removing template messages:', error);
+            }
+          }
+        }
   
         // Delete the contact from Firestore
         const contactRef = doc(firestore, `companies/${companyId}/contacts`, currentContact.id!);
@@ -2852,6 +2948,30 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
   };
   
 
+  const filterRecipients = (chatIds: string[], search: string) => {
+    return chatIds.filter(chatId => {
+      const phoneNumber = chatId.split('@')[0];
+      const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+      const contactName = contact?.contactName || phoneNumber;
+      return contactName.toLowerCase().includes(search.toLowerCase()) || 
+             phoneNumber.includes(search);
+    });
+  };
+  // Add this function to filter scheduled messages
+const getFilteredScheduledMessages = () => {
+  if (!searchQuery) return scheduledMessages;
+
+  return scheduledMessages.filter(message => {
+    // Check if message content matches search
+    if (message.message?.toLowerCase().includes(searchQuery.toLowerCase())) {
+      return true;
+    }
+
+    // Check if any recipient matches search
+    const matchingRecipients = filterRecipients(message.chatIds, searchQuery);
+    return matchingRecipients.length > 0;
+  });
+};
   return (
     <div className="h-screen flex flex-col bg-gray-100 dark:bg-gray-900">
       <div className="flex-grow overflow-y-auto">
@@ -3368,65 +3488,79 @@ Jane,Smith,60198765432,jane@example.com,XYZ Corp,456 Elm St,Branch B,2024-06-30,
               </div>
               {/* Scheduled Messages Section */}
               <div className="mt-3 mb-5">
-                <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
-                {scheduledMessages.length > 0 ? (
-                  <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
-                    {combineScheduledMessages(scheduledMessages).map((message) => (
-                      <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
-                        <div className="z-10 p-4 flex-grow">
-                          <div className="z-10 flex justify-between items-center mb-2">
-                            <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
-                              {message.status === 'scheduled' ? 'Scheduled' : message.status}
-                            </span>
-                            <span className="text-xs text-gray-500 dark:text-gray-400">
-                              {formatDate(message.scheduledTime.toDate())}
-                            </span>
-                          </div>
-                          <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
-                            {message.message ? message.message : 'No message content'}
-                          </p>  
-                          <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
-                            <Lucide icon="Users" className="w-4 h-4 mr-1" />
-                            <span>{message.chatIds.length} recipient{message.chatIds.length !== 1 ? 's' : ''}</span>
-                          </div>
-                          {message.mediaUrl && (
-                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              <Lucide icon="Image" className="w-4 h-4 mr-1" />
-                              <span>Media attached</span>
-                            </div>
-                          )}
-                          {message.documentUrl && (
-                            <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
-                              <Lucide icon="File" className="w-4 h-4 mr-1" />
-                              <span>{message.fileName || 'Document attached'}</span>
-                            </div>
-                          )}
-                        </div>
-                        <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
-                          <button
-                            onClick={() => handleEditScheduledMessage(message)}
-                            className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDeleteScheduledMessage(message.id!)}
-                            className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
-                    <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
-                    <p className="text-lg font-medium text-gray-700 dark:text-gray-300">No scheduled messages yet</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">When you schedule messages, they will appear here.</p>
-                  </div>
-                )}
+    <h2 className="z-10 text-xl font-semibold mb-1 text-gray-700 dark:text-gray-300">Scheduled Messages</h2>
+    {getFilteredScheduledMessages().length > 0 ? (
+      <div className="z-10 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-auto">
+        {combineScheduledMessages(getFilteredScheduledMessages()).map((message) => (
+          <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
+            <div className="z-10 p-4 flex-grow">
+              <div className="z-10 flex justify-between items-center mb-2">
+                <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
+                  {message.status === 'scheduled' ? 'Scheduled' : message.status}
+                </span>
+                <span className="text-xs text-gray-500 dark:text-gray-400">
+                  {formatDate(message.scheduledTime.toDate())}
+                </span>
               </div>
+              <p className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md line-clamp-2">
+                {message.message ? message.message : 'No message content'}
+              </p>  
+              <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
+                <Lucide icon="Users" className="w-4 h-4 mr-1" />
+                <div className="ml-5 max-h-20 overflow-y-auto">
+                  {message.chatIds.map(chatId => {
+                    const phoneNumber = chatId.split('@')[0];
+                    const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+                    return (
+                      <div key={chatId} className="truncate">
+                        {contact?.contactName || phoneNumber}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+              {message.mediaUrl && (
+                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  <Lucide icon="Image" className="w-4 h-4 mr-1" />
+                  <span>Media attached</span>
+                </div>
+              )}
+              {message.documentUrl && (
+                <div className="flex items-center text-xs text-gray-600 dark:text-gray-400 mt-1">
+                  <Lucide icon="File" className="w-4 h-4 mr-1" />
+                  <span>{message.fileName || 'Document attached'}</span>
+                </div>
+              )}
+            </div>
+            <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
+              <button
+                onClick={() => handleEditScheduledMessage(message)}
+                className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
+              >
+                Edit
+              </button>
+              <button
+                onClick={() => handleDeleteScheduledMessage(message.id!)}
+                className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    ) : (
+      <div className="z-1 bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 text-center">
+        <Lucide icon="Calendar" className="w-16 h-16 mx-auto text-gray-400 dark:text-gray-600 mb-4" />
+        <p className="text-lg font-medium text-gray-700 dark:text-gray-300">
+          {searchQuery ? 'No matching scheduled messages' : 'No scheduled messages yet'}
+        </p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">
+          {searchQuery ? 'Try a different search term' : 'When you schedule messages, they will appear here.'}
+        </p>
+      </div>
+    )}
+  </div>
               {/* Edit Scheduled Message Modal */}
               <Dialog open={editScheduledMessageModal} onClose={() => setEditScheduledMessageModal(false)}>
                 <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">

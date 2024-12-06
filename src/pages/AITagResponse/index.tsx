@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { getAuth } from "firebase/auth";
 import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy, serverTimestamp } from "firebase/firestore";
-import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Button from "@/components/Base/Button";
@@ -10,19 +9,25 @@ import Lucide from "@/components/Base/Lucide";
 import Table from "@/components/Base/Table";
 import { useAppSelector } from "@/stores/hooks";
 import { selectDarkMode } from "@/stores/darkModeSlice";
+import clsx from "clsx";
 
-interface AIImageResponse {
+interface AITagResponse {
     id: string;
     keyword: string;
-    imageUrls: string[];
+    tags: string[];
     createdAt: Date;
     status: 'active' | 'inactive';
 }
 
-function AIImageResponses() {
-    const [responses, setResponses] = useState<AIImageResponse[]>([]);
-    const [selectedImages, setSelectedImages] = useState<File[]>([]);
-    const [selectedImageUrls, setSelectedImageUrls] = useState<string[]>([]);
+interface Tag {
+    id: string;
+    name: string;
+}
+
+function AITagResponses() {
+    const [responses, setResponses] = useState<AITagResponse[]>([]);
+    const [availableTags, setAvailableTags] = useState<Tag[]>([]);
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
@@ -34,7 +39,6 @@ function AIImageResponses() {
     // Firebase setup
     const firestore = getFirestore();
     const auth = getAuth();
-    const storage = getStorage();
 
     const darkMode = useAppSelector(selectDarkMode);
 
@@ -43,10 +47,24 @@ function AIImageResponses() {
     }, []);
 
     useEffect(() => {
-        const urls = selectedImages.map(image => URL.createObjectURL(image));
-        setSelectedImageUrls(urls);
-        return () => urls.forEach(url => URL.revokeObjectURL(url));
-    }, [selectedImages]);
+        fetchTags();
+    }, []);
+
+    useEffect(() => {
+        if (isEditing) {
+            const response = responses.find(r => r.id === isEditing);
+            if (response) {
+                // Convert tag names back to tag IDs for editing
+                const tagIds = response.tags
+                    .map(tagName => {
+                        const tag = availableTags.find(t => t.name === tagName);
+                        return tag ? tag.id : null;
+                    })
+                    .filter((id): id is string => id !== null);
+                setSelectedTags(tagIds);
+            }
+        }
+    }, [isEditing, responses, availableTags]);
 
     const fetchResponses = async () => {
         try {
@@ -59,14 +77,14 @@ function AIImageResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const responsesRef = collection(firestore, `companies/${companyId}/aiImageResponses`);
+            const responsesRef = collection(firestore, `companies/${companyId}/aiTagResponses`);
             const responsesQuery = query(responsesRef, orderBy('createdAt', 'desc'));
             const responsesSnapshot = await getDocs(responsesQuery);
 
-            const fetchedResponses: AIImageResponse[] = responsesSnapshot.docs.map(doc => ({
+            const fetchedResponses: AITagResponse[] = responsesSnapshot.docs.map(doc => ({
                 id: doc.id,
                 keyword: doc.data().keyword || '',
-                imageUrls: doc.data().imageUrls || [],
+                tags: doc.data().tags || [],
                 createdAt: doc.data().createdAt.toDate(),
                 status: doc.data().status || 'active',
             }));
@@ -78,18 +96,35 @@ function AIImageResponses() {
         }
     };
 
-    const uploadImages = async (files: File[]): Promise<string[]> => {
-        const uploadPromises = files.map(async file => {
-            const storageRef = ref(storage, `aiResponses/${file.name}`);
-            await uploadBytes(storageRef, file);
-            return await getDownloadURL(storageRef);
-        });
-        return Promise.all(uploadPromises);
+    const fetchTags = async () => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userSnapshot = await getDoc(userRef);
+            if (!userSnapshot.exists()) return;
+            const userData = userSnapshot.data();
+            const companyId = userData.companyId;
+
+            const tagsRef = collection(firestore, `companies/${companyId}/tags`);
+            const tagsSnapshot = await getDocs(tagsRef);
+
+            const fetchedTags: Tag[] = tagsSnapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name,
+            }));
+
+            setAvailableTags(fetchedTags);
+        } catch (error) {
+            console.error('Error fetching tags:', error);
+            toast.error('Error fetching tags');
+        }
     };
 
     const addResponse = async () => {
-        if (newResponse.keyword.trim() === '' || selectedImages.length === 0) {
-            toast.error('Please provide both keyword and at least one image');
+        if (newResponse.keyword.trim() === '' || selectedTags.length === 0) {
+            toast.error('Please provide both keyword and at least one tag');
             return;
         }
 
@@ -103,24 +138,26 @@ function AIImageResponses() {
             const userData = userSnapshot.data();
             const companyId = userData.companyId;
 
-            const imageUrls = await uploadImages(selectedImages);
+            const tagNames = selectedTags.map(tagId => {
+                const tag = availableTags.find(t => t.id === tagId);
+                return tag ? tag.name : '';
+            }).filter(name => name !== '');
 
             const newResponseData = {
                 keyword: newResponse.keyword.toLowerCase(),
-                imageUrls,
+                tags: tagNames,
                 status: newResponse.status,
                 createdAt: serverTimestamp(),
             };
 
-            const responseRef = collection(firestore, `companies/${companyId}/aiImageResponses`);
+            const responseRef = collection(firestore, `companies/${companyId}/aiTagResponses`);
             await addDoc(responseRef, newResponseData);
 
             setNewResponse({
                 keyword: '',
                 status: 'active'
             });
-            setSelectedImages([]);
-            setSelectedImageUrls([]);
+            setSelectedTags([]);
             fetchResponses();
             toast.success('Response added successfully');
         } catch (error) {
@@ -139,21 +176,22 @@ function AIImageResponses() {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const responseRef = doc(firestore, `companies/${companyId}/aiImageResponses`, id);
+            const responseRef = doc(firestore, `companies/${companyId}/aiTagResponses`, id);
 
-            const updatedData: Partial<AIImageResponse> = {
+            const tagNames = selectedTags.map(tagId => {
+                const tag = availableTags.find(t => t.id === tagId);
+                return tag ? tag.name : '';
+            }).filter(name => name !== '');
+
+            const updatedData: Partial<AITagResponse> = {
                 keyword: keyword.toLowerCase(),
-                status
+                status,
+                tags: tagNames
             };
-
-            if (selectedImages.length > 0) {
-                updatedData.imageUrls = await uploadImages(selectedImages);
-            }
 
             await updateDoc(responseRef, updatedData);
             setIsEditing(null);
-            setSelectedImages([]);
-            setSelectedImageUrls([]);
+            setSelectedTags([]);
             fetchResponses();
             toast.success('Response updated successfully');
         } catch (error) {
@@ -174,7 +212,7 @@ function AIImageResponses() {
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
 
-            const responseRef = doc(firestore, `companies/${companyId}/aiImageResponses`, id);
+            const responseRef = doc(firestore, `companies/${companyId}/aiTagResponses`, id);
             await deleteDoc(responseRef);
             fetchResponses();
             toast.success('Response deleted successfully');
@@ -188,10 +226,18 @@ function AIImageResponses() {
         response.keyword.toLowerCase().includes(searchQuery.toLowerCase())
     );
 
+    const handleTagSelection = (tagId: string) => {
+        setSelectedTags(prev => 
+            prev.includes(tagId) 
+                ? prev.filter(id => id !== tagId)
+                : [...prev, tagId]
+        );
+    };
+
     return (
         <>
         <div className="h-screen overflow-y-auto pb-10">
-            <h2 className="mt-10 text-lg font-medium intro-y">AI Image Responses</h2>
+            <h2 className="mt-10 text-lg font-medium intro-y">AI Tag Responses</h2>
             <div className="grid grid-cols-12 gap-6 mt-5">
                 <div className="intro-y col-span-12 lg:col-span-6">
                     {/* Add new response form */}
@@ -213,35 +259,31 @@ function AIImageResponses() {
                                     />
                                 </div>
                                 <div className="col-span-12">
-                                    <FormLabel className="dark:text-slate-200">Images</FormLabel>
-                                    <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
-                                        <div className="flex flex-wrap px-4">
-                                            {selectedImageUrls.map((url, index) => (
-                                                <div key={index} className="w-24 h-24 relative image-fit mb-5 mr-5">
-                                                    <img className="rounded-md" src={url} alt={`Preview ${index + 1}`} />
-                                                    <button
-                                                        className="absolute top-0 right-0 bg-danger text-white rounded-full p-1"
-                                                        onClick={() => {
-                                                            setSelectedImages(prev => prev.filter((_, i) => i !== index));
-                                                            setSelectedImageUrls(prev => prev.filter((_, i) => i !== index));
-                                                        }}
-                                                    >
-                                                        <Lucide icon="X" className="w-4 h-4" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        <div className="px-4 pb-4 flex items-center cursor-pointer relative">
-                                            <Lucide icon="Image" className="w-4 h-4 mr-2 dark:text-slate-200" />
-                                            <span className="text-primary mr-1 dark:text-slate-200">Upload images</span>
-                                            <FormInput
-                                                type="file"
-                                                accept="image/*"
-                                                multiple
-                                                className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
-                                            />
-                                        </div>
+                                    <FormLabel className="dark:text-slate-200">Select Tags</FormLabel>
+                                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
+                                        {availableTags.map((tag) => (
+                                            <div 
+                                                key={tag.id}
+                                                className={clsx(
+                                                    "flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors",
+                                                    "hover:bg-slate-100 dark:hover:bg-darkmode-400",
+                                                    selectedTags.includes(tag.id) && "bg-slate-100 dark:bg-darkmode-400"
+                                                )}
+                                                onClick={() => handleTagSelection(tag.id)}
+                                            >
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedTags.includes(tag.id)}
+                                                    onChange={() => handleTagSelection(tag.id)}
+                                                    className="form-checkbox h-5 w-5 text-primary border-slate-300 rounded 
+                                                             dark:border-darkmode-400 dark:bg-darkmode-800"
+                                                />
+                                                <span className="dark:text-slate-200">{tag.name}</span>
+                                            </div>
+                                        ))}
+                                    </div>
+                                    <div className="mt-2 text-slate-500 text-sm">
+                                        {selectedTags.length} tags selected
                                     </div>
                                 </div>
                                 <div className="col-span-12">
@@ -253,7 +295,7 @@ function AIImageResponses() {
                                     >
                                         <option value="active">Active</option>
                                         <option value="inactive">Inactive</option>
-</FormSelect>
+                                    </FormSelect>
                                 </div>
                                 <div className="col-span-12">
                                     <Button variant="primary" onClick={addResponse}>
@@ -265,7 +307,7 @@ function AIImageResponses() {
                     </div>
                 </div>
 
-                <div className="intro-y col-span-12 lg:col-span-6 overflow-y-auto">
+                <div className="intro-y col-span-12 lg:col-span-6">
                     {/* Search and list */}
                     <div className="intro-y box dark:bg-gray-700">
                         <div className="p-5">
@@ -277,7 +319,7 @@ function AIImageResponses() {
                                 className="mb-5 dark:bg-darkmode-800 dark:border-darkmode-400 dark:text-slate-200"
                             />
 
-                            <div className="grid grid-cols-12 gap-5 max-h-[calc(100vh-300px)] overflow-y-auto">
+                            <div className="grid grid-cols-12 gap-5">
                                 {filteredResponses.map((response) => (
                                     <div key={response.id} className="intro-y col-span-12">
                                         <div className="box p-5 dark:bg-gray-700">
@@ -292,23 +334,8 @@ function AIImageResponses() {
                                                             );
                                                             setResponses(updatedResponses);
                                                         }}
+                                                        className="dark:bg-darkmode-800 dark:border-darkmode-400 dark:text-slate-200"
                                                     />
-                                                    <div>
-                                                        <FormLabel>New Images (optional)</FormLabel>
-                                                        <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
-                                                            <div className="px-4 pb-4 flex items-center cursor-pointer relative">
-                                                                <Lucide icon="Image" className="w-4 h-4 mr-2" />
-                                                                <span className="text-primary mr-1">Upload new images</span>
-                                                                <FormInput
-                                                                    type="file"
-                                                                    accept="image/*"
-                                                                    multiple
-                                                                    className="w-full h-full top-0 left-0 absolute opacity-0"
-                                                                    onChange={(e) => setSelectedImages(Array.from(e.target.files || []))}
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    </div>
                                                     <FormSelect
                                                         value={response.status}
                                                         onChange={(e) => {
@@ -317,10 +344,41 @@ function AIImageResponses() {
                                                             );
                                                             setResponses(updatedResponses);
                                                         }}
+                                                        className="dark:bg-darkmode-800 dark:border-darkmode-400 dark:text-slate-200"
                                                     >
                                                         <option value="active">Active</option>
                                                         <option value="inactive">Inactive</option>
                                                     </FormSelect>
+
+                                                    <div>
+                                                        <FormLabel className="dark:text-slate-200">Edit Tags</FormLabel>
+                                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
+                                                            {availableTags.map((tag) => (
+                                                                <div 
+                                                                    key={tag.id}
+                                                                    className={clsx(
+                                                                        "flex items-center space-x-2 p-2 rounded cursor-pointer transition-colors",
+                                                                        "hover:bg-slate-100 dark:hover:bg-darkmode-400",
+                                                                        selectedTags.includes(tag.id) && "bg-slate-100 dark:bg-darkmode-400"
+                                                                    )}
+                                                                    onClick={() => handleTagSelection(tag.id)}
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={selectedTags.includes(tag.id)}
+                                                                        onChange={() => handleTagSelection(tag.id)}
+                                                                        className="form-checkbox h-5 w-5 text-primary border-slate-300 rounded 
+                                                                                 dark:border-darkmode-400 dark:bg-darkmode-800"
+                                                                    />
+                                                                    <span className="dark:text-slate-200">{tag.name}</span>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                        <div className="mt-2 text-slate-500 text-sm">
+                                                            {selectedTags.length} tags selected
+                                                        </div>
+                                                    </div>
+
                                                     <div className="flex space-x-2">
                                                         <Button
                                                             variant="primary"
@@ -330,7 +388,10 @@ function AIImageResponses() {
                                                         </Button>
                                                         <Button
                                                             variant="secondary"
-                                                            onClick={() => setIsEditing(null)}
+                                                            onClick={() => {
+                                                                setIsEditing(null);
+                                                                setSelectedTags([]);
+                                                            }}
                                                         >
                                                             Cancel
                                                         </Button>
@@ -364,14 +425,14 @@ function AIImageResponses() {
                                                         </div>
                                                     </div>
                                                     <div className="rounded-md border border-slate-200/60 dark:border-darkmode-400 p-2">
-                                                        <div className="grid grid-cols-2 gap-2">
-                                                            {response.imageUrls.map((url, index) => (
-                                                                <img 
-                                                                    key={index}
-                                                                    src={url} 
-                                                                    alt={`${response.keyword} ${index + 1}`} 
-                                                                    className="w-full h-48 object-contain"
-                                                                />
+                                                        <div className="space-y-2">
+                                                            {response.tags.map((tagName, index) => (
+                                                                <span 
+                                                                    key={index} 
+                                                                    className="inline-block bg-slate-100 dark:bg-darkmode-400 rounded px-2 py-1 mr-2 mb-2"
+                                                                >
+                                                                    {tagName}
+                                                                </span>
                                                             ))}
                                                         </div>
                                                     </div>
@@ -385,10 +446,10 @@ function AIImageResponses() {
                     </div>
                 </div>
             </div>
-            <ToastContainer theme={darkMode ? "dark" : "light"} />
+                <ToastContainer theme={darkMode ? "dark" : "light"} />
             </div>
         </>
     );
 }
 
-export default AIImageResponses;
+export default AITagResponses;

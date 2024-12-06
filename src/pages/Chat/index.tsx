@@ -192,6 +192,18 @@ interface ImageModalProps {
   onClose: () => void;
   imageUrl: string;
 }
+interface Template {
+  id: string;
+  triggerTags?: string[];
+  name?: string;
+  messages?: {
+    text: string;
+    delay: number;
+    delayUnit: string;
+  }[];
+  createdAt?: any;
+  updatedAt?: any;
+}
 interface DocumentModalProps {
   isOpen: boolean;
   onClose: () => void;
@@ -2005,7 +2017,7 @@ async function fetchConfigFromDatabase() {
     console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
     
     try {
-      // Permission check
+      // Only check permissions for role '3', allow role '2' full access
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
         console.log('Permission denied for role 3 user');
         toast.error("You don't have permission to view this chat.");
@@ -2018,6 +2030,10 @@ async function fetchConfigFromDatabase() {
         console.error('Contact not found');
         return;
       }
+
+      // Debug logging
+      console.log('Selected contact:', contact);
+      console.log('User role:', userRole);
   
       // Update local state first for immediate UI response
       setContacts(prevContacts => {
@@ -2301,6 +2317,8 @@ useEffect(() => {
             return;
         }
         const dataUser = docUserSnapshot.data();
+
+        console.log('Fetching messages for user role:', dataUser.role);
         
         const companyId = dataUser.companyId;
         const docRef = doc(firestore, 'companies', companyId);
@@ -2313,10 +2331,9 @@ useEffect(() => {
         
         setToken(data2.whapiToken);
         console.log('fetching messages');
-        let messages;
-        messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
-            console.log('messages');
-            console.log(messages);
+        let messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
+        console.log('messages');
+        console.log(messages);
         
         const formattedMessages: any[] = [];
         const reactionsMap: Record<string, any[]> = {};
@@ -2476,13 +2493,13 @@ useEffect(() => {
                     case 'reactions':
                         formattedMessage.reactions = message.reactions ? message.reactions : undefined;
                         break;
-                        case 'privateNote':
-    console.log('Private note data:', message);
-    formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
-    console.log('Formatted private note text:', formattedMessage.text);
-    formattedMessage.from_me = true;
-    formattedMessage.from_name = message.from;
-    break;
+                    case 'privateNote':
+                        console.log('Private note data:', message);
+                        formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
+                        console.log('Formatted private note text:', formattedMessage.text);
+                        formattedMessage.from_me = true;
+                        formattedMessage.from_name = message.from;
+                        break;
                     default:
                         console.warn(`Unknown message type: ${message.type}`);
                 }
@@ -5008,7 +5025,21 @@ const sortContacts = (contacts: Contact[]) => {
     };
   }, []);
   
-  const handleRemoveTag = async (contactId: string, tagName: string) => {
+// First, ensure you have the Template interface defined
+interface Template {
+  id: string;
+  triggerTags?: string[];
+  name?: string;
+  messages?: {
+    text: string;
+    delay: number;
+    delayUnit: string;
+  }[];
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+ const handleRemoveTag = async (contactId: string, tagName: string) => {
     try {
       const user = auth.currentUser;
       const docUserRef = doc(firestore, 'user', user?.email!);
@@ -5147,7 +5178,8 @@ const sortContacts = (contacts: Contact[]) => {
       toast.error('Failed to remove tag.');
     }
   };
-
+  
+ 
 
   const adjustHeight = (textarea: HTMLTextAreaElement, reset = false) => {
     if (reset) {
@@ -7108,12 +7140,13 @@ console.log(prompt);
               .filter((message) => message.type !== 'action'&& 
               message.type !== 'e2e_notification' && 
               message.type !== 'notification_template'&&
-              (userData?.phone === undefined || 
+              (userData?.company !== "0123" || 
+                (userData?.phone === undefined || 
                 phoneCount === undefined || 
                 phoneCount === 0 ||
                 message.phoneIndex === undefined || 
                 message.phoneIndex === null || 
-                message.phoneIndex === userData?.phone))
+                message.phoneIndex === userData?.phone)))
               .slice()
               .reverse()
               .map((message, index, array) => {
@@ -8554,6 +8587,7 @@ console.log(prompt);
     </div>
   );
 };
+
 interface ImageModalProps2 {
   isOpen: boolean;
   onClose: () => void;

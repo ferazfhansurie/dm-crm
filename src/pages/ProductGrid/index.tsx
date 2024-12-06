@@ -62,6 +62,8 @@ interface Material{
   name:string;
 }
 
+const DatePickerComponent = DatePicker as any;
+
 const Orders = () => {
   const [ordersData, setOrdersData] = useState<Order[]>([]);
   const [draftOrders, setDraftOrders] = useState<Order[]>([]);
@@ -517,14 +519,14 @@ const [submittedOrders, setSubmittedOrders] = useState<Order[]>([]);
           </Dialog.Title>
           <div className="mt-2">
             <div className="flex space-x-2">
-              <DatePicker
+              <DatePickerComponent
                 selected={newOrder.madeDate ? new Date(newOrder.madeDate) : null}
                 onChange={(date: Date) => handleDateChange('madeDate', date)}
                 dateFormat="dd/MM/yyyy"
                 placeholderText="Made Date"
                 className="border p-2 rounded"
               />
-              <DatePicker
+              <DatePickerComponent
                 selected={newOrder.requiredDate ? new Date(newOrder.requiredDate) : null}
                 onChange={(date: Date) => handleDateChange('requiredDate', date)}
                 dateFormat="dd/MM/yyyy"
@@ -756,7 +758,7 @@ const [submittedOrders, setSubmittedOrders] = useState<Order[]>([]);
 
       <div className="flex space-x-4 justify-center items-center mb-4">
       <div className="flex space-x-4 justify-center items-center mb-4">
-  <DatePicker
+  <DatePickerComponent
     selected={dateRange[0]}
     onChange={(date: Date | null) => setDateRange([date, dateRange[1]])}
     selectsStart
@@ -766,7 +768,7 @@ const [submittedOrders, setSubmittedOrders] = useState<Order[]>([]);
     placeholderText="Start Date"
     className="bg-white rounded"
   />
-  <DatePicker
+  <DatePickerComponent
     selected={dateRange[1]}
     onChange={(date: Date | null) => setDateRange([dateRange[0], date])}
     selectsEnd

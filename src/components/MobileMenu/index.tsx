@@ -1,6 +1,6 @@
 import "@/assets/css/vendors/simplebar.css";
 import "@/assets/css/components/mobile-menu.css";
-import { Transition } from "react-transition-group";
+import { Transition as HeadlessTransition } from '@headlessui/react';
 import { useState, useEffect, createRef } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { toRaw } from "@/utils/helper";
@@ -124,11 +124,14 @@ function Main() {
                   </a>
                   {/* BEGIN: Second Child */}
                   {menu.subMenu && (
-                    <Transition
-                      in={menu.activeDropdown}
-                      onEnter={enter}
-                      onExit={leave}
-                      timeout={300}
+                    <HeadlessTransition
+                      show={menu.activeDropdown}
+                      enter="transition ease-in-out duration-300"
+                      enterFrom="opacity-0"
+                      enterTo="opacity-100"
+                      leave="transition ease-in-out duration-300"
+                      leaveFrom="opacity-100"
+                      leaveTo="opacity-0"
                     >
                       <ul
                         className={clsx({
@@ -168,11 +171,14 @@ function Main() {
                             </a>
                             {/* BEGIN: Third Child */}
                             {subMenu.subMenu && (
-                              <Transition
-                                in={subMenu.activeDropdown}
-                                onEnter={enter}
-                                onExit={leave}
-                                timeout={300}
+                              <HeadlessTransition
+                                show={subMenu.activeDropdown}
+                                enter="transition ease-in-out duration-300"
+                                enterFrom="opacity-0"
+                                enterTo="opacity-100"
+                                leave="transition ease-in-out duration-300"
+                                leaveFrom="opacity-100"
+                                leaveTo="opacity-0"
                               >
                                 <ul
                                   className={clsx({
@@ -216,13 +222,13 @@ function Main() {
                                     )
                                   )}
                                 </ul>
-                              </Transition>
+                              </HeadlessTransition>
                             )}
                             {/* END: Third Child */}
                           </li>
                         ))}
                       </ul>
-                    </Transition>
+                    </HeadlessTransition>
                   )}
                   {/* END: Second Child */}
                 </li>

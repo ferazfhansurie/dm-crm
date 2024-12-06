@@ -1365,7 +1365,7 @@ function Main() {
               }}
               datesSet={(dateInfo) => setView(dateInfo.view.type)}
             />
-            <style jsx global>{`
+            <style>{`
               .fc .fc-toolbar {
                 color: #0C4A6E;
               }

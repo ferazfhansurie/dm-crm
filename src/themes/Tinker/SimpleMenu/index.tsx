@@ -1,5 +1,5 @@
 import "@/assets/css/themes/tinker/side-nav.css";
-import { Transition } from "react-transition-group";
+import { Transition as HeadlessTransition } from '@headlessui/react';
 import { useState, useEffect, ReactElement, JSXElementConstructor, ReactNode, ReactPortal, Key, useCallback, useRef } from "react";
 import { Link, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { selectMenu } from "@/stores/menuSlice";
@@ -268,11 +268,14 @@ const clearAllNotifications = async () => {
                   </Tippy>
                   {/* BEGIN: Second Child */}
                   {menu.subMenu && (
-                    <Transition
-                      in={menu.activeDropdown}
-                      onEnter={enter}
-                      onExit={leave}
-                      timeout={300}
+                    <HeadlessTransition
+                      show={menu.activeDropdown}
+                      enter="transition ease-out duration-300"
+                      enterFrom="transform opacity-0 scale-95"
+                      enterTo="transform opacity-100 scale-100"
+                      leave="transition ease-in duration-300"
+                      leaveFrom="transform opacity-100 scale-100"
+                      leaveTo="transform opacity-0 scale-95"
                     >
                       <ul
                         className={clsx({
@@ -304,11 +307,14 @@ const clearAllNotifications = async () => {
                             </Tippy>
                             {/* BEGIN: Third Child */}
                             {subMenu.subMenu && (
-                              <Transition
-                                in={subMenu.activeDropdown}
-                                onEnter={enter}
-                                onExit={leave}
-                                timeout={300}
+                              <HeadlessTransition
+                                show={subMenu.activeDropdown}
+                                enter="transition ease-out duration-300"
+                                enterFrom="transform opacity-0 scale-95"
+                                enterTo="transform opacity-100 scale-100"
+                                leave="transition ease-in duration-300"
+                                leaveFrom="transform opacity-100 scale-100"
+                                leaveTo="transform opacity-0 scale-95"
                               >
                                 <ul
                                   className={clsx({
@@ -345,13 +351,13 @@ const clearAllNotifications = async () => {
                                     </li>
                                   ))}
                                 </ul>
-                              </Transition>
+                              </HeadlessTransition>
                             )}
                             {/* END: Third Child */}
                           </li>
                         ))}
                       </ul>
-                    </Transition>
+                    </HeadlessTransition>
                   )}
                   {/* END: Second Child */}
                 </li>

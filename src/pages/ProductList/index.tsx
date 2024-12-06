@@ -34,6 +34,8 @@ interface Delivery {
   recipientName: string;
 }
 
+const DatePickerComponent = DatePicker as any;
+
 const Deliveries = () => {
   const [deliveriesData, setDeliveriesData] = useState<Delivery[]>([]);
   const [dateRange, setDateRange] = useState<[Date | null, Date | null]>([null, null]);
@@ -144,7 +146,7 @@ const Deliveries = () => {
     <>
       <div className="text-lg font-semibold pt-4 pb-4 pl-6 pr-6">Deliveries</div>
       <div className="flex space-x-4 justify-center items-center mb-4">
-        <DatePicker
+        <DatePickerComponent
           selected={dateRange[0]}
           onChange={(date: Date | null) => setDateRange([date, dateRange[1]])}
           selectsStart
@@ -154,7 +156,7 @@ const Deliveries = () => {
           placeholderText="Start Date"
           className="bg-white rounded"
         />
-        <DatePicker
+        <DatePickerComponent
           selected={dateRange[1]}
           onChange={(date: Date | null) => setDateRange([dateRange[0], date])}
           selectsEnd

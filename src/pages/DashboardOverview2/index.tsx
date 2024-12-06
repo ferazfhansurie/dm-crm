@@ -66,6 +66,8 @@ interface MaterialsNeeded {
   };
 }
 
+const DatePickerComponent = DatePicker as any;
+
 const Main = () => {
   const importantNotesRef = useRef<TinySliderElement>(null);
   const prevImportantNotes = () => {
@@ -639,7 +641,7 @@ const Main = () => {
 
             <div className="mt-5">
               <div className="flex space-x-4 justify-center items-center mb-4">
-                <DatePicker
+                <DatePickerComponent
                   selected={dateRange[0]}
                   onChange={(date: Date) => setDateRange([date, dateRange[1]])}
                   selectsStart
@@ -647,7 +649,7 @@ const Main = () => {
                   endDate={dateRange[1]}
                   className="bg-white rounded"
                 />
-                <DatePicker
+                <DatePickerComponent
                   selected={dateRange[1]}
                   onChange={(date: Date) => setDateRange([dateRange[0], date])}
                   selectsEnd

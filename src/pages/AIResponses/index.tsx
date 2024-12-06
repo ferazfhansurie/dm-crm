@@ -8,20 +8,28 @@ import { FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/Bas
 import Lucide from "@/components/Base/Lucide";
 import { useAppSelector } from "@/stores/hooks";
 import { selectDarkMode } from "@/stores/darkModeSlice";
-import { AIDocumentResponse, AIResponse, AIVoiceResponse, AITagResponse, AIImageResponse } from "@/types/AIResponses";
+import { AIDocumentResponse, AIResponse, AIVoiceResponse, AITagResponse, AIImageResponse, AIAssignResponse } from "@/types/AIResponses";
 import clsx from "clsx";
 import TagResponseForm from "@/components/AIResponses/TagResponseForm";
 import ImageResponseForm from "@/components/AIResponses/ImageResponseForm";
 import VoiceResponseForm from "@/components/AIResponses/VoiceResponseForm";
+import AssignResponseForm from "@/components/AIResponses/AssignResponseForm";
 import DocumentResponseForm from "@/components/AIResponses/DocumentResponseForm";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+
 
 interface Tag {
     id: string;
     name: string;
 }
+interface Employee {
+    id: string;
+    name: string;
+    email: string;
+    role?: string;
+}
 
-type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document';
+type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document' | 'Assign';
 
 function AIResponses() {
     const [responses, setResponses] = useState<AIResponse[]>([]);
@@ -43,6 +51,8 @@ function AIResponses() {
     const [selectedAudioUrls, setSelectedAudioUrls] = useState<string[]>([]);
     const [selectedDocs, setSelectedDocs] = useState<File[]>([]);
     const [selectedDocUrls, setSelectedDocUrls] = useState<string[]>([]);
+    const [employees, setEmployees] = useState<Employee[]>([]);
+    const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
     const firestore = getFirestore();
     const auth = getAuth();
@@ -53,6 +63,8 @@ function AIResponses() {
         fetchResponses();
         if (responseType === 'Tag') {
             fetchTags();
+        } else if (responseType === 'Assign') {
+            fetchEmployees();
         }
     }, [responseType]);
 
@@ -104,6 +116,12 @@ function AIResponses() {
                             documentUrls: data.documentUrls || [],
                             documentNames: data.documentNames || []
                         } as AIDocumentResponse;
+                        case 'Assign':
+                            return {
+                                ...baseResponse,
+                                type: 'Assign',
+                                assignedEmployees: data.assignedEmployees || []
+                            } as AIAssignResponse;
                 }
             });
 
@@ -159,6 +177,34 @@ function AIResponses() {
         } catch (error) {
             console.error('Error fetching tags:', error);
             toast.error('Error fetching tags');
+        }
+    };
+
+    const fetchEmployees = async () => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+    
+            const userRef = doc(firestore, 'user', user.email!);
+            const userSnapshot = await getDoc(userRef);
+            if (!userSnapshot.exists()) return;
+            const companyId = userSnapshot.data().companyId;
+    
+            const employeesRef = collection(firestore, `companies/${companyId}/employee`);
+            const employeesSnapshot = await getDocs(employeesRef);
+    
+            const fetchedEmployees: Employee[] = employeesSnapshot.docs.map(doc => ({
+                id: doc.id,
+                name: doc.data().name || '',
+                email: doc.data().email || '',
+                role: doc.data().role,
+                ...doc.data()
+            }));
+    
+            setEmployees(fetchedEmployees);
+        } catch (error) {
+            console.error('Error fetching employees:', error);
+            toast.error('Error fetching employees');
         }
     };
 
@@ -236,6 +282,15 @@ function AIResponses() {
                         }).filter(name => name !== '')
                     };
                     break;
+                    case 'Assign':
+                        if (selectedEmployees.length === 0) {
+                            toast.error('Please select at least one employee');
+                            return;
+                        }
+                        additionalData = {
+                            assignedEmployees: selectedEmployees
+                        };
+                        break;
             }
 
             const newResponseData = {
@@ -316,6 +371,14 @@ function AIResponses() {
             prev.includes(tagId) 
                 ? prev.filter(id => id !== tagId) 
                 : [...prev, tagId]
+        );
+    };
+
+    const handleEmployeeSelection = (employeeId: string) => {
+        setSelectedEmployees(prev =>
+            prev.includes(employeeId)
+                ? prev.filter(id => id !== employeeId)
+                : [...prev, employeeId]
         );
     };
 
@@ -439,6 +502,7 @@ function AIResponses() {
         setSelectedAudioUrls([]);
         setSelectedDocs([]);
         setSelectedDocUrls([]);
+        setSelectedEmployees([]);
     };
 
     // Filter responses based on search query
@@ -469,6 +533,10 @@ function AIResponses() {
                 // Set existing image URLs to show them in edit mode
                 setSelectedImageUrls(imageResponse.imageUrls || []);
                 break;
+            case 'Assign':
+                const assignResponse = response as AIAssignResponse;
+                setSelectedEmployees(assignResponse.assignedEmployees);
+                break;
         }
     };
 
@@ -485,6 +553,7 @@ function AIResponses() {
                     <option value="Image">Image Responses</option>
                     <option value="Voice">Voice Responses</option>
                     <option value="Document">Document Responses</option>
+                    <option value="Assign">Assign Responses</option>
                 </FormSelect>
             </div>
 
@@ -561,6 +630,13 @@ function AIResponses() {
                                     selectedDocUrls={selectedDocUrls}
                                     onDocumentSelect={handleDocumentSelect}
                                     onDocumentRemove={handleDocumentRemove}
+                                />
+                            )}
+                            {responseType === 'Assign' && (
+                                <AssignResponseForm
+                                    employees={employees}
+                                    selectedEmployees={selectedEmployees}
+                                    onEmployeeSelection={handleEmployeeSelection}
                                 />
                             )}
 
@@ -717,6 +793,13 @@ function AIResponses() {
                                                             onDocumentRemove={handleDocumentRemove}
                                                         />
                                                     )}
+                                                    {response.type === 'Assign' && (
+                                                        <AssignResponseForm
+                                                            employees={employees}
+                                                            selectedEmployees={selectedEmployees}
+                                                            onEmployeeSelection={handleEmployeeSelection}
+                                                        />
+                                                    )}
 
                                                     {/* Status Edit */}
                                                     <div>
@@ -841,6 +924,21 @@ function AIResponses() {
                                                                 ))}
                                                             </div>
                                                         )}
+                                                        {response.type === 'Assign' && (
+                                                            <div className="flex flex-wrap gap-2">
+                                                                {(response as AIAssignResponse).assignedEmployees.map((employeeId) => {
+                                                                    const employee = employees.find(e => e.id === employeeId);
+                                                                    return (
+                                                                        <span 
+                                                                            key={employeeId} 
+                                                                            className="inline-block bg-slate-100 dark:bg-darkmode-400 rounded px-2 py-1"
+                                                                        >
+                                                                            {employee?.name || 'Unknown Employee'}
+                                                                        </span>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -852,6 +950,17 @@ function AIResponses() {
                     </div>
                 </div>
             </div>
+            <ToastContainer
+                position="top-right"
+                autoClose={5000}
+                hideProgressBar={false}
+                newestOnTop={false}
+                closeOnClick
+                rtl={false}
+                pauseOnFocusLoss
+                draggable
+                pauseOnHover
+            />
         </div>
     );
 }

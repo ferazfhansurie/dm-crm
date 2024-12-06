@@ -65,6 +65,8 @@ function Main() {
     roles: any;
   }
 
+  const DatePickerComponent = DatePicker as any;
+
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
   const [editAppointmentModal, setEditAppointmentModal] = useState(false);
   const [viewAppointmentModal, setViewAppointmentModal] = useState(false);
@@ -459,18 +461,18 @@ function Main() {
                 ))}
               </FormSelect>
               <div className="flex space-x-2 p-2 mb-3">
-                <DatePicker
+                <DatePickerComponent
                   selected={startDate}
-                  onChange={(date) => setStartDate(date)}
+                  onChange={(date: Date | null) => date && setStartDate(date)}
                   selectsStart
                   startDate={startDate}
                   endDate={endDate}
                   placeholderText="Start Date"
                   className="relative w-full h-[40px] pr-10 !box text-lg"
                 />
-                <DatePicker
+                <DatePickerComponent
                   selected={endDate}
-                  onChange={(date) => setEndDate(date)}
+                  onChange={(date: Date | null) => date && setEndDate(date)}
                   selectsEnd
                   startDate={startDate}
                   endDate={endDate}

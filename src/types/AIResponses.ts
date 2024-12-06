@@ -1,4 +1,4 @@
-export type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document';
+export type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document' | 'Assign';
 
 export interface BaseAIResponse {
   id: string;
@@ -30,5 +30,9 @@ export interface AIDocumentResponse extends BaseAIResponse {
   documentUrls: string[];
   documentNames: string[];
 }
+export interface AIAssignResponse extends BaseAIResponse {
+  type: 'Assign';
+  assignedEmployees: string[];
+}
 
-export type AIResponse = AITagResponse | AIImageResponse | AIVoiceResponse | AIDocumentResponse; 
+export type AIResponse = AITagResponse | AIImageResponse | AIVoiceResponse | AIDocumentResponse | AIAssignResponse; 

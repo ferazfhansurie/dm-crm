@@ -157,6 +157,8 @@ function Main() {
       placeholdersUsed: string[];
     };
   }
+
+  const DatePickerComponent = DatePicker as any;
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
   const [editContactModal, setEditContactModal] = useState(false);
@@ -3599,15 +3601,15 @@ const getFilteredScheduledMessages = () => {
                     <div className="mt-4">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Scheduled Time</label>
                       <div className="flex space-x-2">
-                        <DatePicker
+                        <DatePickerComponent
                           selected={currentScheduledMessage?.scheduledTime.toDate()}
-                          onChange={(date: Date) => setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
+                          onChange={(date: Date | null) => date && setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
                           dateFormat="MMMM d, yyyy"
                           className="w-full border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                         />
-                        <DatePicker
+                        <DatePickerComponent
                           selected={currentScheduledMessage?.scheduledTime.toDate()}
-                          onChange={(date: Date) => setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
+                          onChange={(date: Date | null) => date && setCurrentScheduledMessage({...currentScheduledMessage!, scheduledTime: Timestamp.fromDate(date)})}
                           showTimeSelect
                           showTimeSelectOnly
                           timeIntervals={15}
@@ -4448,15 +4450,15 @@ const getFilteredScheduledMessages = () => {
                   <div className="mt-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Date & Time</label>
                     <div className="flex space-x-2">
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartDate}
-                        onChange={(date: Date) => setBlastStartDate(date)}
+                        onChange={(date: Date | null) => setBlastStartDate(date as Date)}
                         dateFormat="MMMM d, yyyy"
                         className="w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
-                      <DatePicker
+                      <DatePickerComponent
                         selected={blastStartTime}
-                        onChange={(date: Date) => setBlastStartTime(date)}
+                        onChange={(date: Date | null) => setBlastStartTime(date as Date)}
                         showTimeSelect
                         showTimeSelectOnly
                         timeIntervals={15}

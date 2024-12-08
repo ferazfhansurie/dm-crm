@@ -1,20 +1,29 @@
 import React from 'react';
 import { FormLabel, FormInput } from "@/components/Base/Form";
 import Lucide from "@/components/Base/Lucide";
+import KeywordSourceSelector from './KeywordSourceSelector';
 
 interface ImageResponseFormProps {
     selectedImageUrls: string[];
     onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onImageRemove: (index: number) => void;
+    keywordSource: 'user' | 'bot';
+    onKeywordSourceChange: (source: 'user' | 'bot') => void;
 }
 
 const ImageResponseForm: React.FC<ImageResponseFormProps> = ({ 
     selectedImageUrls, 
     onImageSelect, 
-    onImageRemove 
+    onImageRemove,
+    keywordSource,
+    onKeywordSourceChange
 }) => {
     return (
         <div className="mb-4">
+            <KeywordSourceSelector 
+                keywordSource={keywordSource}
+                onKeywordSourceChange={onKeywordSourceChange}
+            />
             <FormLabel className="dark:text-slate-200">Images</FormLabel>
             <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
                 <div className="flex flex-wrap px-4">

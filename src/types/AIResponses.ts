@@ -6,6 +6,7 @@ export interface BaseAIResponse {
   createdAt: Date;
   status: 'active' | 'inactive';
   description?: string;
+  keywordSource: 'user' | 'bot';
 }
 
 export interface AITagResponse extends BaseAIResponse {

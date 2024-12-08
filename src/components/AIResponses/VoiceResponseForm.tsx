@@ -1,20 +1,30 @@
 import React from 'react';
 import { FormLabel, FormInput } from "@/components/Base/Form";
 import Lucide from "@/components/Base/Lucide";
+import KeywordSourceSelector from './KeywordSourceSelector';
 
 interface VoiceResponseFormProps {
     selectedAudioUrls: string[];
     onAudioSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onAudioRemove: (index: number) => void;
+    keywordSource: 'user' | 'bot';
+    onKeywordSourceChange: (source: 'user' | 'bot') => void;
 }
 
 const VoiceResponseForm: React.FC<VoiceResponseFormProps> = ({
     selectedAudioUrls,
     onAudioSelect,
-    onAudioRemove
+    onAudioRemove,
+    keywordSource,
+    onKeywordSourceChange
 }) => {
     return (
         <div className="mb-4">
+            <KeywordSourceSelector 
+                keywordSource={keywordSource}
+                onKeywordSourceChange={onKeywordSourceChange}
+            />
+
             <FormLabel className="dark:text-slate-200">Audio Files</FormLabel>
             <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
                 <div className="px-4 pb-4">

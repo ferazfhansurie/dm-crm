@@ -1,6 +1,7 @@
 import React from 'react';
 import { FormLabel } from "@/components/Base/Form";
 import clsx from "clsx";
+import KeywordSourceSelector from './KeywordSourceSelector';
 
 interface Employee {
     id: string;
@@ -13,15 +14,24 @@ interface AssignResponseFormProps {
     employees: Employee[];
     selectedEmployees: string[];
     onEmployeeSelection: (employeeId: string) => void;
+    keywordSource: 'user' | 'bot';
+    onKeywordSourceChange: (source: 'user' | 'bot') => void;
 }
 
 const AssignResponseForm: React.FC<AssignResponseFormProps> = ({ 
     employees, 
     selectedEmployees, 
-    onEmployeeSelection 
+    onEmployeeSelection, 
+    keywordSource, 
+    onKeywordSourceChange 
 }) => {
     return (
         <div className="mb-4">
+            <KeywordSourceSelector 
+                keywordSource={keywordSource}
+                onKeywordSourceChange={onKeywordSourceChange}
+            />
+
             <FormLabel className="dark:text-slate-200">Select Employees to Assign</FormLabel>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
                 {employees.map((employee) => (

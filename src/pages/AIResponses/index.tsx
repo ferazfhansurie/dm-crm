@@ -54,6 +54,8 @@ function AIResponses() {
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
 
+    const [keywordSource, setKeywordSource] = useState<'user' | 'bot'>('user');
+
     const firestore = getFirestore();
     const auth = getAuth();
     const darkMode = useAppSelector(selectDarkMode);
@@ -90,6 +92,7 @@ function AIResponses() {
                     description: data.description || '',
                     createdAt: data.createdAt?.toDate() || new Date(),
                     status: data.status || 'active',
+                    keywordSource: data.keywordSource || 'user'
                 };
 
                 switch (responseType) {
@@ -279,7 +282,8 @@ function AIResponses() {
                         tags: selectedTags.map(tagId => {
                             const tag = availableTags.find(t => t.id === tagId);
                             return tag ? tag.name : '';
-                        }).filter(name => name !== '')
+                        }).filter(name => name !== ''),
+                        keywordSource: keywordSource
                     };
                     break;
                     case 'Assign':
@@ -299,6 +303,7 @@ function AIResponses() {
                 description: newResponse.description,
                 status: newResponse.status,
                 createdAt: serverTimestamp(),
+                keywordSource: keywordSource,
                 ...additionalData
             };
 
@@ -429,29 +434,31 @@ function AIResponses() {
                 keywords: response.keywords,
                 description: response.description,
                 status: response.status,
-                keyword: response.keywords[0]
+                keyword: response.keywords[0],
+                keywordSource: keywordSource
             };
 
             switch (responseType) {
-                case 'Image':
-                    let imageUrls = (response as AIImageResponse).imageUrls || [];
-                    if (selectedImages.length > 0) {
-                        // Upload and add new images
-                        const newImageUrls = await uploadFiles(selectedImages, 'image');
-                        imageUrls = [...imageUrls, ...newImageUrls];
+                case 'Tag':
+                    if (selectedTags.length > 0) {
+                        updatedData.tags = selectedTags.map(tagId => {
+                            const tag = availableTags.find(t => t.id === tagId);
+                            return tag ? tag.name : '';
+                        }).filter(name => name !== '');
                     }
-                    updatedData.imageUrls = imageUrls;
-                    updatedData.imageUrl = imageUrls[0] || '';
+                    break;
+                case 'Image':
+                    if (selectedImages.length > 0) {
+                        const newImageUrls = await uploadFiles(selectedImages, 'image');
+                        updatedData.imageUrls = newImageUrls;
+                        updatedData.imageUrl = newImageUrls[0] || '';
+                    }
                     break;
                 case 'Voice':
                     if (selectedAudios.length > 0) {
                         const voiceUrls = await uploadFiles(selectedAudios, 'voice');
                         updatedData.voiceUrls = voiceUrls;
                         updatedData.captions = selectedAudios.map(() => '');
-                    } else {
-                        // Keep existing audio if no new ones selected
-                        updatedData.voiceUrls = (response as AIVoiceResponse).voiceUrls;
-                        updatedData.captions = (response as AIVoiceResponse).captions;
                     }
                     break;
                 case 'Document':
@@ -459,21 +466,11 @@ function AIResponses() {
                         const docUrls = await uploadFiles(selectedDocs, 'document');
                         updatedData.documentUrls = docUrls;
                         updatedData.documentNames = selectedDocs.map(doc => doc.name);
-                    } else {
-                        // Keep existing documents if no new ones selected
-                        updatedData.documentUrls = (response as AIDocumentResponse).documentUrls;
-                        updatedData.documentNames = (response as AIDocumentResponse).documentNames;
                     }
                     break;
-                case 'Tag':
-                    if (selectedTags.length > 0) {
-                        updatedData.tags = selectedTags.map(tagId => {
-                            const tag = availableTags.find(t => t.id === tagId);
-                            return tag ? tag.name : '';
-                        }).filter(name => name !== '');
-                    } else {
-                        // Keep existing tags if no new ones selected
-                        updatedData.tags = (response as AITagResponse).tags;
+                case 'Assign':
+                    if (selectedEmployees.length > 0) {
+                        updatedData.assignedEmployees = selectedEmployees;
                     }
                     break;
             }
@@ -518,6 +515,7 @@ function AIResponses() {
     // When starting to edit, set the selected items based on the response type
     const startEditing = (response: AIResponse) => {
         setIsEditing(response.id);
+        setKeywordSource(response.keywordSource || 'user');
         
         // Set the form state based on response type
         switch (response.type) {
@@ -530,12 +528,19 @@ function AIResponses() {
                 break;
             case 'Image':
                 const imageResponse = response as AIImageResponse;
-                // Set existing image URLs to show them in edit mode
                 setSelectedImageUrls(imageResponse.imageUrls || []);
+                break;
+            case 'Voice':
+                const voiceResponse = response as AIVoiceResponse;
+                setSelectedAudioUrls(voiceResponse.voiceUrls || []);
+                break;
+            case 'Document':
+                const docResponse = response as AIDocumentResponse;
+                setSelectedDocUrls(docResponse.documentUrls || []);
                 break;
             case 'Assign':
                 const assignResponse = response as AIAssignResponse;
-                setSelectedEmployees(assignResponse.assignedEmployees);
+                setSelectedEmployees(assignResponse.assignedEmployees || []);
                 break;
         }
     };
@@ -609,6 +614,8 @@ function AIResponses() {
                                     availableTags={availableTags}
                                     selectedTags={selectedTags}
                                     onTagSelection={handleTagSelection}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
                                 />
                             )}
                             {responseType === 'Image' && (
@@ -616,6 +623,8 @@ function AIResponses() {
                                     selectedImageUrls={selectedImageUrls}
                                     onImageSelect={handleImageSelect}
                                     onImageRemove={handleImageRemove}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
                                 />
                             )}
                             {responseType === 'Voice' && (
@@ -623,6 +632,8 @@ function AIResponses() {
                                     selectedAudioUrls={selectedAudioUrls}
                                     onAudioSelect={handleAudioSelect}
                                     onAudioRemove={handleAudioRemove}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
                                 />
                             )}
                             {responseType === 'Document' && (
@@ -630,6 +641,8 @@ function AIResponses() {
                                     selectedDocUrls={selectedDocUrls}
                                     onDocumentSelect={handleDocumentSelect}
                                     onDocumentRemove={handleDocumentRemove}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
                                 />
                             )}
                             {responseType === 'Assign' && (
@@ -637,6 +650,8 @@ function AIResponses() {
                                     employees={employees}
                                     selectedEmployees={selectedEmployees}
                                     onEmployeeSelection={handleEmployeeSelection}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
                                 />
                             )}
 
@@ -767,6 +782,8 @@ function AIResponses() {
                                                             availableTags={availableTags}
                                                             selectedTags={selectedTags}
                                                             onTagSelection={handleTagSelection}
+                                                            keywordSource={keywordSource}
+                                                            onKeywordSourceChange={setKeywordSource}
                                                         />
                                                     )}
                                                     {response.type === 'Image' && (
@@ -776,6 +793,8 @@ function AIResponses() {
                                                                 selectedImageUrls={selectedImageUrls}
                                                                 onImageSelect={handleImageSelect}
                                                                 onImageRemove={handleImageRemove}
+                                                                keywordSource={keywordSource}
+                                                                onKeywordSourceChange={setKeywordSource}
                                                             />
                                                         </div>
                                                     )}
@@ -784,6 +803,8 @@ function AIResponses() {
                                                             selectedAudioUrls={selectedAudioUrls}
                                                             onAudioSelect={handleAudioSelect}
                                                             onAudioRemove={handleAudioRemove}
+                                                            keywordSource={keywordSource}
+                                                            onKeywordSourceChange={setKeywordSource}
                                                         />
                                                     )}
                                                     {response.type === 'Document' && (
@@ -791,6 +812,8 @@ function AIResponses() {
                                                             selectedDocUrls={selectedDocUrls}
                                                             onDocumentSelect={handleDocumentSelect}
                                                             onDocumentRemove={handleDocumentRemove}
+                                                            keywordSource={keywordSource}
+                                                            onKeywordSourceChange={setKeywordSource}
                                                         />
                                                     )}
                                                     {response.type === 'Assign' && (
@@ -798,6 +821,8 @@ function AIResponses() {
                                                             employees={employees}
                                                             selectedEmployees={selectedEmployees}
                                                             onEmployeeSelection={handleEmployeeSelection}
+                                                            keywordSource={keywordSource}
+                                                            onKeywordSourceChange={setKeywordSource}
                                                         />
                                                     )}
 

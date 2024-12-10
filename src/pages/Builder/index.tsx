@@ -79,7 +79,7 @@ const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assi
             <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" />
           </div>
           <div>
-            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">Juta Prompt Builder</div>
+            <div className="font-semibold text-gray-800 dark:text-gray-200 capitalize">Prompt Builder</div>
           </div>
         </div>
         <div>

@@ -45,8 +45,16 @@ interface Appointment {
   packageId: string | null;
   dateAdded: string;
   contacts: { id: string, name: string, session: number }[];
+  meetLink?: string;
+  notificationSent?: boolean;
 }
-
+interface CalendarConfig {
+  calendarId: string;
+  startHour: number;
+  endHour: number;
+  slotDuration: number;
+  daysAhead: number;
+}
 interface Employee {
   id: string;
   name: string;
@@ -133,7 +141,14 @@ function Main() {
   const calendarRef = useRef(null);
   const [appointmentTags, setAppointmentTags] = useState<Tag[]>([]);
   const [companyId, setCompanyId] = useState<string>('');
-
+  const [config, setConfig] = useState<CalendarConfig>({
+    calendarId: '',
+    startHour: 11,
+    endHour: 21,
+    slotDuration: 30,
+    daysAhead: 3
+  });
+  const [isCalendarConfigOpen, setIsCalendarConfigOpen] = useState(false);
   useEffect(() => {
     const fetchCompanyId = async () => {
       const auth = getAuth(app);
@@ -177,18 +192,24 @@ function Main() {
 
   
 
-  const generateTimeSlots = (isWeekend: boolean): string[] => {
-    const start = 8;
-    const end = isWeekend ? 20 : 20;
-    const slots: string[] = [];
-  
-    for (let hour = start; hour < end; hour++) {
-      slots.push(`${hour.toString().padStart(2, '0')}:00 - ${(hour + 1).toString().padStart(2, '0')}:00`);
-    }
-  
-    return slots;
-  };
+// ... existing code ...
 
+const generateTimeSlots = (isWeekend: boolean): string[] => {
+  const start = isWeekend ? 8 : 8; // Start time (8 AM)
+  const end = isWeekend ? 20 : 20;  // End time (8 PM)
+  const slots: string[] = [];
+
+  for (let hour = start; hour < end; hour++) {
+    // Add the full hour slot
+    slots.push(`${hour.toString().padStart(2, '0')}:00 - ${hour.toString().padStart(2, '0')}:30`);
+    // Add the half hour slot
+    slots.push(`${hour.toString().padStart(2, '0')}:30 - ${(hour + 1).toString().padStart(2, '0')}:00`);
+  }
+
+  return slots;
+};
+
+// ... rest of the code ...
   // Utility function to blend two colors
   const blendColors = (color1: string, color2: string): string => {
     const hex = (color: string) => {
@@ -231,11 +252,7 @@ function Main() {
     fetchEmployees();
   }, []);
 
-  useEffect(() => {
-    if (auth.currentUser?.email) {
-      fetchAppointments(auth.currentUser.email);
-    }
-  }, [auth.currentUser?.email]); // Add this useEffect at the top of your component
+
 
   const fetchEmployees = async () => {
     try {
@@ -288,21 +305,54 @@ function Main() {
 
   const fetchAppointments = async (selectedUserId: string) => {
     setLoading(true);
+    console.log('fetcing appointments');
+    console.log(selectedUserId);
     try {
       const userRef = doc(firestore, 'user', selectedUserId);
-      const appointmentsCollectionRef = collection(userRef, 'appointments');
-
-      // Fetch all appointments
-      const querySnapshot = await getDocs(appointmentsCollectionRef);
-      const allAppointments = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data(),
-      } as Appointment));
-
+      const userSnapshot = await getDoc(userRef);
+      
+      if (!userSnapshot.exists()) {
+        console.error('User document not found');
+        return;
+      }
+  
+      const userData = userSnapshot.data();
+      const companyId = userData.companyId;
+      let appointmentsQuery;
+      if (selectedEmployeeId) {
+        // If an employee is selected, fetch only their appointments
+        console.log('Fetching appointments for employee:', selectedEmployeeId);
+        appointmentsQuery = query(
+          collection(firestore, `user/${selectedUserId}/appointments`)
+        );
+      } else {
+        // If no employee is selected, fetch all appointments
+        console.log('Fetching all appointments');
+        appointmentsQuery = collection(firestore, `user/${selectedUserId}/appointments`);
+      }
+      
+      const querySnapshot = await getDocs(appointmentsQuery);
+      console.log('Number of appointments found:', querySnapshot.size);
+      console.log('Query path:', appointmentsQuery);
+      const allAppointments = querySnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Appointment data:', {
+          id: doc.id,
+          title: data.title,
+          staff: data.staff,
+          startTime: data.startTime,
+          endTime: data.endTime
+        });
+        return {
+          id: doc.id,
+          ...data,
+        } as Appointment;
+      });
+  
       // Fetch package details for each appointment
       const appointmentsWithPackages = await Promise.all(allAppointments.map(async (appointment: Appointment) => {
         if (appointment.packageId) {
-          const packageRef = doc(firestore, `companies/${selectedUserId}/packages`, appointment.packageId);
+          const packageRef = doc(firestore, `companies/${companyId}/packages`, appointment.packageId);
           const packageSnapshot = await getDoc(packageRef);
           if (packageSnapshot.exists()) {
             const packageData = packageSnapshot.data();
@@ -318,18 +368,21 @@ function Main() {
         }
         return appointment;
       }));
-
-      setAppointments(appointmentsWithPackages.sort((a, b) => new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()));
+  
+      setAppointments(appointmentsWithPackages.sort((a, b) => 
+        new Date(b.dateAdded).getTime() - new Date(a.dateAdded).getTime()
+      ));
     } catch (error) {
       console.error('Error fetching appointments:', error);
     } finally {
       setLoading(false);
     }
   };
-
   const handleEmployeeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const employeeId = event.target.value;
     setSelectedEmployeeId(employeeId);
+    console.log(employeeId);
+    fetchAppointments(employeeId);
   };
 
   const fetchContactSession = async (contactId: string) => {
@@ -499,12 +552,63 @@ function Main() {
       }
     });
   };
-
+  const sendWhatsAppNotification = async (contacts: any[], appointmentDetails: any, companyId: string) => {
+    try {
+      // Format the message
+      const message = `
+  🗓️ New Appointment Details:
+  📌 ${appointmentDetails.title}
+  📅 Date: ${format(new Date(appointmentDetails.startTime), 'MMMM dd, yyyy')}
+  ⏰ Time: ${format(new Date(appointmentDetails.startTime), 'h:mm a')} - ${format(new Date(appointmentDetails.endTime), 'h:mm a')}
+  ${appointmentDetails.meetLink ? `\n🎥 Join Meeting: ${appointmentDetails.meetLink}` : ''}
+  `;
+  
+      // Send WhatsApp message to each contact
+      const sendPromises = contacts.map(async (contact) => {
+        if (!contact.id) {
+          console.error('Contact ID missing:', contact);
+          return;
+        }
+  
+        try {
+          const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${contact.id}`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ message }),
+          });
+  
+          if (!response.ok) {
+            throw new Error(`WhatsApp API responded with status: ${response.status}`);
+          }
+  
+          const result = await response.json();
+          console.log(`WhatsApp notification sent to contact ${contact.id}:`, result);
+          return result;
+        } catch (error) {
+          console.error(`Failed to send WhatsApp notification to contact ${contact.id}:`, error);
+          throw error;
+        }
+      });
+  
+      await Promise.all(sendPromises);
+      return true;
+    } catch (error) {
+      console.error('Error sending WhatsApp notifications:', error);
+      return false;
+    }
+  };
+  
+  // Update the handleSaveAppointment function
   const handleSaveAppointment = async () => {
+
+
+ 
     const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
     const startTime = new Date(`${dateStr}T${startTimeStr}`).toISOString();
     const endTime = new Date(`${dateStr}T${endTimeStr}`).toISOString();
-  
+   
     const firstEmployeeId = extendedProps.staff[0];
     const secondEmployeeId = extendedProps.staff[1];
     const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
@@ -518,53 +622,57 @@ function Main() {
     } else {
       color = '#51484f'; // Default color
     }
-  
-    const updatedAppointment: Appointment = {
-      id,
-      title,
-      startTime,
-      endTime,
-      address: extendedProps.address,
-      appointmentStatus: extendedProps.appointmentStatus,
-      staff: extendedProps.staff,
-      tags: extendedProps.tags || [],
-      color: color,
-      packageId: extendedProps.package ? extendedProps.package.id : null,
-      dateAdded: extendedProps.dateAdded,
-      contacts: selectedContacts.map(contact => ({
-        id: contact.id,
-        name: contact.contactName,
-        session: (extendedProps.appointmentStatus === 'showed' || extendedProps.appointmentStatus === 'noshow')
-          ? (contactSessions[contact.id] || 0) - 1
-          : (contactSessions[contact.id] || 0) // Retain the session count if the status is not "showed" or "noshow"
-      })),
-    };
-  
     try {
       const user = auth.currentUser;
-      if (!user || !user.email) {
-        console.error('No authenticated user or email found');
-        return;
+      if (!user?.email) return;
+  
+      // Get company ID
+      const userDocRef = doc(firestore, 'user', user.email);
+      const userDocSnap = await getDoc(userDocRef);
+      if (!userDocSnap.exists()) {
+        throw new Error('User document not found');
       }
+      const companyId = userDocSnap.data().companyId;
   
-      const userRef = doc(firestore, 'user', user.email);
-      const appointmentsCollectionRef = collection(userRef, 'appointments');
-      const appointmentRef = doc(appointmentsCollectionRef, id);
+      const updatedAppointment: Appointment = {
+        id,
+        title,
+        startTime,
+        endTime,
+        address: extendedProps.address,
+        appointmentStatus: extendedProps.appointmentStatus,
+        staff: extendedProps.staff,
+        color: color,
+        tags: extendedProps.tags || [],
+        packageId: extendedProps.package ? extendedProps.package.id : null,
+        dateAdded: extendedProps.dateAdded,
+        meetLink: extendedProps.meetLink,
+        notificationSent: extendedProps.notificationSent || false,
+        contacts: selectedContacts.map(contact => ({
+          id: contact.id,
+          name: contact.contactName,
+          session: contactSessions[contact.id] || 0
+        })),
+      };
   
+      const appointmentRef = doc(firestore, `user/${user.email}/appointments/${id}`);
       await setDoc(appointmentRef, updatedAppointment);
+  
+      // Send WhatsApp notification if there's a meet link and notifications haven't been sent
+      if (updatedAppointment.meetLink && !updatedAppointment.notificationSent) {
+        const notificationSent = await sendWhatsAppNotification(selectedContacts, updatedAppointment, companyId);
+        if (notificationSent) {
+          // Update the appointment to mark notifications as sent
+          updatedAppointment.notificationSent = true;
+          await setDoc(appointmentRef, updatedAppointment);
+        }
+      }
   
       setAppointments(appointments.map(appointment =>
         appointment.id === id ? updatedAppointment : appointment
       ));
   
       setEditModalOpen(false);
-  
-      // Decrement session count if the status is "showed" or "noshow"
-      if (initialAppointmentStatus !== updatedAppointment.appointmentStatus &&
-          (updatedAppointment.appointmentStatus === 'showed' || updatedAppointment.appointmentStatus === 'noshow')) {
-        updatedAppointment.contacts.forEach(contact => decrementSession(contact.id));
-      }
-  
     } catch (error) {
       console.error('Error saving appointment:', error);
     }
@@ -1132,6 +1240,158 @@ function Main() {
     }
   };
 
+  useEffect(() => {
+    const fetchCalendarConfig = async () => {
+      try {
+        const auth = getAuth(app);
+        const user = auth.currentUser;
+        if (!user) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) {
+          console.log('No such document for user!');
+          return;
+        }
+  
+        const dataUser = docUserSnapshot.data();
+        const companyId = dataUser.companyId;
+        
+        const configRef = doc(firestore, `companies/${companyId}/config/calendar`);
+        const configSnapshot = await getDoc(configRef);
+        
+        if (configSnapshot.exists()) {
+          const calendarConfig = configSnapshot.data() as CalendarConfig;
+          setConfig(calendarConfig);
+        } else {
+          const defaultConfig: CalendarConfig = {
+            calendarId: '',
+            startHour: 11,
+            endHour: 21,
+            slotDuration: 30,
+            daysAhead: 3
+          };
+          await setDoc(configRef, defaultConfig);
+          setConfig(defaultConfig);
+        }
+      } catch (error) {
+        console.error('Error fetching calendar config:', error);
+      }
+    };
+  
+    fetchCalendarConfig();
+  }, []);
+
+  // Modify the updateCalendarConfig function
+  const updateCalendarConfig = async (newConfig: typeof config) => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      
+      // Update the path to match your structure
+      const configRef = doc(firestore, `companies/${companyId}/config/calendar`);
+      await setDoc(configRef, newConfig);
+      
+      setConfig(newConfig);
+      console.log('Calendar config updated successfully');
+    } catch (error) {
+      console.error('Error updating calendar config:', error);
+    }
+  };
+
+  // Add this JSX somewhere in your return statement, perhaps in the settings section or as a new modal
+  const renderCalendarConfigModal = () => (
+    <Dialog open={isCalendarConfigOpen} onClose={() => setIsCalendarConfigOpen(false)}>
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black bg-opacity-50">
+        <Dialog.Panel className="w-full max-w-md p-6 bg-white rounded-md mt-10 dark:bg-gray-800">
+          <h2 className="text-lg font-medium mb-4 dark:text-white">Calendar Settings</h2>
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Google Calendar ID</label>
+              <input
+                type="text"
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={config.calendarId}
+                onChange={(e) => setConfig({ ...config, calendarId: e.target.value })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Hour (24h)</label>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={config.startHour}
+                onChange={(e) => setConfig({ ...config, startHour: parseInt(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">End Hour (24h)</label>
+              <input
+                type="number"
+                min="0"
+                max="23"
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={config.endHour}
+                onChange={(e) => setConfig({ ...config, endHour: parseInt(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Slot Duration (minutes)</label>
+              <input
+                type="number"
+                min="15"
+                step="15"
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={config.slotDuration}
+                onChange={(e) => setConfig({ ...config, slotDuration: parseInt(e.target.value) })}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Days Ahead</label>
+              <input
+                type="number"
+                min="1"
+                className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                value={config.daysAhead}
+                onChange={(e) => setConfig({ ...config, daysAhead: parseInt(e.target.value) })}
+              />
+            </div>
+            <div className="flex justify-end space-x-2">
+              <button
+                className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
+                onClick={() => setIsCalendarConfigOpen(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
+                onClick={() => {
+                  updateCalendarConfig(config);
+                  setIsCalendarConfigOpen(false);
+                }}
+              >
+                Save Settings
+              </button>
+            </div>
+          </div>
+        </Dialog.Panel>
+      </div>
+    </Dialog>
+  );
+
   return (
     <>
       <div className="flex flex-col items-start mt-8 intro-y sm:flex-row sm:flex-wrap lg:flex-nowrap">
@@ -1191,13 +1451,19 @@ function Main() {
           )}
         </div>
 
-        {/* Add New Package button */}
-        <div className="w-full mb-4 sm:w-1/4 sm:mr-2  lg:w-auto lg:mb-0 lg:mr-4">
+        {/* Add New Package and Calendar Settings buttons */}
+        <div className="w-full mb-4 sm:w-1/4 sm:mr-2 lg:w-auto lg:mb-0 lg:mr-4 flex gap-2">
           <button
-            className="w-full px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
             onClick={() => setIsAddingPackage(true)}
           >
             Add New Package
+          </button>
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            onClick={() => setIsCalendarConfigOpen(true)}
+          >
+            Calendar Settings
           </button>
         </div>
 
@@ -1461,6 +1727,57 @@ function Main() {
                     <option value="closed">Closed</option>
                   </select>
                 </div>
+                <div className="space-y-2">
+  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+    Google Meet Link
+  </label>
+  <div className="flex gap-2">
+    <input
+      type="text"
+      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+      value={currentEvent?.extendedProps?.meetLink || ''}
+      onChange={(e) => setCurrentEvent({
+        ...currentEvent,
+        extendedProps: {
+          ...currentEvent.extendedProps,
+          meetLink: e.target.value
+        }
+      })}
+      placeholder="https://meet.google.com/..."
+    />
+
+  </div>
+  {currentEvent?.extendedProps?.meetLink && (
+    <div className="flex justify-between items-center mt-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+      <a
+        href={currentEvent.extendedProps.meetLink}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-600 dark:text-blue-400 text-sm hover:underline"
+      >
+        Open Meet Link
+      </a>
+      <button
+        className="text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200"
+        onClick={() => {
+          navigator.clipboard.writeText(currentEvent.extendedProps.meetLink);
+        }}
+      >
+        Copy Link
+      </button>
+    </div>
+  )}
+  {!currentEvent?.extendedProps?.notificationSent && currentEvent?.extendedProps?.meetLink && (
+    <div className="text-sm text-gray-600 dark:text-gray-400">
+      Meeting link will be sent to contacts when you save
+    </div>
+  )}
+  {currentEvent?.extendedProps?.notificationSent && (
+    <div className="text-sm text-green-600 dark:text-green-400">
+      Meeting link has been sent to contacts
+    </div>
+  )}
+</div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Tags</label>
                   <Select
@@ -1913,6 +2230,8 @@ function Main() {
           </Dialog.Panel>
         </div>
       </Dialog>
+
+      {renderCalendarConfigModal()}
     </>
   );
 }

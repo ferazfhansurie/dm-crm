@@ -1513,6 +1513,92 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     );
   };
 
+  // Add these new interfaces and state
+  interface DailyAssignment {
+    date: string;
+    count: number;
+  }
+
+  interface EmployeeAssignments {
+    [employeeId: string]: {
+      daily: DailyAssignment[];
+      total: number;
+    };
+  }
+
+  const [assignmentsData, setAssignmentsData] = useState<{
+    labels: string[];
+    datasets: {
+      label: string;
+      data: number[];
+      backgroundColor: string;
+    }[];
+    dailyData: EmployeeAssignments;
+  }>({
+    labels: [],
+    datasets: [],
+    dailyData: {}
+  });
+
+  // Update the fetchAssignmentsData function
+  const fetchAssignmentsData = async () => {
+    try {
+      if (companyId !== '072') return;
+
+      const assignmentsRef = collection(firestore, 'companies', '072', 'assignments');
+      const assignmentsSnapshot = await getDocs(assignmentsRef);
+
+      const employeeAssignments: EmployeeAssignments = {};
+
+      assignmentsSnapshot.forEach((doc) => {
+        const data = doc.data();
+        if (data.assigned && data.timestamp) {
+          const date = format(data.timestamp.toDate(), 'yyyy-MM-dd');
+          
+          if (!employeeAssignments[data.assigned]) {
+            employeeAssignments[data.assigned] = {
+              daily: [],
+              total: 0
+            };
+          }
+
+          const existingDayIndex = employeeAssignments[data.assigned].daily.findIndex(
+            d => d.date === date
+          );
+
+          if (existingDayIndex >= 0) {
+            employeeAssignments[data.assigned].daily[existingDayIndex].count++;
+          } else {
+            employeeAssignments[data.assigned].daily.push({ date, count: 1 });
+          }
+          employeeAssignments[data.assigned].total++;
+        }
+      });
+
+      // Sort daily data for each employee
+      Object.values(employeeAssignments).forEach(employee => {
+        employee.daily.sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+      });
+
+      const labels = Object.keys(employeeAssignments);
+      const data = labels.map(label => employeeAssignments[label].total);
+
+      setAssignmentsData({
+        labels,
+        datasets: [{
+          label: 'Total Assignments',
+          data,
+          backgroundColor: 'rgba(54, 162, 235, 0.6)',
+        }],
+        dailyData: employeeAssignments
+      });
+
+    } catch (error) {
+      console.error('Error fetching assignments data:', error);
+    }
+  };
+
+  // Add this new function to fetch assignments data
   const dashboardCards = [
     {
       id: 'kpi',
@@ -1727,7 +1813,104 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
           )}
         </div>
       ),
-    }
+    },
+    // Inside your dashboardCards array, add this conditional card
+    ...(companyId === '072' ? [{
+      id: 'assignments-chart',
+      title: 'Assignments by Employee',
+      content: (
+        <div className="h-[500px]"> {/* Fixed height */}
+          <div className="h-[300px]"> {/* Chart height */}
+            {assignmentsData.labels.length > 0 ? (
+              <Bar 
+                data={assignmentsData} 
+                options={{ 
+                  responsive: true, 
+                  maintainAspectRatio: false,
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      title: {
+                        display: true,
+                        text: 'Number of Assignments',
+                      },
+                    },
+                    x: {
+                      title: {
+                        display: true,
+                        text: 'Employee',
+                      },
+                    },
+                  },
+                  plugins: {
+                    title: {
+                      display: true,
+                      text: 'Assignments Distribution',
+                    },
+                    tooltip: {
+                      callbacks: {
+                        afterBody: (tooltipItems) => {
+                          const employeeId = assignmentsData.labels[tooltipItems[0].dataIndex];
+                          const employeeData = assignmentsData.dailyData[employeeId];
+                          if (!employeeData) return '';
+
+                          // Show last 5 days of assignments
+                          const recentAssignments = employeeData.daily.slice(-5);
+                          return '\nRecent daily assignments:\n' + 
+                            recentAssignments.map(day => 
+                              `${format(new Date(day.date), 'MMM dd')}: ${day.count} assignments`
+                            ).join('\n');
+                        }
+                      }
+                    },
+                  },
+                }} 
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No assignments data available
+              </div>
+            )}
+          </div>
+          
+          {/* Daily breakdown table */}
+          <div className="mt-4 h-[160px] overflow-y-auto">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-white dark:bg-gray-800">
+                <tr>
+                  <th className="text-left p-2">Employee</th>
+                  <th className="text-left p-2">Total</th>
+                  <th className="text-left p-2">Last 5 Days</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assignmentsData.labels.map(employeeId => {
+                  const employeeData = assignmentsData.dailyData[employeeId];
+                  const recentAssignments = employeeData.daily.slice(-5);
+                  
+                  return (
+                    <tr key={employeeId} className="border-t dark:border-gray-700">
+                      <td className="p-2">{employeeId}</td>
+                      <td className="p-2">{employeeData.total}</td>
+                      <td className="p-2">
+                        <div className="flex gap-2">
+                          {recentAssignments.map(day => (
+                            <div key={day.date} className="text-xs">
+                              <div>{format(new Date(day.date), 'MM/dd')}</div>
+                              <div className="font-semibold">{day.count}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )
+    }] : []),
     // Add more cards here as needed
   ];
 
@@ -1746,6 +1929,9 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                     <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">{card.title}</h3>
                     {card.filterControls}
                   </div>
+                )}
+                {card.id !== 'contacts-over-time' && (
+                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">{card.title}</h3>
                 )}
                 <div className="flex-grow">
                   {card.id === 'kpi' || card.id === 'leads' || card.id === 'engagement-metrics' ? (
@@ -1918,6 +2104,65 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                       ) : (
                         <div className="flex items-center justify-center h-full text-gray-500">
                           No performance data available
+                        </div>
+                      )}
+                    </div>
+                  ) : card.id === 'assignments-chart' ? (
+                    <div className="h-full">
+                      {assignmentsData.labels.length > 0 ? (
+                        <Bar 
+                          data={assignmentsData} 
+                          options={{ 
+                            responsive: true, 
+                            maintainAspectRatio: false,
+                            scales: {
+                              y: {
+                                beginAtZero: true,
+                                title: {
+                                  display: true,
+                                  text: 'Number of Assignments',
+                                },
+                              },
+                              x: {
+                                title: {
+                                  display: true,
+                                  text: 'Employee',
+                                },
+                              },
+                            },
+                            plugins: {
+                              title: {
+                                display: true,
+                                text: 'Assignments Distribution',
+                              },
+                              tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                              },
+                            },
+                          }} 
+                        />
+                      ) : (
+                        <div className="flex items-center justify-center h-full text-gray-500">
+                          No assignments data available
+                        </div>
+                      )}
+                      
+                      {/* Summary statistics */}
+                      {assignmentsData.labels.length > 0 && (
+                        <div className="mt-4 grid grid-cols-2 gap-4">
+                          <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Assignments:</p>
+                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {assignmentsData.datasets[0].data.reduce((a, b) => a + b, 0)}
+                            </p>
+                          </div>
+                          <div>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">Assigned Employees:</p>
+                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                              {assignmentsData.labels.length}
+                            </p>
+                          </div>
                         </div>
                       )}
                     </div>

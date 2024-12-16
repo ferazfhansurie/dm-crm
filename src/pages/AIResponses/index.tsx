@@ -8,7 +8,7 @@ import { FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/Bas
 import Lucide from "@/components/Base/Lucide";
 import { useAppSelector } from "@/stores/hooks";
 import { selectDarkMode } from "@/stores/darkModeSlice";
-import { AIDocumentResponse, AIResponse, AIVoiceResponse, AITagResponse, AIImageResponse, AIAssignResponse } from "@/types/AIResponses";
+import { AIDocumentResponse, AIResponse, AIVoiceResponse, AITagResponse, AIImageResponse, AIAssignResponse, AIVideoResponse } from "@/types/AIResponses";
 import clsx from "clsx";
 import TagResponseForm from "@/components/AIResponses/TagResponseForm";
 import ImageResponseForm from "@/components/AIResponses/ImageResponseForm";
@@ -16,6 +16,7 @@ import VoiceResponseForm from "@/components/AIResponses/VoiceResponseForm";
 import AssignResponseForm from "@/components/AIResponses/AssignResponseForm";
 import DocumentResponseForm from "@/components/AIResponses/DocumentResponseForm";
 import { getStorage, ref, uploadBytes, getDownloadURL } from "firebase/storage";
+import VideoResponseForm from "@/components/AIResponses/VideoResponseForm";
 
 
 interface Tag {
@@ -29,7 +30,7 @@ interface Employee {
     role?: string;
 }
 
-type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document' | 'Assign';
+type AIResponseType = 'Tag' | 'Image' | 'Voice' | 'Document' | 'Assign' | 'Video';
 
 function AIResponses() {
     const [responses, setResponses] = useState<AIResponse[]>([]);
@@ -53,6 +54,8 @@ function AIResponses() {
     const [selectedDocUrls, setSelectedDocUrls] = useState<string[]>([]);
     const [employees, setEmployees] = useState<Employee[]>([]);
     const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+    const [selectedVideos, setSelectedVideos] = useState<File[]>([]);
+    const [selectedVideoUrls, setSelectedVideoUrls] = useState<string[]>([]);
 
     const [keywordSource, setKeywordSource] = useState<'user' | 'bot'>('user');
 
@@ -89,7 +92,7 @@ function AIResponses() {
                 const baseResponse = {
                     id: doc.id,
                     keywords: Array.isArray(data.keywords) ? data.keywords : 
-                             (data.keyword ? [data.keyword] : []),
+                        (data.keyword ? [data.keyword] : []),
                     description: data.description || '',
                     createdAt: data.createdAt?.toDate() || new Date(),
                     status: data.status || 'active',
@@ -126,6 +129,13 @@ function AIResponses() {
                                 type: 'Assign',
                                 assignedEmployees: data.assignedEmployees || []
                             } as AIAssignResponse;
+                    case 'Video':
+                        return {
+                            ...baseResponse,
+                            type: 'Video',
+                            videoUrls: data.videoUrls || [],
+                            videoTitles: data.videoTitles || []
+                        } as AIVideoResponse;
                 }
             });
 
@@ -212,7 +222,7 @@ function AIResponses() {
         }
     };
 
-    const uploadFiles = async (files: File[], type: 'image' | 'voice' | 'document'): Promise<string[]> => {
+    const uploadFiles = async (files: File[], type: 'image' | 'voice' | 'document' | 'video'): Promise<string[]> => {
         const uploadPromises = files.map(async file => {
             const storageRef = ref(storage, `aiResponses/${type}/${file.name}`);
             await uploadBytes(storageRef, file);
@@ -296,6 +306,17 @@ function AIResponses() {
                             assignedEmployees: selectedEmployees
                         };
                         break;
+                case 'Video':
+                    if (selectedVideos.length === 0) {
+                        toast.error('Please select at least one video');
+                        return;
+                    }
+                    const videoUrls = await uploadFiles(selectedVideos, 'video');
+                    additionalData = { 
+                        videoUrls: videoUrls,
+                        videoTitles: selectedVideos.map(video => video.name)
+                    };
+                    break;
             }
 
             const newResponseData = {
@@ -324,6 +345,9 @@ function AIResponses() {
             setSelectedAudioUrls([]);
             setSelectedDocs([]);
             setSelectedDocUrls([]);
+            setSelectedEmployees([]);
+            setSelectedVideos([]);
+            setSelectedVideoUrls([]);
             
             fetchResponses();
             toast.success('Response added successfully');
@@ -388,14 +412,28 @@ function AIResponses() {
         );
     };
 
+    const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+        const files = Array.from(e.target.files || []);
+        const urls = files.map(file => URL.createObjectURL(file));
+        setSelectedVideos(files);
+        setSelectedVideoUrls(urls);
+    };
+
+    const handleVideoRemove = (index: number) => {
+        URL.revokeObjectURL(selectedVideoUrls[index]);
+        setSelectedVideos(prev => prev.filter((_, i) => i !== index));
+        setSelectedVideoUrls(prev => prev.filter((_, i) => i !== index));
+    };
+
     useEffect(() => {
         return () => {
             // Cleanup all blob URLs when component unmounts
             selectedImageUrls.forEach(URL.revokeObjectURL);
             selectedAudioUrls.forEach(URL.revokeObjectURL);
             selectedDocUrls.forEach(URL.revokeObjectURL);
+            selectedVideoUrls.forEach(URL.revokeObjectURL);
         };
-    }, [selectedImageUrls, selectedAudioUrls, selectedDocUrls]);
+    }, [selectedImageUrls, selectedAudioUrls, selectedDocUrls, selectedVideoUrls]);
 
     const deleteResponse = async (id: string) => {
         try {
@@ -474,6 +512,13 @@ function AIResponses() {
                         updatedData.assignedEmployees = selectedEmployees;
                     }
                     break;
+                case 'Video':
+                    if (selectedVideos.length > 0) {
+                        const videoUrls = await uploadFiles(selectedVideos, 'video');
+                        updatedData.videoUrls = videoUrls;
+                        updatedData.videoTitles = selectedVideos.map(video => video.name);
+                    }
+                    break;
             }
 
             await updateDoc(responseRef, updatedData);
@@ -501,6 +546,8 @@ function AIResponses() {
         setSelectedDocs([]);
         setSelectedDocUrls([]);
         setSelectedEmployees([]);
+        setSelectedVideos([]);
+        setSelectedVideoUrls([]);
     };
 
     // Filter responses based on search query
@@ -543,6 +590,10 @@ function AIResponses() {
                 const assignResponse = response as AIAssignResponse;
                 setSelectedEmployees(assignResponse.assignedEmployees || []);
                 break;
+            case 'Video':
+                const videoResponse = response as AIVideoResponse;
+                setSelectedVideoUrls(videoResponse.videoUrls || []);
+                break;
         }
     };
 
@@ -560,6 +611,7 @@ function AIResponses() {
                     <option value="Voice">Voice Responses</option>
                     <option value="Document">Document Responses</option>
                     <option value="Assign">Assign Responses</option>
+                    <option value="Video">Video Responses</option>
                 </FormSelect>
             </div>
 
@@ -651,6 +703,15 @@ function AIResponses() {
                                     employees={employees}
                                     selectedEmployees={selectedEmployees}
                                     onEmployeeSelection={handleEmployeeSelection}
+                                    keywordSource={keywordSource}
+                                    onKeywordSourceChange={setKeywordSource}
+                                />
+                            )}
+                            {responseType === 'Video' && (
+                                <VideoResponseForm
+                                    selectedVideoUrls={selectedVideoUrls}
+                                    onVideoSelect={handleVideoSelect}
+                                    onVideoRemove={handleVideoRemove}
                                     keywordSource={keywordSource}
                                     onKeywordSourceChange={setKeywordSource}
                                 />
@@ -826,6 +887,18 @@ function AIResponses() {
                                                             onKeywordSourceChange={setKeywordSource}
                                                         />
                                                     )}
+                                                    {response.type === 'Video' && (
+                                                        <div>
+                                                            {/* Form to add new videos */}
+                                                            <VideoResponseForm
+                                                                selectedVideoUrls={selectedVideoUrls}
+                                                                onVideoSelect={handleVideoSelect}
+                                                                onVideoRemove={handleVideoRemove}
+                                                                keywordSource={keywordSource}
+                                                                onKeywordSourceChange={setKeywordSource}
+                                                            />
+                                                        </div>
+                                                    )}
 
                                                     {/* Status Edit */}
                                                     <div>
@@ -870,9 +943,9 @@ function AIResponses() {
                                                     <div className="flex justify-between items-center mb-4">
                                                         <div>
                                                             <div className="font-medium text-base">
-                                                                Keywords: {Array.isArray(response.keywords) && response.keywords.length > 0 
-                                                                    ? response.keywords.join(', ') 
-                                                                    : 'No keywords'}
+                                                                Keywords: {Array.isArray(response.keywords) ? 
+                                                                    response.keywords.join(', ') : 
+                                                                    response.keywords || 'No keywords'}
                                                             </div>
                                                             <div className="text-slate-500">
                                                                 Status: {response.status}
@@ -965,6 +1038,16 @@ function AIResponses() {
                                                                         </span>
                                                                     );
                                                                 })}
+                                                            </div>
+                                                        )}
+                                                        {response.type === 'Video' && (
+                                                            <div className="space-y-2">
+                                                                {(response as AIVideoResponse).videoUrls.map((url, idx) => (
+                                                                    <video key={idx} controls className="w-full">
+                                                                        <source src={url} type="video/mp4" />
+                                                                        Your browser does not support the video element.
+                                                                    </video>
+                                                                ))}
                                                             </div>
                                                         )}
                                                     </div>

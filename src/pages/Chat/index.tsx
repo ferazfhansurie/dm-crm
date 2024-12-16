@@ -567,6 +567,11 @@ function Main() {
   const [videoModalOpen, setVideoModalOpen] = useState(false);
   const [videoCaption, setVideoCaption] = useState('');
   const [trialExpired, setTrialExpired] = useState(false);
+  const [minDelay, setMinDelay] = useState(1);
+const [maxDelay, setMaxDelay] = useState(2);
+const [activateSleep, setActivateSleep] = useState(false);
+const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
+const [sleepDuration, setSleepDuration] = useState(5);
   useEffect(() => {
     const checkTrialStatus = async () => {
       try {
@@ -5446,28 +5451,30 @@ const toggleBot = async () => {
 
     const companyData = companySnapshot.data();
     
-    // Initialize or get existing stopbots object
-    const currentStopbots = companyData.stopbots || {};
-    
-    if (currentStopbots[currentPhoneIndex]) {
-      // If bot is currently stopped (true), remove the entry to enable it
-      const { [currentPhoneIndex]: _, ...newStopbots } = currentStopbots;
-      await updateDoc(companyRef, {
-        stopbots: newStopbots
-      });
-      setCompanyStopBot(false);
-      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} enabled successfully`);
+    // Check if phoneCount exists and is not null
+    if (companyData.phoneCount) {
+      // Handle multiple phones case with stopbots
+      const currentStopbots = companyData.stopbots || {};
+      
+      if (companyData.phoneCount) {
+        // If phoneCount exists, use stopbots map
+        const newStopbots = {
+          ...currentStopbots,
+          [currentPhoneIndex]: !currentStopbots[currentPhoneIndex]
+        };
+        await updateDoc(companyRef, {
+          stopbots: newStopbots
+        });
+        setCompanyStopBot(!currentStopbots[currentPhoneIndex]);
+        toast.success(`Bot for ${phoneNames[currentPhoneIndex]} ${currentStopbots[currentPhoneIndex] ? 'enabled' : 'disabled'} successfully`);
+      }
     } else {
-      // If bot is currently running (no entry or false), add entry with true to disable it
-      const newStopbots = {
-        ...currentStopbots,
-        [currentPhoneIndex]: true
-      };
+      // Handle single phone case with stopbot
       await updateDoc(companyRef, {
-        stopbots: newStopbots
+        stopbot: !companyData.stopbot
       });
-      setCompanyStopBot(true);
-      toast.success(`Bot for ${phoneNames[currentPhoneIndex]} disabled successfully`);
+      setCompanyStopBot(!companyData.stopbot);
+      toast.success(`Bot ${companyData.stopbot ? 'enabled' : 'disabled'} successfully`);
     }
 
   } catch (error) {
@@ -5626,6 +5633,11 @@ const toggleBot = async () => {
         v2: true, // Adjust as needed
         whapiToken: null, // Adjust as needed
         phoneIndex: userData.phoneIndex,
+        minDelay,
+        maxDelay,
+        activateSleep,
+        sleepAfterMessages: activateSleep ? sleepAfterMessages : null,
+        sleepDuration: activateSleep ? sleepDuration : null,
       };
 
       console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -6256,6 +6268,66 @@ console.log(prompt);
                       </select>
                     </div>
                   </div>
+                  <div className="mt-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Delay between messages</label>
+        <div className="flex items-center space-x-2 mt-1">
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
+            <input
+              type="number"
+              value={minDelay}
+              onChange={(e) => setMinDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
+            <input
+              type="number"
+              value={maxDelay}
+              onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={activateSleep}
+              onChange={(e) => setActivateSleep(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            />
+            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Activate Sleep between sending</span>
+          </label>
+          {activateSleep && (
+            <div className="flex items-center space-x-2 mt-2 ml-6">
+              <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+              <input
+                type="number"
+                value={sleepAfterMessages}
+                onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+              <input
+                type="number"
+                value={sleepDuration}
+                onChange={(e) => setSleepDuration(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+            </div>
+          )}
+        </div>
+      </div>
                   <div className="flex justify-end mt-4">
                     <button
                       className="px-4 py-2 mr-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
@@ -8239,78 +8311,111 @@ console.log(prompt);
           <div className="bg-blue-50 dark:bg-blue-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Contact Information</h3>
-              {!isEditing ? (
-                <button
-                  onClick={() => {
-                    setIsEditing(true);
-                    setEditedContact({ ...selectedContact });
-                  }}
-                  className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
-                >
-                  Edit
-                </button>
-              ) : (
-                <div className="flex space-x-2">
-                  <button
-                    onClick={handleSaveContact}
-                    className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={() => {
-                      setIsEditing(false);
-                      setEditedContact(null);
-                    }}
-                    className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              )}
+              <div className="flex space-x-2">
+                {!isEditing ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        setIsEditing(true);
+                        setEditedContact({ ...selectedContact });
+                      }}
+                      className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                    >
+                      Edit
+                    </button>
+                    <button
+                      onClick={() => {
+                        if (window.confirm('Are you sure you want to delete this contact? This action cannot be undone.')) {
+                          const user = auth.currentUser;
+                          const docUserRef = doc(firestore, 'user', user?.email!);
+                          getDoc(docUserRef).then((docUserSnapshot) => {
+                            if (!docUserSnapshot.exists()) {
+                              console.log('No such document for user!');
+                              return;
+                            }
+                            const userData = docUserSnapshot.data();
+                            const companyId = userData.companyId;
+                            const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                            deleteDoc(contactRef).then(() => {
+                              toast.success('Contact deleted successfully');
+                              setIsTabOpen(false);
+                              setContacts(contacts.filter(contact => contact.id !== selectedContact.id));
+                              navigate('/chat');
+                            }).catch((error) => {
+                              console.error('Error deleting contact:', error);
+                              toast.error('Failed to delete contact');
+                            });
+                          });
+                        }
+                      }}
+                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Delete
+                    </button>
+                  </>
+                ) : (
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={handleSaveContact}
+                      className="px-3 py-1 bg-green-500 text-white rounded-md hover:bg-green-600 transition duration-200"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        setIsEditing(false);
+                        setEditedContact(null);
+                      }}
+                      className="px-3 py-1 bg-red-500 text-white rounded-md hover:bg-red-600 transition duration-200"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           
           <div className="p-4">
               {/* Phone Index Selector */}
               <div className="mb-4 flex justify-between items-center">
-    <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
-    <select
-      value={selectedContact.phoneIndex ?? 0}
-      onChange={async (e) => {
-        const newPhoneIndex = parseInt(e.target.value);
-        // Update local state
-        setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
-        const user = auth.currentUser;
-        const docUserRef = doc(firestore, 'user', user?.email!);
-        const docUserSnapshot = await getDoc(docUserRef);
-        if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
-          return;
-        }
-        const userData = docUserSnapshot.data();
-        const companyId = userData.companyId;
-        // Update Firestore
-        try {
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
-          await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
-          toast.success('Phone updated successfully');
-        } catch (error) {
-          console.error('Error updating phone:', error);
-          toast.error('Failed to update phone');
-          // Revert local state on error
-          setSelectedContact({ ...selectedContact });
-        }
-      }}
-      className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
-    >
-      {Object.entries(phoneNames).map(([index, name]) => (
-        <option key={index} value={index}>
-          {name}
-        </option>
-      ))}
-    </select>
-  </div>
+                <p className="text-sm font-semibold text-gray-500 dark:text-gray-400">Active Phone:</p>
+                <select
+                  value={selectedContact.phoneIndex ?? 0}
+                  onChange={async (e) => {
+                    const newPhoneIndex = parseInt(e.target.value);
+                    // Update local state
+                    setSelectedContact({ ...selectedContact, phoneIndex: newPhoneIndex });
+                    const user = auth.currentUser;
+                    const docUserRef = doc(firestore, 'user', user?.email!);
+                    const docUserSnapshot = await getDoc(docUserRef);
+                    if (!docUserSnapshot.exists()) {
+                      console.log('No such document for user!');
+                      return;
+                    }
+                    const userData = docUserSnapshot.data();
+                    const companyId = userData.companyId;
+                    // Update Firestore
+                    try {
+                      const contactRef = doc(firestore, `companies/${companyId}/contacts`, selectedContact.id);
+                      await updateDoc(contactRef, { phoneIndex: newPhoneIndex });
+                      toast.success('Phone updated successfully');
+                    } catch (error) {
+                      console.error('Error updating phone:', error);
+                      toast.error('Failed to update phone');
+                      // Revert local state on error
+                      setSelectedContact({ ...selectedContact });
+                    }
+                  }}
+                  className="px-2 py-1 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 ml-4 w-32"
+                >
+                  {Object.entries(phoneNames).map(([index, name]) => (
+                    <option key={index} value={index}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              </div>
             <div className="grid grid-cols-2 gap-4">
 
               {[

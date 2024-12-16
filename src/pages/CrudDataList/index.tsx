@@ -252,7 +252,11 @@ function Main() {
   const [selectedPhoneIndex, setSelectedPhoneIndex] = useState<number | null>(null);
   const [showRecipients, setShowRecipients] = useState<string | null>(null);
   const [recipientSearch, setRecipientSearch] = useState('');
-
+  const [minDelay, setMinDelay] = useState(1);
+  const [maxDelay, setMaxDelay] = useState(2);
+  const [activateSleep, setActivateSleep] = useState(false);
+  const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
+  const [sleepDuration, setSleepDuration] = useState(5);
  
 
   useEffect(() => {
@@ -1182,56 +1186,80 @@ const handleConfirmDeleteTag = async () => {
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-
+  
       // Special handling for company '0123'
-    if (companyId === '0123') {
-      // Check if the new tag is an employee name
-      const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
-      
-      if (isNewTagEmployee) {
-        const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
-        const contactDoc = await getDoc(contactRef);
-
-        if (!contactDoc.exists()) {
-          console.error(`Contact document does not exist: ${contact.id}`);
-          toast.error(`Failed to add tag: Contact not found`);
+      if (companyId === '0123') {
+        // Check if the new tag is an employee name
+        const isNewTagEmployee = employeeList.some(emp => emp.name === tagName);
+        
+        if (isNewTagEmployee) {
+          const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+          const contactDoc = await getDoc(contactRef);
+  
+          if (!contactDoc.exists()) {
+            console.error(`Contact document does not exist: ${contact.id}`);
+            toast.error(`Failed to add tag: Contact not found`);
+            return;
+          }
+  
+          const currentTags = contactDoc.data().tags || [];
+          // Find and remove any existing employee tags
+          const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
+          
+          // Add the new employee tag
+          updatedTags.push(tagName);
+  
+          // Update Firestore with the new tags
+          await updateDoc(contactRef, {
+            tags: updatedTags
+          });
+  
+          // Update local state
+          setContacts(prevContacts =>
+            prevContacts.map(c =>
+              c.id === contact.id
+                ? { ...c, tags: updatedTags }
+                : c
+            )
+          );
+  
+          console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
+          toast.success(`Contact reassigned to ${tagName}`);
+  
+          // Send assignment notification for the new employee
+          await sendAssignmentNotification(tagName, contact);
           return;
         }
-
-        const currentTags = contactDoc.data().tags || [];
-        // Find and remove any existing employee tags
-        const updatedTags = currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag));
-        
-        // Add the new employee tag
-        updatedTags.push(tagName);
-
-        // Update Firestore with the new tags
-        await updateDoc(contactRef, {
-          tags: updatedTags
-        });
-
-        // Update local state
-        setContacts(prevContacts =>
-          prevContacts.map(c =>
-            c.id === contact.id
-              ? { ...c, tags: updatedTags }
-              : c
-          )
-        );
-
-        console.log(`Employee tag updated to ${tagName} for contact ${contact.id}`);
-        toast.success(`Contact reassigned to ${tagName}`);
-
-        // Send assignment notification for the new employee
-        await sendAssignmentNotification(tagName, contact);
-        return;
       }
-    }
   
-      console.log(`Adding tag: ${tagName} to contact: ${contact.id}`);
+      // Check if tag is a trigger tag by looking up follow-up templates
+      const templatesRef = collection(firestore, 'companies', companyId, 'followUpTemplates');
+      const templatesSnapshot = await getDocs(templatesRef);
+      
+      let matchingTemplate: any = null;
+      templatesSnapshot.forEach(doc => {
+        const template = doc.data();
+        if (template.triggerTags?.includes(tagName) && template.status === 'active') {
+          matchingTemplate = { 
+            id: doc.id, 
+            ...template 
+          };
+        }
+      });
   
       // Update contact's tags
       const contactRef = doc(firestore, 'companies', companyId, 'contacts', contact.id!);
+      const contactDoc = await getDoc(contactRef);
+  
+      if (!contactDoc.exists()) {
+        console.error(`Contact document does not exist: ${contact.id}`);
+        toast.error(`Failed to add tag: Contact not found`);
+        return;
+      }
+  
+      const currentTags = contactDoc.data().tags || [];
+  
+      // Prepare update data
       const updateData: any = {
         tags: arrayUnion(tagName)
       };
@@ -1248,17 +1276,45 @@ const handleConfirmDeleteTag = async () => {
   
       await updateDoc(contactRef, updateData);
   
-      // Update state
-      setContacts(prevContacts => 
+      // Update local state
+      setContacts(prevContacts =>
         prevContacts.map(c =>
-          c.id === contact.id ? { ...c, tags: [...(c.tags || []), tagName] } : c
+          c.id === contact.id
+            ? { ...c, tags: [...(c.tags || []), tagName] }
+            : c
         )
       );
+  
       if (selectedContact && selectedContact.id === contact.id) {
         setSelectedContact((prevContact: Contact) => ({
           ...prevContact,
           tags: [...(prevContact.tags || []), tagName]
         }));
+      }
+  
+      // If this is a trigger tag, call the follow-up API
+      if (matchingTemplate) {
+        const response = await fetch('https://mighty-dane-newly.ngrok-free.app/api/tag/followup', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            requestType: 'startTemplate',
+            phone: contact.phone,
+            first_name: contact.contactName || contact.firstName || contact.phone,
+            phoneIndex: contact.phoneIndex || 0,
+            templateId: matchingTemplate.id,
+            idSubstring: companyId
+          }),
+        });
+  
+        if (!response.ok) {
+          throw new Error(`Follow-up API error: ${response.statusText}`);
+        }
+  
+        console.log('Follow-up template started successfully');
+        toast.success('Follow-up sequence started');
       }
   
       toast.success(`Tag "${tagName}" added to contact successfully!`);
@@ -1268,7 +1324,7 @@ const handleConfirmDeleteTag = async () => {
       if (employee) {
         await sendAssignmentNotification(tagName, contact);
       }
-
+  
       await fetchContacts();
   
     } catch (error) {
@@ -1276,7 +1332,6 @@ const handleConfirmDeleteTag = async () => {
       toast.error('Failed to add tag and assign contact.');
     }
   };
-
 
 
   const sendAssignmentNotification = async (assignedEmployeeName: string, contact: Contact) => {
@@ -2177,6 +2232,11 @@ const sendBlastMessage = async () => {
       status: "scheduled",
       v2: isV2,
       whapiToken: isV2 ? null : whapiToken,
+      minDelay,
+      maxDelay,
+      activateSleep,
+      sleepAfterMessages: activateSleep ? sleepAfterMessages : null,
+      sleepDuration: activateSleep ? sleepDuration : null,
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -4498,6 +4558,66 @@ const getFilteredScheduledMessages = () => {
                         <option value="days">Days</option>
                       </select>
                     </div>
+                    <div className="mt-4">
+        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Delay between messages</label>
+        <div className="flex items-center space-x-2 mt-1">
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Wait between:</span>
+            <input
+              type="number"
+              value={minDelay}
+              onChange={(e) => setMinDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+          </div>
+          <div className="flex items-center">
+            <span className="text-sm text-gray-600 dark:text-gray-400 mx-2">and</span>
+            <input
+              type="number"
+              value={maxDelay}
+              onChange={(e) => setMaxDelay(parseInt(e.target.value))}
+              min={1}
+              className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            />
+            <span className="text-sm text-gray-600 dark:text-gray-400 ml-2">Seconds</span>
+          </div>
+        </div>
+
+        <div className="mt-4">
+          <label className="flex items-center">
+            <input
+              type="checkbox"
+              checked={activateSleep}
+              onChange={(e) => setActivateSleep(e.target.checked)}
+              className="rounded border-gray-300 text-indigo-600 shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50"
+            />
+            <span className="ml-2 text-sm text-gray-600 dark:text-gray-400">Activate Sleep between sending</span>
+          </label>
+          {activateSleep && (
+            <div className="flex items-center space-x-2 mt-2 ml-6">
+              <span className="text-sm text-gray-600 dark:text-gray-400">After:</span>
+              <input
+                type="number"
+                value={sleepAfterMessages}
+                onChange={(e) => setSleepAfterMessages(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Messages</span>
+              <span className="text-sm text-gray-600 dark:text-gray-400">for:</span>
+              <input
+                type="number"
+                value={sleepDuration}
+                onChange={(e) => setSleepDuration(parseInt(e.target.value))}
+                min={1}
+                className="w-20 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+              <span className="text-sm text-gray-600 dark:text-gray-400">Seconds</span>
+            </div>
+          )}
+        </div>
+      </div>
                     <div className="mt-2">
                       <label className="block text-sm font-medium text-gray-700 dark:text-gray-300" htmlFor="phone">Phone</label>
                       <select

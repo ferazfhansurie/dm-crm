@@ -1392,7 +1392,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        message: `You've been mentioned in a chat. Click here to view: https://web.jutasoftware.co/chat?chatId=${chatId}`,
+        message: `You've been mentioned in a chat. Click here to view: https://https://dmaimedia.vercel.app/chat?chatId=${chatId}`,
       }),
     });
 
@@ -3979,7 +3979,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     // Send notification to assigned employee
     if (assignedEmployee.phoneNumber) {
-      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://web.jutasoftware.co/login \n\nThank you.\n\nJuta Teknologi`;
+      let employeeMessage = `Hello ${assignedEmployee.name}, a new contact has been assigned to you:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}\n\nKindly login to https://dmaimedia.vercel.app/login \n\nThank you.\n\nJuta Teknologi`;
       if(companyId == '042'){
         employeeMessage = `Hi ${assignedEmployee.employeeId || assignedEmployee.phoneNumber} ${assignedEmployee.name}.\n\nAnda telah diberi satu prospek baharu\n\nSila masuk ke https://zahintravel.chat/login untuk melihat perbualan di antara Zahin Travel dan prospek.\n\nTerima kasih.\n\nIkhlas,\nZahin Travel Sdn. Bhd. (1276808-W)\nNo. Lesen Pelancongan: KPK/LN 9159\nNo. MATTA: MA6018\n\n#zahintravel - Nikmati setiap detik..\n#diyakini\n#responsif\n#budibahasa`;
       }

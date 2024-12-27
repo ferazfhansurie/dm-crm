@@ -340,7 +340,7 @@ const Ticket = () => {
                                  task.title.includes('🎊');
 
       // Prepare message based on context
-      const taskUrl = `https://web.jutasoftware.co/ticket`;
+      const taskUrl = `https://dmaimedia.vercel.app/ticket`;
       let message: string;
       let recipients: string[];
 

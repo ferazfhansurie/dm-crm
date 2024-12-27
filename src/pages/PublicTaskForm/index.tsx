@@ -80,7 +80,7 @@ const sendTaskNotification = async (poc: string, task: TaskSubmission, isNew: bo
     const groupChatId = "120363178065670386@g.us";
 
     // Prepare message
-    const taskUrl = `https://web.jutasoftware.co/ticket`;
+    const taskUrl = `https://dmaimedia.vercel.app/ticket`;
     const message = isNew
       ? `Hello ${employeeData.name},\n\nA new issue has been reported:\n\nTitle: ${task.title}\nDeadline: ${format(new Date(task.deadline), 'dd/MM/yyyy')}\nClient: ${task.clientName}\nPriority: ${task.priority}\n\nPlease check the details at ${taskUrl}`
       : `🔔 Update: ${employeeData.name},\n\nIssue status update:\n\nTitle: ${task.title}\nDeadline: ${format(new Date(task.deadline), 'dd/MM/yyyy')}\nClient: ${task.clientName}\nPriority: ${task.priority}\nStatus: ${task.status}\n\nIssue details at ${taskUrl}`;

@@ -899,7 +899,7 @@ const Main: React.FC = () => {
                 <MessageList 
                   messages={messages} 
                   onSendMessage={sendMessageToAssistant} 
-                  assistantName={assistantInfo?.name || 'Juta Assistant'} 
+                  assistantName={assistantInfo?.name || 'Assistant'} 
                   deleteThread={deleteThread} 
                   threadId={threadId}
                 />

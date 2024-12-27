@@ -84,16 +84,25 @@ function LoadingPage() {
   const [loadingPhase, setLoadingPhase] = useState<string>('initializing');
   const [loadingProgress, setLoadingProgress] = useState(0);
   const [trialExpired, setTrialExpired] = useState(false);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   
   const fetchQRCode = async () => {
-    const auth = getAuth(app);
+    if (!isAuthReady) {
+      return; // Don't proceed if auth isn't ready
+    }
+
     const user = auth.currentUser;
     let v2;
     setIsLoading(true);
     setIsQRLoading(true);
     setError(null);
     try {
-      const docUserRef = doc(firestore, 'user', user?.email!);
+      if (!user?.email) {
+        navigate('/login');
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
         throw new Error("User document does not exist");
@@ -110,7 +119,8 @@ function LoadingPage() {
       }
 
       const companyData = docSnapshot.data();
-      
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      console.log('baseUrl: '+baseUrl);
       if (companyData.trialEndDate) {
         const trialEnd = companyData.trialEndDate.toDate();
         const now = new Date();
@@ -136,54 +146,67 @@ function LoadingPage() {
       }
 
       // Only proceed with QR code and bot status if v2 exists
-      const botStatusResponse = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/bot-status/${companyId}`);
+      const botStatusResponse = await axios.get(
+        `${baseUrl}/api/bot-status/${companyId}`,
+        {
+          withCredentials: true,
+          headers: {
+            'Authorization': `Bearer ${await user.getIdToken()}`,
+          }
+        }
+      );
 
       console.log(botStatusResponse.data);
       if (botStatusResponse.status !== 200) {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
       let phoneCount = companyData.phoneCount ?? null;
-      if(phoneCount === null || phoneCount === 1){
+      console.log('Phone count:', phoneCount);
+      
+      if (phoneCount === null || phoneCount === 1) {
         const { status, qrCode } = botStatusResponse.data;
-        console.log(botStatusResponse.data); 
-        console.log('phonecount is 0'); 
+        console.log('Single bot status response:', botStatusResponse.data);
         setBotStatus(status);
         if (status === 'qr') {
           setQrCodeImage(qrCode);
-          console.log({companyId});
         } else if (status === 'authenticated' || status === 'ready') {
-          console.log("Bot authenticated, preparing to fetch contacts");
+          console.log('Single bot is authenticated/ready, navigating to chat');
           setShouldFetchContacts(true);
+          navigate('/chat');
+          return;
         }
       } else {
-        console.log(botStatusResponse.data);
+        console.log('Multiple phones configuration:', botStatusResponse.data);
+        // Check if response is an array
+        const statusArray = Array.isArray(botStatusResponse.data) 
+          ? botStatusResponse.data 
+          : [botStatusResponse.data];
+
         let anyAuthenticated = false;
-        for (let i = 0; i < botStatusResponse.data.length; i++) {
-          const status = botStatusResponse.data[i].status;
-          console.log(`Phone ${i + 1} status:`, status);
-          if (status === 'authenticated' || status === 'ready') {
+        for (const bot of statusArray) {
+          console.log('Checking bot status:', bot.status);
+          if (bot.status === 'authenticated' || bot.status === 'ready') {
             anyAuthenticated = true;
+            setBotStatus(bot.status);
             break;
           }
         }
+
         if (anyAuthenticated) {
-          console.log("At least one bot authenticated, preparing to fetch contacts");
+          console.log('At least one bot is authenticated/ready, navigating to chat');
           setShouldFetchContacts(true);
+          navigate('/chat');
+          return;
         } else {
           console.log("No bots are authenticated yet");
-          for (let i = 0; i < botStatusResponse.data.length; i++) {
-            const status = botStatusResponse.data[i].status;
-            setBotStatus(status);
-            console.log(`Phone ${i + 1} status:`, status);
-            if (status === 'qr') {
-              const { status, qrCode } = botStatusResponse.data[i];
-              if (status === 'qr') {
-                setQrCodeImage(qrCode);
-              }
+          // Find first bot with QR code
+          for (const bot of statusArray) {
+            if (bot.status === 'qr' && bot.qrCode) {
+              setBotStatus('qr');
+              setQrCodeImage(bot.qrCode);
               break;
             }
           }
-          
         }
       }
    
@@ -213,16 +236,27 @@ function LoadingPage() {
   };
 
   useEffect(() => {
-    fetchQRCode();
-  }, []);
+    if (isAuthReady) {
+      fetchQRCode();
+    }
+  }, [isAuthReady]);
 
   useEffect(() => {
     const initWebSocket = async (retries = 3) => {
+      if (!isAuthReady) {
+        return; // Don't proceed if auth isn't ready
+      }
+
       if (!wsConnected) {
         try {
-          const auth = getAuth(app);
           const user = auth.currentUser;
-          const docUserRef = doc(firestore, 'user', user?.email!);
+          
+          if (!user?.email) {
+            navigate('/login');
+            return;
+          }
+
+          const docUserRef = doc(firestore, 'user', user.email);
           const docUserSnapshot = await getDoc(docUserRef);
           
           if (!docUserSnapshot.exists()) {
@@ -249,14 +283,16 @@ function LoadingPage() {
             console.log('WebSocket message received:', data);
       
             if (data.type === 'auth_status') {
-              console.log(`Bot status: ${data.status}`);
+              console.log(`Bot status update: ${data.status}`);
               setBotStatus(data.status);
+              
               if (data.status === 'qr') {
                 setQrCodeImage(data.qrCode);
-        
               } else if (data.status === 'authenticated' || data.status === 'ready') {
+                console.log('Bot authenticated/ready via WebSocket, navigating to chat');
+                setShouldFetchContacts(true);
                 navigate('/chat');
-                
+                return;
               }
             } else if (data.type === 'progress') {
               setBotStatus(data.status);
@@ -267,11 +303,9 @@ function LoadingPage() {
               if (data.action === 'done_process') {
                 setBotStatus(data.status);
                 setProcessingComplete(true);
+                navigate('/chat');
+                return;
               }
-            }
-            if(data.status === 'authenticated' || data.status === 'ready'){
-              setBotStatus(data.status);
-              navigate('/chat');
             }
           };
           
@@ -286,13 +320,24 @@ function LoadingPage() {
           };
         } catch (error) {
           console.error('Error initializing WebSocket:', error);
-          setError('Failed to initialize WebSocket. Please try again.');
+          if (error instanceof Error) {
+            setError(error.message);
+          } else {
+            setError('Failed to initialize WebSocket. Please try again.');
+          }
+          
+          if (retries > 0) {
+            console.log(`Retrying WebSocket connection... (${retries} attempts left)`);
+            setTimeout(() => initWebSocket(retries - 1), 2000);
+          }
         }
       }
     };
 
-    initWebSocket();
-  }, []);
+    if (isAuthReady) {
+      initWebSocket();
+    }
+  }, [isAuthReady]);
 
   // New useEffect for WebSocket cleanup
   useEffect(() => {
@@ -307,10 +352,10 @@ function LoadingPage() {
   useEffect(() => {
     console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
     if (shouldFetchContacts && !isLoading) {
-      console.log("Conditions met, calling fetchContacts");
+      console.log("Conditions met for navigation, navigating to chat");
       navigate('/chat');
     }
-  }, [shouldFetchContacts, isLoading]);
+  }, [shouldFetchContacts, isLoading, navigate]);
 
   useEffect(() => {
     console.log("Contact state changed. contactsFetched:", contactsFetched, "fetchedChats:", fetchedChats, "totalChats:", totalChats, "contacts length:", contacts.length);
@@ -514,7 +559,27 @@ useEffect(() => {
     setIsPairingCodeLoading(true);
     setError(null);
     try {
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {
         phoneNumber
       });
       setPairingCode(response.data.pairingCode);
@@ -526,9 +591,33 @@ useEffect(() => {
     }
   };
 
+  useEffect(() => {
+    const unsubscribe = auth.onAuthStateChanged((user) => {
+      setIsAuthReady(true);
+      if (!user) {
+        navigate('/login');
+      }
+    });
+
+    return () => unsubscribe();
+  }, [auth, navigate]);
+
+  useEffect(() => {
+    if (botStatus === 'ready' || botStatus === 'authenticated') {
+      console.log('Bot status changed to ready/authenticated, navigating to chat');
+      setShouldFetchContacts(true);
+      navigate('/chat');
+    }
+  }, [botStatus, navigate]);
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
-      {trialExpired ? (
+      {!isAuthReady ? (
+        <div className="text-center">
+          <LoadingIcon className="w-8 h-8 mx-auto" />
+          <p className="mt-2">Initializing...</p>
+        </div>
+      ) : trialExpired ? (
         <div className="text-center p-8">
           <h2 className="text-2xl font-bold text-red-600 mb-4">Trial Period Expired</h2>
           <p className="text-gray-600 mb-4">Your trial period has ended. Please contact support to continue using the service.</p>

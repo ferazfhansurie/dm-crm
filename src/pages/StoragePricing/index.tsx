@@ -3,6 +3,8 @@ import { getFirestore, doc, getDoc, setDoc } from 'firebase/firestore';
 import { FormInput, FormLabel } from "@/components/Base/Form";
 import Button from "@/components/Base/Button";
 import { toast } from 'react-toastify';
+import { Plus } from "lucide-react";
+
 
 interface StoragePrice {
   size: string;
@@ -103,17 +105,37 @@ function StoragePricing() {
     setIsLoading(false);
   };
 
+  const addNewSize = () => {
+    const lastSize = pricingData[pricingData.length - 1];
+    const newSizeEntries: StoragePrice[] = [
+      { size: "New Size", duration: "1 - 2", discount: 5, pricePerSf: 4.50, priceAfterDiscount: 4.275 },
+      { size: "New Size", duration: "3 - 5", discount: 10, pricePerSf: 4.50, priceAfterDiscount: 4.05 },
+      { size: "New Size", duration: "6 - 11", discount: 15, pricePerSf: 4.50, priceAfterDiscount: 3.825 },
+      { size: "New Size", duration: "> 12", discount: 20, pricePerSf: 4.50, priceAfterDiscount: 3.60 }
+    ];
+    setPricingData([...pricingData, ...newSizeEntries]);
+  };
+
   return (
     <div className="w-full h-screen px-4 py-6 overflow-hidden">
       <div className="flex justify-between items-center mb-4">
         <h2 className="text-2xl font-semibold">Storage Pricing</h2>
-        <Button
-          variant="primary"
-          onClick={handleSave}
-          disabled={isLoading}
-        >
-          {isLoading ? "Saving..." : "Save Changes"}
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant="secondary"
+            onClick={addNewSize}
+          >
+            <Plus className="w-5 h-5 mr-1" />
+            Add Size Range
+          </Button>
+          <Button
+            variant="primary"
+            onClick={handleSave}
+            disabled={isLoading}
+          >
+            {isLoading ? "Saving..." : "Save Changes"}
+          </Button>
+        </div>
       </div>
 
       <div className="relative overflow-hidden border rounded-lg shadow-lg">
@@ -164,9 +186,11 @@ function StoragePricing() {
                   >
                     <td className="px-6 py-2">
                       {isFirstInSize ? (
-                        <div className="font-medium text-gray-900 dark:text-gray-100">
-                          {row.size}
-                        </div>
+                        <FormInput
+                          value={row.size}
+                          onChange={(e) => handleInputChange(index, 'size', e.target.value)}
+                          className="w-full rounded border-gray-300 dark:border-gray-600 focus:border-blue-500 dark:focus:border-blue-400"
+                        />
                       ) : null}
                     </td>
                     <td className="px-6 py-2">

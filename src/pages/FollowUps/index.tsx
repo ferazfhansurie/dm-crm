@@ -1356,41 +1356,54 @@ const FollowUpsPage: React.FC = () => {
                                         <label htmlFor="useScheduledTime">Send at specific time</label>
                                     </div>
 
-                                    {(newMessage.useScheduledTime || editingMessage?.useScheduledTime) && (
+                                    {!newMessage.useScheduledTime && (
+                                        <div className="flex items-center gap-2">
+                                            <select
+                                                className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
+                                                value={`${newMessage.delayAfter.value}_${newMessage.delayAfter.unit}`}
+                                                onChange={(e) => {
+                                                    const [value, unit] = e.target.value.split('_');
+                                                    setNewMessage({
+                                                        ...newMessage,
+                                                        delayAfter: {
+                                                            ...newMessage.delayAfter,
+                                                            value: parseInt(value),
+                                                            unit: unit as 'minutes' | 'hours' | 'days'
+                                                        }
+                                                    });
+                                                }}
+                                            >
+                                                {TIME_INTERVALS.map((interval) => (
+                                                    <option key={`${interval.value}_${interval.unit}`} value={`${interval.value}_${interval.unit}`}>
+                                                        {interval.label}
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <label className="text-sm text-gray-600">after previous message</label>
+                                        </div>
+                                    )}
+
+                                    {newMessage.useScheduledTime && (
                                         <div className="flex items-center gap-2">
                                             <input
                                                 type="time"
                                                 className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                value={editingMessage ? editingMessage.scheduledTime : newMessage.scheduledTime}
+                                                value={newMessage.scheduledTime}
                                                 onChange={(e) => {
-                                                    if (editingMessage) {
-                                                        setEditingMessage({
-                                                            ...editingMessage,
-                                                            scheduledTime: e.target.value
-                                                        });
-                                                    } else {
-                                                        setNewMessage({
-                                                            ...newMessage,
-                                                            scheduledTime: e.target.value
-                                                        });
-                                                    }
+                                                    setNewMessage({
+                                                        ...newMessage,
+                                                        scheduledTime: e.target.value
+                                                    });
                                                 }}
                                             />
                                             <select
                                                 className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                value={editingMessage ? editingMessage.scheduledTime : newMessage.scheduledTime}
+                                                value={newMessage.scheduledTime}
                                                 onChange={(e) => {
-                                                    if (editingMessage) {
-                                                        setEditingMessage({
-                                                            ...editingMessage,
-                                                            scheduledTime: e.target.value
-                                                        });
-                                                    } else {
-                                                        setNewMessage({
-                                                            ...newMessage,
-                                                            scheduledTime: e.target.value
-                                                        });
-                                                    }
+                                                    setNewMessage({
+                                                        ...newMessage,
+                                                        scheduledTime: e.target.value
+                                                    });
                                                 }}
                                             >
                                                 <option value="">Select time</option>
@@ -1521,50 +1534,30 @@ const FollowUpsPage: React.FC = () => {
                                                                             <label htmlFor="useScheduledTime">Send at specific time</label>
                                                                         </div>
 
-                                                                        {(newMessage.useScheduledTime || editingMessage?.useScheduledTime) && (
+                                                                        {!editingMessage?.useScheduledTime && (
                                                                             <div className="flex items-center gap-2">
-                                                                                <input
-                                                                                    type="time"
-                                                                                    className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                                                    value={editingMessage ? editingMessage.scheduledTime : newMessage.scheduledTime}
-                                                                                    onChange={(e) => {
-                                                                                        if (editingMessage) {
-                                                                                            setEditingMessage({
-                                                                                                ...editingMessage,
-                                                                                                scheduledTime: e.target.value
-                                                                                            });
-                                                                                        } else {
-                                                                                            setNewMessage({
-                                                                                                ...newMessage,
-                                                                                                scheduledTime: e.target.value
-                                                                                            });
-                                                                                        }
-                                                                                    }}
-                                                                                />
                                                                                 <select
                                                                                     className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800"
-                                                                                    value={editingMessage ? editingMessage.scheduledTime : newMessage.scheduledTime}
+                                                                                    value={`${editingMessage?.delayAfter?.value}_${editingMessage?.delayAfter?.unit}`}
                                                                                     onChange={(e) => {
-                                                                                        if (editingMessage) {
-                                                                                            setEditingMessage({
-                                                                                                ...editingMessage,
-                                                                                                scheduledTime: e.target.value
-                                                                                            });
-                                                                                        } else {
-                                                                                            setNewMessage({
-                                                                                                ...newMessage,
-                                                                                                scheduledTime: e.target.value
-                                                                                            });
-                                                                                        }
+                                                                                        const [value, unit] = e.target.value.split('_');
+                                                                                        setEditingMessage({
+                                                                                            ...editingMessage!,
+                                                                                            delayAfter: {
+                                                                                                ...editingMessage!.delayAfter!,
+                                                                                                value: parseInt(value),
+                                                                                                unit: unit as 'minutes' | 'hours' | 'days'
+                                                                                            }
+                                                                                        });
                                                                                     }}
                                                                                 >
-                                                                                    <option value="">Select time</option>
-                                                                                    {TIME_OPTIONS.map((time) => (
-                                                                                        <option key={time.value} value={time.value}>
-                                                                                            {time.label}
+                                                                                    {TIME_INTERVALS.map((interval) => (
+                                                                                        <option key={`${interval.value}_${interval.unit}`} value={`${interval.value}_${interval.unit}`}>
+                                                                                            {interval.label}
                                                                                         </option>
                                                                                     ))}
                                                                                 </select>
+                                                                                <label className="text-sm text-gray-600">after previous message</label>
                                                                             </div>
                                                                         )}
                                                                     </div>

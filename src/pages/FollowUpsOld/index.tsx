@@ -455,6 +455,120 @@ const OldFollowUpsPage: React.FC = () => {
                             className="hidden"
                             onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
                         />
+
+                        <div className="mb-2">
+                            <Select
+                                isMulti
+                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                value={newFollowUp.stopTags.map(tag => ({ value: tag, label: tag }))}
+                                onChange={(selected) => {
+                                    const selectedTags = selected ? selected.map(option => option.value) : [];
+                                    setNewFollowUp({
+                                        ...newFollowUp,
+                                        stopTags: selectedTags
+                                    });
+                                }}
+                                placeholder="Select tags to stop follow-ups..."
+                                className="w-full"
+                                styles={{
+                                    control: (base, state) => ({
+                                        ...base,
+                                        backgroundColor: 'white',
+                                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db',
+                                        borderRadius: '0.375rem',
+                                        '.dark &': {
+                                            backgroundColor: '#1f2937',
+                                        },
+                                        '&:hover': {
+                                            borderColor: '#3b82f6',
+                                        },
+                                    }),
+                                    menu: (base) => ({
+                                        ...base,
+                                        backgroundColor: 'white',
+                                        '.dark &': {
+                                            backgroundColor: '#1f2937',
+                                        },
+                                        border: '1px solid #d1d5db',
+                                        borderRadius: '0.375rem',
+                                        boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+                                    }),
+                                    option: (base, state) => ({
+                                        ...base,
+                                        backgroundColor: state.isFocused ? '#3b82f6' : 'white',
+                                        '.dark &': {
+                                            backgroundColor: state.isFocused ? '#3b82f6' : '#1f2937',
+                                        },
+                                        color: state.isFocused ? 'white' : 'black',
+                                     
+                                        padding: '0.5rem 1rem',
+                                        cursor: 'pointer',
+                                        '&:hover': {
+                                            backgroundColor: '#60a5fa',
+                                            color: 'white',
+                                        },
+                                    }),
+                                    multiValue: (base) => ({
+                                        ...base,
+                                        backgroundColor: '#e5e7eb',
+                                        '.dark &': {
+                                            backgroundColor: '#4b5563',
+                                        },
+                                        borderRadius: '0.375rem',
+                                        margin: '2px',
+                                    }),
+                                    multiValueLabel: (base) => ({
+                                        ...base,
+                                        color: '#1f2937',
+                                        '.dark &': {
+                                            color: '#f3f4f6',
+                                        },
+                                        padding: '2px 6px',
+                                    }),
+                                    multiValueRemove: (base) => ({
+                                        ...base,
+                                        color: '#4b5563',
+                                        '.dark &': {
+                                            color: '#d1d5db',
+                                        },
+                                        ':hover': {
+                                            backgroundColor: '#ef4444',
+                                            color: 'white',
+                                        },
+                                        borderRadius: '0 0.375rem 0.375rem 0',
+                                    }),
+                                    input: (base) => ({
+                                        ...base,
+                                        color: 'black',
+                                        '.dark &': {
+                                            color: '#d1d5db',
+                                        },
+                                    }),
+                                    placeholder: (base) => ({
+                                        ...base,
+                                        color: '#9ca3af',
+                                    }),
+                                }}
+                                theme={(theme) => ({
+                                    ...theme,
+                                    colors: {
+                                        ...theme.colors,
+                                        primary: '#3b82f6',
+                                        primary75: '#60a5fa',
+                                        primary50: '#93c5fd',
+                                        primary25: '#bfdbfe',
+                                    },
+                                })}
+                            />
+                        </div>
+
+                        <Button
+                            onClick={addFollowUp}
+                            className="w-full bg-blue-500 text-white"
+                            disabled={!newFollowUp.message.trim()}
+                        >
+                            Add Follow Up
+                        </Button>
                     </div>
                     <div className="space-y-4">
                         {filteredFollowUps.map((followUp, index) => (

@@ -250,6 +250,26 @@ function Main() {
 const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
   try {
     // Get the employee's email before deleting
+    const user = getAuth().currentUser;
+    if (!user) {
+      console.error("User not authenticated");
+    }
+    const docUserRef = doc(firestore, 'user', user?.email!);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      console.log('No such document!');
+      return;
+    }
+    const data2 = docSnapshot.data();
+    const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
     const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
     const employeeDoc = await getDoc(employeeRef);
     const employeeEmail = employeeDoc.data()?.email;
@@ -266,7 +286,7 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
     
     // Delete from Firebase Auth via your API endpoint
     console.log('Sending delete request to API for email:', employeeEmail);
-    const response = await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/auth/user`, {
+    const response = await axios.delete(`${baseUrl}/api/auth/user`, {
       data: { email: employeeEmail }
     });
     console.log('API Response:', response.data);
@@ -347,44 +367,15 @@ const paginatedEmployees = filteredEmployees
       <div className="flex-grow p-5">
         <div className="sticky top-0 bg-gray-100 dark:bg-gray-900 z-10 py-2">
           <div className="flex flex-wrap items-center mt-2 intro-y sm:flex-nowrap">
-            <Link to="crud-form">
-              {showAddUserButton && role !== "3" && (
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Add New User
-                </Button>
-              )}
-            </Link>
-            <Link to="loading2">
-              {showAddUserButton && phoneCount >= 2 && (
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Add Number
-                </Button>
-              )}
-            </Link>
-          
-            <Link to="quick-replies">
-            <Button variant="primary" className="mr-2 shadow-md">
-                  Quick Replies
-                </Button>
-            </Link>
-            <Link to="a-i-responses">
-              <Button variant="primary" className="mr-2 shadow-md">
-                AI Responses
-              </Button>
-            </Link>
-            <Link to="follow-ups-select">
-            <Button variant="primary" className="mr-2 shadow-md">
-                  Follow Ups
-                </Button>
-            </Link>
+          <Link to="settings">
+  <Button variant="primary" className="mr-2 shadow-md">
+    <Lucide icon="Settings" className="w-4 h-4 mr-2" />
+    Settings
+  </Button>
+</Link>
+           
+           
          
-            {companyId === "0123" && (
-              <Link to="storage-pricing">
-                <Button variant="primary" className="mr-2 shadow-md">
-                  Storage Pricing
-                </Button>
-              </Link>
-            )}
             {/* Add a dropdown to show phone names */}
             {phoneCount >= 2 && (
               <Menu className="mr-2">

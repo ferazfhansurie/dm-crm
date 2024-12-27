@@ -74,9 +74,9 @@ export const MessagesProvider = ({ children }: { children: ReactNode }) => {
           return;
         }
         const data2 = docSnapshot.data();
-  
+        const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         if (selectedChatId.includes('@')) {
-          const response = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/messages/${selectedChatId}/${data2.whapiToken}`);
+          const response = await axios.get(`${baseUrl}/api/messages/${selectedChatId}/${data2.whapiToken}`);
           const data = response.data;
        console.log(data);
           setMessages(

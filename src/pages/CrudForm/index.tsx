@@ -308,7 +308,14 @@ function Main() {
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser!.companyId;
         const company = dataUser!.company;
-
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        if (!docSnapshot.exists()) {
+          console.log('No such document!');
+          return;
+        }
+        const data2 = docSnapshot.data();
+        const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         const formatPhoneNumber = (phoneNumber: string) => {
           return phoneNumber && !phoneNumber.startsWith('+') ? "+6" + phoneNumber : phoneNumber;
         };
@@ -337,7 +344,8 @@ function Main() {
           toast.success("User updated successfully");
         } else {
           // Adding new user
-          const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/create-user/${userData.email}/${formatPhoneNumber(userData.phoneNumber)}/${userData.password}`, {
+          
+          const response = await fetch(`${baseUrl}/api/create-user/${userData.email}/${formatPhoneNumber(userData.phoneNumber)}/${userData.password}`, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json'
@@ -384,7 +392,7 @@ function Main() {
             }
             formattedPhone += '@c.us';
             console.log('Formatted user chat_id:', formattedPhone);
-              url = `https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/${companyId}/${formattedPhone}`;
+              url = `${baseUrl}/api/v2/messages/text/${companyId}/${formattedPhone}`;
               requestBody = { 
                 message,
                 phoneIndex: 0, // Include phoneIndex in the request body

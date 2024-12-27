@@ -24,6 +24,7 @@ package-lock.json
 *.njsproj
 *.sln
 *.sw?
+.env
 
 # Ignore the server folder
 server/

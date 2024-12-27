@@ -81,7 +81,10 @@ import AIResponses from "../pages/AIResponses";
 import StoragePricing from "../pages/StoragePricing";
 import { ContactsProvider, useContacts } from "../contact"; // Adjust the path as needed
 import DatabaseManager from "../pages/DatabaseManager";
-import ScheduledMessage from "../pages/ScheduledMessage";
+import AIGenerativeResponses from "../pages/AIGenerativeResponses";
+import Ticket from "../pages/Ticket";
+import PublicTaskForm from "../pages/PublicTaskForm";
+import Settings from "../pages/Settings";
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -110,18 +113,31 @@ function Router() {
         { path: "/", element: <Chat /> },
         { path: "chat", element: <Chat /> },
         { path: "/dashboard", element: <DashboardOverview1 /> },
+        { path: "ticket", element: <Ticket /> },
+        { path: "crud-form", element: <CrudForm /> },
+        { path: "settings", element: <Settings /> },
+        { path: "quick-replies", element: <QuickReplies /> },
+        { path: "a-i-responses", element: <AIResponses /> },
+        { path: "automations", element: <Automations /> },
+        { path: "follow-ups", element: <FollowUps /> },
+        { path: "follow-ups-select", element: <SelectFollowUpMode /> },
+        { path: "follow-ups-old", element: <OldFollowUps /> },
+        { path: "a-i-generative-responses", element: <AIGenerativeResponses /> },
+        { path: "storage-pricing", element: <StoragePricing /> },
+        { path: "/client-ticket", element: <PublicTaskForm /> },
         {
           path: "/database-manager",
           element: <DatabaseManager />
         },
         { path: "/dashboard/blast-history", element: <BlastHistory /> },
         { path: "users-layout-2/quick-replies", element: <QuickReplies /> },
+        { path: "users-layout-2/settings", element: <Settings /> },
         { path: "users-layout-2/automations", element: <Automations /> },
         { path: "users-layout-2/follow-ups", element: <FollowUps /> },
         { path: "users-layout-2/follow-ups-select", element: <SelectFollowUpMode /> },
         { path: "users-layout-2/follow-ups-old", element: <OldFollowUps /> },
         { path: "users-layout-2/a-i-responses", element: <AIResponses /> },
-        { path: "users-layout-2/scheduled-message", element: <ScheduledMessage /> },
+        { path: "users-layout-2/a-i-generative-responses", element: <AIGenerativeResponses /> },
         { path: "users-layout-2/builder", element: <Builder /> },
         { path: "users-layout-2/storage-pricing", element: <StoragePricing /> },
         { path: "dashboard-overview-3", element: <DashboardOverview3 /> },
@@ -196,6 +212,7 @@ function Router() {
     { path: "product-grid", element: <ProductGrid /> },
     { path: "/login", element: isLoggedIn ? <Navigate to="/loading" /> : <Login /> },
     { path: "/register", element: isLoggedIn ? <Navigate to="/loading" /> : <Register /> },
+   
     { path: "/error-page", element: <ErrorPage /> },
     { path: "*", element: <ErrorPage /> },
   ];

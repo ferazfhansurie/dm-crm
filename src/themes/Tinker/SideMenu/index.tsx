@@ -246,8 +246,13 @@ function Main() {
           </ul>
           <div className="mb-4">
           <Menu>
+          <Menu.Button className="block w-8 h-8 overflow-hidden rounded-md bg-blue-600 flex items-center justify-center text-white mb-2">
+                <Link to="/client-ticket">
+                  <Lucide icon="Ticket" className="text-center justify-center w-4 h-4" />
+                </Link>
+              </Menu.Button>
             <Menu.Button className="block w-8 h-8 overflow-hidden rounded-md bg-red-700 flex items-center justify-center text-white">
-              <Link to="/login" onClick={handleSignOut}>
+              <Link to="/logins" onClick={handleSignOut}>
                 <Lucide icon="LogOut" className="text-center justify-center w-4 h-4" />
               </Link>
             </Menu.Button>

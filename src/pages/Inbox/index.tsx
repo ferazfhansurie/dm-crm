@@ -52,6 +52,11 @@ interface MessageListProps {
   deleteThread: () => void;
   threadId: string; // Add this line
 }
+interface AssistantConfig {
+  id: string;
+  name: string;
+}
+
 
 const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assistantName, deleteThread, threadId }) => {
   const [newMessage, setNewMessage] = useState('');
@@ -159,6 +164,8 @@ const Main: React.FC = () => {
   const [isWideScreen, setIsWideScreen] = useState(false);
   const [files, setFiles] = useState<Array<{id: string, name: string, url: string}>>([]);
   const [uploading, setUploading] = useState(false);
+  const [assistants, setAssistants] = useState<AssistantConfig[]>([]);
+  const [selectedAssistant, setSelectedAssistant] = useState<string>('');
 
   useEffect(() => {
     fetchCompanyId();
@@ -224,20 +231,37 @@ const Main: React.FC = () => {
     try {
       const companyDoc = await getDoc(doc(firestore, "companies", companyId));
       const tokenDoc = await getDoc(doc(firestore, "setting", "token"));
+      
       if (companyDoc.exists() && tokenDoc.exists()) {
         const companyData = companyDoc.data();
         const tokenData = tokenDoc.data();
         
-        console.log("Company Data:", companyData); // Log company data
-        // console.log("Token Data:", tokenData); // Log token data
-  
-        setAssistantId(companyData.assistantId);
+        // Initialize assistants array with the primary assistant
+        const assistantConfigs: AssistantConfig[] = [
+          { id: companyData.assistantId, name: companyData.phone1 || 'Assistant 1' }
+        ];
+
+        // Check phoneCount and add additional assistants if they exist
+        const phoneCount = parseInt(companyData.phoneCount || '1');
+        if (phoneCount >= 2 && companyData.assistantId2) {
+          assistantConfigs.push({ 
+            id: companyData.assistantId2, 
+            name: companyData.phone2 || 'Assistant 2' 
+          });
+        }
+        if (phoneCount >= 3 && companyData.assistantId3) {
+          assistantConfigs.push({ 
+            id: companyData.assistantId3, 
+            name: companyData.phone3 || 'Assistant 3' 
+          });
+        }
+
+        setAssistants(assistantConfigs);
         setApiKey(tokenData.openai);
-  
-        console.log("Fetched Assistant ID:", companyData.assistantId);
-        // console.log("Fetched API Key:", tokenData.openai);
-      } else {
-        console.error("Company or token document does not exist");
+        
+        // Set default selected assistant
+        setSelectedAssistant(companyData.assistantId);
+        setAssistantId(companyData.assistantId);
       }
     } catch (error) {
       console.error("Error fetching Firebase config:", error);
@@ -337,8 +361,24 @@ const Main: React.FC = () => {
         setError("User not authenticated");
         return;
       }
-  
-      const res = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/assistant-test/`, {
+   
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const res = await axios.get(`${baseUrl}/api/assistant-test/`, {
         params: {
           message: messageText,
           email: user.email!,
@@ -545,6 +585,33 @@ const Main: React.FC = () => {
       }
     }
   };
+  const handleAssistantChange = (assistantId: string) => {
+    setSelectedAssistant(assistantId);
+    setAssistantId(assistantId);
+    setMessages([]); // Clear messages when switching assistants
+    fetchAssistantInfo(assistantId, apiKey);
+  };
+  
+  // Only show the assistant selector if there are multiple assistants
+  const renderAssistantSelector = () => {
+    if (assistants.length <= 1) return null;
+
+    return (
+      <div className="w-full mb-4">
+        <select
+          value={selectedAssistant}
+          onChange={(e) => handleAssistantChange(e.target.value)}
+          className="w-full p-2 border border-gray-300 rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200"
+        >
+          {assistants.map((assistant) => (
+            <option key={assistant.id} value={assistant.id}>
+              {assistant.name}
+            </option>
+          ))}
+        </select>
+      </div>
+    );
+  };
 
   return (
     <div className="flex justify-center h-screen bg-gray-100 dark:bg-gray-900">
@@ -562,9 +629,25 @@ const Main: React.FC = () => {
                 </div>
               ) : (
                 <>
-                  <div className="mb-4">
-                    <h1 className="text-2xl font-bold dark:text-gray-200">{assistantInfo.name || "Assistant Name"}</h1>
-                  </div>
+                 <div className="mb-4 flex items-center justify-between">
+  {assistants.length > 1 ? (
+    <select
+      value={selectedAssistant}
+      onChange={(e) => handleAssistantChange(e.target.value)}
+      className="w-full p-2 text-2xl font-bold border border-gray-300 rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+    >
+      {assistants.map((assistant) => (
+        <option key={assistant.id} value={assistant.id}>
+          {assistant.name}
+        </option>
+      ))}
+    </select>
+  ) : (
+    <h1 className="text-2xl font-bold dark:text-gray-200">
+      {assistantInfo.name || "Assistant Name"}
+    </h1>
+  )}
+</div>
                   <div className="mb-4">
                     <label className="mb-2 text-lg font-medium capitalize dark:text-gray-200" htmlFor="name">
                       Name

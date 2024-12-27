@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { Link, useNavigate } from "react-router-dom";
 import { initializeApp } from 'firebase/app';
 import { getAuth, createUserWithEmailAndPassword, signInWithEmailAndPassword } from "firebase/auth";
-import { getFirestore, doc, setDoc, collection, getDocs, addDoc, query, where } from "firebase/firestore";
+import { getFirestore, doc, setDoc, collection, getDocs, addDoc, query, where, getDoc } from "firebase/firestore";
 import { useState, useEffect } from "react";
 import { toast, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -93,8 +93,27 @@ function Main() {
       const formattedPhone = formatPhoneNumber(phoneNumber).substring(1) + '@c.us'; // Remove '+' for WhatsApp
       const code = generateVerificationCode();
       localStorage.setItem('verificationCode', code);
-      
-      const response = await fetch(`https://mighty-dane-newly.ngrok-free.app/api/v2/messages/text/001/${formattedPhone}`, {
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response = await fetch(`${baseUrl}/api/v2/messages/text/001/${formattedPhone}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -199,8 +218,27 @@ function Main() {
 
 
       });
-
-      const response2 = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/channel/create/${newCompanyId}`);
+   
+      if (!user) {
+        console.error("User not authenticated");
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const response2 = await axios.post(`${baseUrl}/api/channel/create/${newCompanyId}`);
 
       console.log(response2);
 

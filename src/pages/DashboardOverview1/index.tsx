@@ -158,8 +158,8 @@ function EmployeeSearch({
                 setSearchQuery(employee.name);
               }}
             >
-                           <span className="text-gray-900 dark:text-gray-100">{employee.name}</span>
-                           <span className="text-gray-600 dark:text-gray-400"> ({employee.assignedContacts || 0} assigned contacts)</span>
+              <span className="text-gray-900 dark:text-gray-100">{employee.name}</span>
+              <span className="text-gray-600 dark:text-gray-400"> ({employee.assignedContacts || 0} assigned contacts)</span>
             </div>
           ))}
         </div>
@@ -544,25 +544,53 @@ interface Tag {
     const auth = getAuth(app);
     const user = auth.currentUser;
     try {
+      // Get current user's company ID
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
         return;
       }
-    
       const dataUser = docUserSnapshot.data();
       companyId = dataUser.companyId;
-  
+
+      // Get all employees
       const employeeRef = collection(firestore, `companies/${companyId}/employee`);
       const employeeSnapshot = await getDocs(employeeRef);
-  
+
+      // Get all contacts
+      const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsSnapshot = await getDocs(contactsRef);
+
+      // Create a map to count contacts per employee
+      const contactCountMap: { [key: string]: number } = {};
+
+      // Count contacts based on tags matching employee names
+      contactsSnapshot.forEach((doc) => {
+        const contactData = doc.data();
+        if (contactData.tags && Array.isArray(contactData.tags)) {
+          contactData.tags.forEach((tag: string) => {
+            if (contactCountMap[tag]) {
+              contactCountMap[tag]++;
+            } else {
+              contactCountMap[tag] = 1;
+            }
+          });
+        }
+      });
+
+      // Process employee data
       const employeeListData: Employee[] = [];
       employeeSnapshot.forEach((doc) => {
         const employeeData = doc.data() as Employee;
         employeeListData.push({
           ...employeeData,
           id: doc.id,
-          assignedContacts: employeeData.assignedContacts || 0
+          assignedContacts: contactCountMap[employeeData.name] || 0
+        });
+
+        // Update the employee document with the correct count
+        updateDoc(doc.ref, {
+          assignedContacts: contactCountMap[employeeData.name] || 0
         });
       });
 
@@ -573,16 +601,14 @@ interface Tag {
         setSelectedEmployee(currentUserData);
       }
 
-      // Sort employees by number of assigned contacts (descending order)
+      // Sort employees by number of assigned contacts (descending)
       employeeListData.sort((a, b) => (b.assignedContacts || 0) - (a.assignedContacts || 0));
 
-      // Take top 10 employees for the leaderboard
-      const topEmployees = employeeListData;
-      
-      setEmployees(topEmployees);
-    
+      setEmployees(employeeListData);
+      console.log('Updated employee data:', employeeListData);
+
     } catch (error) {
-      console.error('Error fetching employees and chats:', error);
+      console.error('Error fetching employees and contacts:', error);
     }
   }
 
@@ -590,38 +616,57 @@ interface Tag {
     try {
       const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
       const employeeSnapshot = await getDoc(employeeRef);
-  
+
       if (employeeSnapshot.exists()) {
         const employeeData = employeeSnapshot.data() as Employee;
         
-        // Fetch monthly assignments
-        const monthlyAssignmentsRef = collection(employeeRef, 'monthlyAssignments');
-        const monthlyAssignmentsSnapshot = await getDocs(monthlyAssignmentsRef);
-        
-        const monthlyAssignments: { [key: string]: number } = {};
-        monthlyAssignmentsSnapshot.forEach((doc) => {
-          monthlyAssignments[doc.id] = doc.data().assignments;
-        });
-  
-        // Fetch closed contacts
+        // Fetch all contacts
         const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
         const contactsSnapshot = await getDocs(contactsRef);
         
+        // Create a timeline of assignments
+        const assignmentTimeline: { date: Date; count: number }[] = [];
+        
+        contactsSnapshot.docs.forEach((doc) => {
+          const contactData = doc.data();
+          if (contactData.tags?.includes(employeeData.name)) {
+            const assignmentDate = contactData.dateAdded ? new Date(contactData.dateAdded) : null;
+            if (assignmentDate) {
+              assignmentTimeline.push({
+                date: assignmentDate,
+                count: 1
+              });
+            }
+          }
+        });
+
+        // Sort timeline by date
+        assignmentTimeline.sort((a, b) => a.date.getTime() - b.date.getTime());
+
+        // Calculate cumulative totals by month
+        const monthlyAssignments: { [key: string]: number } = {};
+        let runningTotal = 0;
+
+        assignmentTimeline.forEach((assignment) => {
+          const monthKey = format(assignment.date, 'yyyy-MM');
+          runningTotal += assignment.count;
+          monthlyAssignments[monthKey] = runningTotal;
+        });
+
+        // Count current closed contacts
         const closedContacts = contactsSnapshot.docs.filter(doc => {
-          const tags = doc.data().tags || [];
-          return tags.includes('closed') && tags.includes(employeeData.name);
+          const data = doc.data();
+          return data.tags?.includes('closed') && data.tags?.includes(employeeData.name);
         }).length;
-  
+
         return {
           ...employeeData,
           id: employeeSnapshot.id,
-          monthlyAssignments: monthlyAssignments,
-          closedContacts: closedContacts
+          monthlyAssignments,
+          closedContacts
         };
-      } else {
-        console.log('No such employee!');
-        return null;
       }
+      return null;
     } catch (error) {
       console.error('Error fetching employee data:', error);
       return null;
@@ -677,43 +722,46 @@ interface Tag {
   const getLast12MonthsData = (monthlyAssignments: { [key: string]: number } = {}) => {
     const last12Months = [];
     const currentDate = new Date();
-    for (let i = 0; i < 12; i++) {
+    let lastKnownTotal = 0;
+
+    for (let i = 11; i >= 0; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
-      const monthKey = `${date.getFullYear()}-${(date.getMonth() + 1).toString().padStart(2, '0')}`;
-      last12Months.unshift({
-        month: date.toLocaleString('default', { month: 'short' }),
+      const monthKey = format(date, 'yyyy-MM');
+      
+      // Use the last known total if no new assignments in this month
+      const monthTotal = monthlyAssignments[monthKey] || lastKnownTotal;
+      lastKnownTotal = monthTotal;
+
+      last12Months.push({
+        month: format(date, 'MMM'),
         year: date.getFullYear(),
-        assignments: monthlyAssignments[monthKey] || 0
+        assignments: monthTotal
       });
     }
+    
     return last12Months;
   };
 
-  // Update the chartData useMemo with logging
   const chartData = useMemo(() => {
     if (!selectedEmployee) return null;
-    const last12MonthsData = getLast12MonthsData(selectedEmployee.monthlyAssignments);
-    console.log("Chart data calculated:", last12MonthsData);
+
+    const last12Months = getLast12MonthsData(selectedEmployee.monthlyAssignments);
+    console.log('Chart data:', last12Months); // Debug log
+    
     return {
-      labels: last12MonthsData.map(d => `${d.month} ${d.year}`),
+      labels: last12Months.map(d => `${d.month} ${d.year}`),
       datasets: [
         {
-          label: 'Assigned Contacts',
-          data: last12MonthsData.map(d => d.assignments),
+          label: 'Total Assigned Contacts',
+          data: last12Months.map(d => d.assignments),
           borderColor: 'rgb(75, 192, 192)',
+          backgroundColor: 'rgba(75, 192, 192, 0.1)',
           tension: 0.1,
-          fill: false
-        },
-        {
-          label: 'Closed Contacts',
-          data: Array(12).fill(selectedEmployee.closedContacts || 0),
-          borderColor: 'rgb(255, 99, 132)',
-          tension: 0.1,
-          fill: false
+          fill: true
         }
       ]
     };
-  }, [selectedEmployee, selectedEmployee?.monthlyAssignments]);
+  }, [selectedEmployee]);
 
   const lineChartOptions = useMemo(() => {
     return {
@@ -722,10 +770,9 @@ interface Tag {
       scales: {
         y: {
           beginAtZero: true,
-          min: 0,
           title: {
             display: true,
-            text: 'Number of Contacts',
+            text: 'Total Assigned Contacts',
             color: 'rgb(75, 85, 99)',
           },
           ticks: {
@@ -747,10 +794,20 @@ interface Tag {
       plugins: {
         legend: {
           display: true,
+          position: 'top' as const,
+        },
+        tooltip: {
+          mode: 'index' as const,
+          intersect: false,
+          callbacks: {
+            label: function(context: any) {
+              return `Total Assigned: ${context.parsed.y}`;
+            }
+          }
         },
         title: {
           display: true,
-          text: `Contact Metrics for ${selectedEmployee?.name || 'Employee'}`,
+          text: `Contact Assignment History - ${selectedEmployee?.name || 'Employee'}`,
           color: 'rgb(31, 41, 55)',
         },
       },
@@ -1309,8 +1366,30 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   const fetchEmployeeStats = async (employeeId: string) => {
     try {
       console.log('Fetching stats for employee:', employeeId);
+      const user = getAuth().currentUser;
+      if (!user) {
+        console.error("User not authenticated");
+        setError("User not authenticated");
+        return;
+      }
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        console.log('No such document!');
+        return;
+      }
+      const data2 = docSnapshot.data();
+      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Update the URL to match your actual API endpoint
-      const response = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/stats/${companyId}?employeeId=${employeeId}`);
+      const response = await axios.get(`${baseUrl}/api/stats/${companyId}?employeeId=${employeeId}`);
       console.log('Received employee stats:', response.data);
       setEmployeeStats(response.data);
     } catch (error) {
@@ -1913,6 +1992,134 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     }] : []),
     // Add more cards here as needed
   ];
+
+  // Add this new function to handle contact assignment
+  const assignContactToEmployee = async (contactId: string, employeeName: string) => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get the contact document
+      const contactRef = doc(firestore, 'companies', companyId, 'contacts', contactId);
+      const contactSnapshot = await getDoc(contactRef);
+      
+      if (!contactSnapshot.exists()) {
+        console.error('Contact does not exist');
+        return;
+      }
+
+      const contactData = contactSnapshot.data();
+      const currentTags = contactData.tags || [];
+
+      // Check if the employee name is already in tags
+      if (!currentTags.includes(employeeName)) {
+        // Add the employee name to the tags array
+        await updateDoc(contactRef, {
+          tags: [...currentTags, employeeName]
+        });
+
+        // Update the employee's assigned contacts count
+        const employeeRef = doc(firestore, 'companies', companyId, 'employee', employeeName);
+        await updateDoc(employeeRef, {
+          assignedContacts: increment(1)
+        });
+
+        // Update monthly assignments
+        await updateMonthlyAssignments(employeeName, 1);
+
+        console.log(`Contact ${contactId} assigned to ${employeeName}`);
+      }
+
+    } catch (error) {
+      console.error('Error assigning contact:', error);
+    }
+  };
+
+  // Add this function to remove assignment
+  const removeContactAssignment = async (contactId: string, employeeName: string) => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user) {
+        console.error('No authenticated user');
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.error('No such document for user!');
+        return;
+      }
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get the contact document
+      const contactRef = doc(firestore, 'companies', companyId, 'contacts', contactId);
+      const contactSnapshot = await getDoc(contactRef);
+      
+      if (!contactSnapshot.exists()) {
+        console.error('Contact does not exist');
+        return;
+      }
+
+      const contactData = contactSnapshot.data();
+      const currentTags = contactData.tags || [];
+
+      // Remove the employee name from tags
+      if (currentTags.includes(employeeName)) {
+        await updateDoc(contactRef, {
+          tags: currentTags.filter((tag: string) => tag !== employeeName)
+        });
+
+        // Update the employee's assigned contacts count
+        const employeeRef = doc(firestore, 'companies', companyId, 'employee', employeeName);
+        await updateDoc(employeeRef, {
+          assignedContacts: increment(-1)
+        });
+
+        // Update monthly assignments
+        await updateMonthlyAssignments(employeeName, -1);
+
+        console.log(`Contact ${contactId} unassigned from ${employeeName}`);
+      }
+
+    } catch (error) {
+      console.error('Error removing contact assignment:', error);
+    }
+  };
+
+  // Example usage:
+  // To assign a contact:
+  // await assignContactToEmployee("contactId123", "John Doe");
+
+  // To remove an assignment:
+  // await removeContactAssignment("contactId123", "John Doe");
+
+  const handleAssignContact = async (contactId: string, employeeName: string) => {
+    await assignContactToEmployee(contactId, employeeName);
+    // Refresh the employee list or update the UI as needed
+    await fetchEmployees();
+  };
+
+  const handleUnassignContact = async (contactId: string, employeeName: string) => {
+    await removeContactAssignment(contactId, employeeName);
+    // Refresh the employee list or update the UI as needed
+    await fetchEmployees();
+  };
 
   return (
     <div className="flex flex-col w-full h-full overflow-x-hidden overflow-y-auto">

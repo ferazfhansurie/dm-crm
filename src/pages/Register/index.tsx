@@ -321,7 +321,7 @@ function Main() {
                     <FormInput
                       type="tel"
                       className="block px-4 py-3 mt-4 intro-x min-w-full xl:min-w-[350px]"
-                      placeholder={`Phone Number (e.g., ${getCountryCallingCode(selectedCountry)}123456789)`}
+                      placeholder={`Phone Number (e.g., 123456789)`}
                       value={phoneNumber}
                       onChange={handlePhoneChange}
                       onKeyDown={handleKeyDown}

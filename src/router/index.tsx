@@ -125,6 +125,7 @@ function Router() {
         { path: "a-i-generative-responses", element: <AIGenerativeResponses /> },
         { path: "storage-pricing", element: <StoragePricing /> },
         { path: "/client-ticket", element: <PublicTaskForm /> },
+        {path: "/loading2", element: <LoadingIcon2 />},
         {
           path: "/database-manager",
           element: <DatabaseManager />

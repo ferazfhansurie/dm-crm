@@ -280,7 +280,7 @@ function LoadingPage() {
           
           ws.current.onmessage = async (event) => {
             const data = JSON.parse(event.data);
-            console.log('WebSocket message received:', data);
+        
       
             if (data.type === 'auth_status') {
               console.log(`Bot status update: ${data.status}`);

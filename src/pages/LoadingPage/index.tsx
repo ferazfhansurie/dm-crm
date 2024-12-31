@@ -176,37 +176,28 @@ function LoadingPage() {
           return;
         }
       } else {
-        console.log('Multiple phones configuration:', botStatusResponse.data);
+        console.log("Multiple phones configuration:", botStatusResponse.data);
         // Check if response is an array
         const statusArray = Array.isArray(botStatusResponse.data) 
           ? botStatusResponse.data 
           : [botStatusResponse.data];
 
-        let anyAuthenticated = false;
-        for (const bot of statusArray) {
-          console.log('Checking bot status:', bot.status);
-          if (bot.status === 'authenticated' || bot.status === 'ready') {
-            anyAuthenticated = true;
-            setBotStatus(bot.status);
-            break;
-          }
-        }
-
-        if (anyAuthenticated) {
-          console.log('At least one bot is authenticated/ready, navigating to chat');
+        // Only check the first phone's status
+        const firstPhone = statusArray[0];
+        console.log('Checking first phone status:', firstPhone.status);
+        
+        if (firstPhone.status === 'authenticated' || firstPhone.status === 'ready') {
+          console.log('First phone is authenticated/ready, navigating to chat');
           setShouldFetchContacts(true);
           navigate('/chat');
           return;
+        } else if (firstPhone.status === 'qr' && firstPhone.qrCode) {
+          console.log('Setting QR code for first phone');
+          setBotStatus('qr');
+          setQrCodeImage(firstPhone.qrCode);
         } else {
-          console.log("No bots are authenticated yet");
-          // Find first bot with QR code
-          for (const bot of statusArray) {
-            if (bot.status === 'qr' && bot.qrCode) {
-              setBotStatus('qr');
-              setQrCodeImage(bot.qrCode);
-              break;
-            }
-          }
+          console.log('First phone is in a different state:', firstPhone.status);
+          setBotStatus(firstPhone.status);
         }
       }
    

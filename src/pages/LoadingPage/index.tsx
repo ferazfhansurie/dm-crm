@@ -182,6 +182,16 @@ function LoadingPage() {
           ? botStatusResponse.data 
           : [botStatusResponse.data];
 
+        // Check if any phone is authenticated/ready
+        const anyPhoneReady = statusArray.some(phone => 
+          phone.status === 'authenticated' || phone.status === 'ready'
+        );
+        if (anyPhoneReady) {
+          console.log('At least one phone is authenticated/ready, navigating to chat');
+          setShouldFetchContacts(true);
+          navigate('/chat');
+          return;
+        }
         // Only check the first phone's status
         const firstPhone = statusArray[0];
         console.log('Checking first phone status:', firstPhone.status);
@@ -253,7 +263,7 @@ function LoadingPage() {
           if (!docUserSnapshot.exists()) {
             if (retries > 0) {
               console.log(`User document not found. Retrying... (${retries} attempts left)`);
-              setTimeout(() => initWebSocket(retries - 1), 2000); // Retry after 2 seconds
+              setTimeout(() => initWebSocket(retries - 1), 2000);
               return;
             } else {
               throw new Error("User document does not exist after retries");
@@ -262,7 +272,19 @@ function LoadingPage() {
 
           const dataUser = docUserSnapshot.data();
           const companyId = dataUser.companyId;
-          ws.current = new WebSocket(`wss://mighty-dane-newly.ngrok-free.app/ws/${user?.email}/${companyId}`);
+
+          // Get company data to fetch baseUrl
+          const docRef = doc(firestore, 'companies', companyId);
+          const docSnapshot = await getDoc(docRef);
+          if (!docSnapshot.exists()) {
+            throw new Error("Company document does not exist");
+          }
+
+          const companyData = docSnapshot.data();
+          const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+          const wsUrl = baseUrl.replace('https://', 'wss://').replace('http://', 'ws://');
+          
+          ws.current = new WebSocket(`${wsUrl}/ws/${user?.email}/${companyId}`);
           ws.current.onopen = () => {
             console.log('WebSocket connected');
             setWsConnected(true);

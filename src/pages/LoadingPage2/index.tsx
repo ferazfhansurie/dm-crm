@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+import logoUrl from "@/assets/images/logo.png";
 import { useNavigate, useLocation } from "react-router-dom";
 import LoadingIcon from "@/components/Base/LoadingIcon";
 import { useConfig } from '../../config';
@@ -80,7 +81,7 @@ function LoadingPage2() {
   const [companyId, setCompanyId] = useState<string | null>(null);
   const [isFetchingChats, setIsFetchingChats] = useState(false);
   const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
-  const [currentQrIndex, setCurrentQrIndex] = useState<number | null>(1);
+  const [currentQrIndex, setCurrentQrIndex] = useState<number | null>(null);
   const [phoneNumber, setPhoneNumber] = useState('');
   const [pairingCode, setPairingCode] = useState<string | null>(null);
   const [isPairingCodeLoading, setIsPairingCodeLoading] = useState(false);
@@ -89,8 +90,6 @@ function LoadingPage2() {
   const [loadingPhase, setLoadingPhase] = useState<string>('initializing');
   const [loadingProgress, setLoadingProgress] = useState(0);
   
-  const [hasInitialized, setHasInitialized] = useState(false);
-
   const fetchQRCode = async () => {
     const auth = getAuth(app);
     const user = auth.currentUser;
@@ -117,25 +116,41 @@ function LoadingPage2() {
       const companyData = docSnapshot.data();
       v2 = companyData.v2;
       setV2(v2);
-
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Only proceed with QR code and bot status if v2 exists
-      const botStatusResponse = await axios.get(`https://mighty-dane-newly.ngrok-free.app/api/bot-status/${companyId}`);
+      console.log(`${baseUrl}/api/bot-status/${companyId}`,);
+      const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
+        headers: companyId === '0123' 
+        ? {
+            'ngrok-skip-browser-warning': 'true',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        : {
+          
+          }
+      });
 
       console.log(botStatusResponse.data);
       if (botStatusResponse.status !== 200) {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
 
-      const qrCodesData: QRCodeData[] = botStatusResponse.data;
+      const qrCodesData = Array.isArray(botStatusResponse.data) 
+        ? botStatusResponse.data 
+        : [];
       setQrCodes(qrCodesData);
 
+      // Find first phone that needs scanning
       const qrIndex = qrCodesData.findIndex(qr => qr.status === 'qr');
       if (qrIndex !== -1) {
- 
+        setCurrentQrIndex(qrIndex);
+        setSelectedPhoneIndex(qrIndex); // Auto-select first phone
         setQrCodeImage(qrCodesData[qrIndex].qrCode);
         setBotStatus('qr');
       } else {
-    
+        setCurrentQrIndex(null);
+        setSelectedPhoneIndex(null);
         setQrCodeImage(null);
         setBotStatus(qrCodesData.every(qr => qr.status === 'ready') ? 'ready' : 'initializing');
       }
@@ -157,19 +172,28 @@ function LoadingPage2() {
       console.error("Error fetching QR code:", error);
     }
   };
-
-  const handleRefresh = () => {
-    fetchQRCode();
-    console.log(currentQrIndex);
+  const getPhoneName = (phoneIndex: number) => {
+    if (companyId === '0123') {
+      return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru':'ShipGuru';
+    }
+    return `Phone ${phoneIndex + 1}`;
+  };
+  const handleRefresh = async () => {
+    // Reset states
+    setQrCodeImage(null);
+    setCurrentQrIndex(null);
+    setBotStatus(null);
+    setError(null);
+    
+    
+    // Fetch new QR code
+    await fetchQRCode();
   };
 
   useEffect(() => {
-    if (!hasInitialized) {
-      fetchQRCode();
-      setHasInitialized(true);
-    }
-  }, [hasInitialized]);
-
+    fetchQRCode();
+  }, []);
+//dd
   useEffect(() => {
     const initWebSocket = async () => {
       if (!wsConnected) {
@@ -183,7 +207,21 @@ function LoadingPage2() {
 
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser.companyId;
-        ws.current = new WebSocket(`wss://mighty-dane-newly.ngrok-free.app/ws/${user?.email}/${companyId}`);
+        
+        // Get company data to fetch baseUrl
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        if (!docSnapshot.exists()) {
+          throw new Error("Company document does not exist");
+        }
+
+        const companyData = docSnapshot.data();
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        // Remove 'https://' from baseUrl when creating WebSocket connection
+        const wsBaseUrl = baseUrl.replace('https://', '');
+        console.log(wsBaseUrl);
+        ws.current = new WebSocket(`wss://${wsBaseUrl}/ws/${user?.email}/${companyId}`);
+        
         ws.current.onopen = () => {
           console.log('WebSocket connected');
           setWsConnected(true);
@@ -191,26 +229,55 @@ function LoadingPage2() {
         
         ws.current.onmessage = async (event) => {
           const data = JSON.parse(event.data);
-       
+          console.log('WebSocket message received:', data);
 
           if (data.type === 'auth_status') {
-            console.log(`Bot status: ${data.status}`);
+            console.log(`Bot status: ${data.status} for bot: ${data.botName}`);
             setBotStatus(data.status);
+            
             if (data.status === 'qr') {
-              console.log(`Received QR for bot ${data.botName} at index ${data.phoneIndex}`);
-              console.log('currentQrIndex: '+currentQrIndex);
-              console.log('data.phoneIndex: '+data.phoneIndex);
-              console.log('qrCodeImage: '+qrCodeImage);
-              console.log('data.qrCode: '+data.qrCode);
-              // Set current QR index and image only if it matches the expected phone index
-              if (currentQrIndex === null || 
-                (currentQrIndex === data.phoneIndex && qrCodeImage !== data.qrCode)) {
-             
+              // Set QR code image
               setQrCodeImage(data.qrCode);
-            }
-      
+              setCurrentQrIndex(data.phoneIndex);
+              setSelectedPhoneIndex(data.phoneIndex);
+
+              // Update QR codes array with new data
+              setQrCodes(prevCodes => {
+                const newCodes = [...(prevCodes || [])];
+                newCodes[data.phoneIndex] = {
+                  phoneIndex: data.phoneIndex,
+                  status: data.status,
+                  qrCode: data.qrCode
+                };
+                return newCodes;
+              });
+
+              setError(null);
+              setIsLoading(false);
+              setLoadingPhase('qr_ready');
+              
             } else if (data.status === 'authenticated' || data.status === 'ready') {
+              // Update QR codes array to reflect authenticated status
+              setQrCodes(prevCodes => {
+                const newCodes = [...(prevCodes || [])];
+                if (data.phoneIndex !== undefined) {
+                  newCodes[data.phoneIndex] = {
+                    ...newCodes[data.phoneIndex],
+                    status: data.status,
+                    qrCode: null // Clear QR code for authenticated phone
+                  };
+                }
+                return newCodes;
+              });
+
+              // Only clear current QR if the authenticated phone is the one being displayed
+              if (data.phoneIndex === currentQrIndex) {
+                setQrCodeImage(null);
+                setCurrentQrIndex(null);
+              }
+
               setIsProcessingChats(true);
+              setLoadingPhase('authenticated');
             }
           } else if (data.type === 'progress') {
             setCurrentAction(data.action);
@@ -412,11 +479,41 @@ function LoadingPage2() {
   const requestPairingCode = async () => {
     setIsPairingCodeLoading(true);
     setError(null);
+    const auth = getAuth(app);
+    const user = auth.currentUser;
     try {
-      const response = await axios.post(`https://mighty-dane-newly.ngrok-free.app/api/request-pairing-code/${companyId}`, {
+      const docUserRef = doc(firestore, 'user', user?.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        throw new Error("User document does not exist");
+      }
+
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      setCompanyId(companyId); // Store companyId in state
+      console.log(companyId);
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) {
+        throw new Error("Company document does not exist");
+      }
+
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const headers = companyId === '0123' 
+        ? {
+            'ngrok-skip-browser-warning': 'true',
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        : {
+            'ngrok-skip-browser-warning': 'true'
+          };
+
+      const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {
         phoneNumber,
         phoneIndex: selectedPhoneIndex
-      });
+      }, { headers });
       setPairingCode(response.data.pairingCode);
     } catch (error) {
       console.error('Error requesting pairing code:', error);
@@ -426,12 +523,14 @@ function LoadingPage2() {
     }
   };
 
-  const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
+  const unscannedPhones = Array.isArray(qrCodes) 
+    ? qrCodes.filter(qr => qr.status !== 'ready')
+    : [];
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">
       <div className="flex flex-col items-center w-full max-w-md text-center">
-  
+        <img alt="Logo" className="w-24 h-24 mb-4" src={logoUrl} />
         {v2 ? (
           <div className="w-full overflow-y-auto max-h-[calc(100vh-8rem)]">
             {botStatus === 'qr' && currentQrIndex !== null ? (
@@ -439,12 +538,10 @@ function LoadingPage2() {
                 <div className="text-sm mb-2 text-gray-800 dark:text-gray-200">
                   Please use your WhatsApp QR scanner to scan the code or enter your phone number for a pairing code.
                 </div>
-                <div className="text-xs mb-2 text-gray-600 dark:text-gray-400">
-                  Scanning QR for Phone : {currentQrIndex+1}
-                </div>
+            
                 <hr className="w-full my-2 border-t border-gray-300 dark:border-gray-700" />
                 {error && <div className="text-red-500 dark:text-red-400 mb-2">{error}</div>}
-                {qrCodeImage && (
+                {qrCodeImage && selectedPhoneIndex === currentQrIndex && (
                   <div className="bg-white ml-20 rounded-lg mb-2">
                     <img src={qrCodeImage} alt="QR Code" className="max-w-full h-auto" />
                   </div>
@@ -454,16 +551,15 @@ function LoadingPage2() {
                 <select
   value={selectedPhoneIndex !== null ? selectedPhoneIndex : ''}
   onChange={(e) => {
-    let newIndex = Number(e.target.value);
-    if(newIndex == 0){
-      newIndex = 1;
-    }
+    const newIndex = Number(e.target.value);
     setSelectedPhoneIndex(newIndex);
-    setCurrentQrIndex(newIndex); // Set the current QR index
-    // Also update QR code image if available
-    const selectedPhone = qrCodes[newIndex];
-    if (selectedPhone && selectedPhone.qrCode) {
-      setQrCodeImage(selectedPhone.qrCode);
+    setPairingCode(null); // Reset pairing code when phone changes
+    
+    // Update QR code based on selected phone
+    if (qrCodes[newIndex]) {
+      setQrCodeImage(qrCodes[newIndex].qrCode);
+      setCurrentQrIndex(newIndex);
+      setBotStatus(qrCodes[newIndex].status);
     }
   }}
   className="w-full px-3 py-2 text-sm border rounded-md text-gray-700 focus:outline-none focus:border-blue-500 mb-2"
@@ -471,10 +567,11 @@ function LoadingPage2() {
   <option value="">Select Phone</option>
   {unscannedPhones.map((phone, index) => (
     <option key={index} value={phone.phoneIndex}>
-      Phone {phone.phoneIndex + 1}
+      {getPhoneName(phone.phoneIndex)}
     </option>
   ))}
 </select>
+
                   <input
                     type="tel"
                     value={phoneNumber}
@@ -534,9 +631,10 @@ function LoadingPage2() {
             
             <button
               onClick={handleRefresh}
-              className="mt-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full"
+              disabled={isLoading}
+              className="mt-2 px-4 py-2 bg-primary text-white text-sm font-semibold rounded hover:bg-blue-600 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-opacity-50 w-full disabled:opacity-50"
             >
-              Refresh
+              {isLoading ? 'Refreshing...' : 'Refresh'}
             </button>
             
             {error && <div className="mt-2 text-red-500 dark:text-red-400 text-sm">{error}</div>}

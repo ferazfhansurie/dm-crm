@@ -472,7 +472,7 @@ function LoadingPage2() {
             'Content-Type': 'application/json'
           }
         : {
-            'ngrok-skip-browser-warning': 'true'
+           
           };
 
       const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {

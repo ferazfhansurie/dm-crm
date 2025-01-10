@@ -2738,7 +2738,7 @@ const sendBlastMessage = async () => {
         end: activeTimeEnd
       },
       infiniteLoop,
-      numberOfBatches: 1
+      numberOfBatches: 1,
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));

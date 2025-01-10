@@ -177,14 +177,28 @@ function Main() {
       const companyData = docSnapshot.data();
       setPhoneCount(companyData.phoneCount);
       accessToken = companyData.ghl_accessToken;
-
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      // Fetch bot data from API
+      let clientPhones: string[] = [];
+      try {
+        const botResponse = await axios.get(`${baseUrl}/api/bots`);
+        const botData = botResponse.data.find((bot: any) => bot.botName === companyId);
+        if (botData) {
+          clientPhones = botData.clientPhones || [];
+        }
+      } catch (error) {
+        console.error('Error fetching bot data:', error);
+      }
+  
       // Fetch phone names
       const phoneNamesData: { [key: number]: string } = {};
       for (let i = 1; i <= companyData.phoneCount; i++) {
         if (companyData[`phone${i}Name`]) {
           phoneNamesData[i] = companyData[`phone${i}Name`];
         } else {
-          phoneNamesData[i] = `Phone ${i}`;
+          // Use client phone from bot data if available, otherwise fallback to default
+          phoneNamesData[i] = clientPhones[i - 1] || `Phone ${i}`;
         }
       }
       setPhoneNames(phoneNamesData);

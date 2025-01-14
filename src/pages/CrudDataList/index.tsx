@@ -6084,15 +6084,12 @@ const getFilteredScheduledMessages = () => {
             >
               <option value="">Select a phone</option>
               {Object.entries(phoneNames).map(([index, phoneName]) => {
-                const phoneStatus = qrCodes[parseInt(index)]?.status;
-                const isConnected = phoneStatus === 'ready' || phoneStatus === 'authenticated';
-                
                 return (
                   <option 
                     key={index} 
                     value={parseInt(index) - 1}
                   >
-                    Phone {parseInt(index)}
+                    {phoneName}
                   </option>
                 );
               })}

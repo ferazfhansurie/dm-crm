@@ -36,6 +36,9 @@ function AITagResponses() {
         status: 'active' as const
     });
 
+    // Add new state for tag action mode
+    const [tagActionMode, setTagActionMode] = useState<'add' | 'delete'>('add');
+
     // Firebase setup
     const firestore = getFirestore();
     const auth = getAuth();
@@ -177,11 +180,28 @@ function AITagResponses() {
             const companyId = userSnapshot.data().companyId;
 
             const responseRef = doc(firestore, `companies/${companyId}/aiTagResponses`, id);
+            const response = responses.find(r => r.id === id);
+            if (!response) return;
 
-            const tagNames = selectedTags.map(tagId => {
-                const tag = availableTags.find(t => t.id === tagId);
-                return tag ? tag.name : '';
-            }).filter(name => name !== '');
+            let tagNames: string[];
+            if (tagActionMode === 'add') {
+                // Add new tags
+                const newTagNames = selectedTags.map(tagId => {
+                    const tag = availableTags.find(t => t.id === tagId);
+                    return tag ? tag.name : '';
+                }).filter(name => name !== '');
+                
+                // Combine with existing tags, removing duplicates
+                tagNames = [...new Set([...response.tags, ...newTagNames])];
+            } else {
+                // Remove selected tags
+                const tagsToRemove = selectedTags.map(tagId => {
+                    const tag = availableTags.find(t => t.id === tagId);
+                    return tag ? tag.name : '';
+                }).filter(name => name !== '');
+                
+                tagNames = response.tags.filter(tag => !tagsToRemove.includes(tag));
+            }
 
             const updatedData: Partial<AITagResponse> = {
                 keyword: keyword.toLowerCase(),
@@ -227,11 +247,20 @@ function AITagResponses() {
     );
 
     const handleTagSelection = (tagId: string) => {
-        setSelectedTags(prev => 
-            prev.includes(tagId) 
-                ? prev.filter(id => id !== tagId)
-                : [...prev, tagId]
-        );
+        if (tagActionMode === 'add') {
+            setSelectedTags(prev => 
+                prev.includes(tagId) 
+                    ? prev.filter(id => id !== tagId)
+                    : [...prev, tagId]
+            );
+        } else {
+            // In delete mode, we're selecting tags to remove
+            setSelectedTags(prev => 
+                prev.includes(tagId) 
+                    ? prev.filter(id => id !== tagId)
+                    : [...prev, tagId]
+            );
+        }
     };
 
     return (
@@ -259,6 +288,27 @@ function AITagResponses() {
                                     />
                                 </div>
                                 <div className="col-span-12">
+                                    <FormLabel className="dark:text-slate-200">Tag Action</FormLabel>
+                                    <div className="flex space-x-4 mb-4">
+                                        <label className="flex items-center cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                className="form-radio"
+                                                checked={tagActionMode === 'add'}
+                                                onChange={() => setTagActionMode('add')}
+                                            />
+                                            <span className="ml-2 dark:text-slate-200">Add Tags</span>
+                                        </label>
+                                        <label className="flex items-center cursor-pointer">
+                                            <input
+                                                type="radio"
+                                                className="form-radio"
+                                                checked={tagActionMode === 'delete'}
+                                                onChange={() => setTagActionMode('delete')}
+                                            />
+                                            <span className="ml-2 dark:text-slate-200">Remove Tags</span>
+                                        </label>
+                                    </div>
                                     <FormLabel className="dark:text-slate-200">Select Tags</FormLabel>
                                     <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
                                         {availableTags.map((tag) => (

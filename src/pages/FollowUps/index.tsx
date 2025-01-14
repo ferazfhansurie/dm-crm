@@ -17,6 +17,7 @@ interface FollowUpTemplate {
     isCustomStartTime: boolean;
     triggerTags?: string[];
     triggerKeywords?: string[];
+    batchSettings: BatchSettings;
 }
 
 // Add Tag interface
@@ -77,6 +78,29 @@ interface Tag {
     name: string;
 }
 
+// Add new interfaces for batch settings
+interface BatchSettings {
+  startDateTime: string;
+  contactsPerBatch: number;
+  repeatEvery: {
+    value: number;
+    unit: 'minutes';
+  };
+  messageDelay: {
+    min: number;
+    max: number;
+    unit: 'seconds' | 'minutes';
+  };
+  sleepSettings: {
+    enabled: boolean;
+    activeHours: {
+      start: string;
+      end: string;
+    };
+  };
+  isNeverending: boolean;
+}
+
 const TIME_INTERVALS: TimeInterval[] = [
     { value: 5, unit: 'minutes', label: '5 minutes' },
     { value: 10, unit: 'minutes', label: '10 minutes' },
@@ -126,6 +150,27 @@ const FollowUpsPage: React.FC = () => {
     const [tags, setTags] = useState<Tag[]>([]);
     const [isEditingTemplate, setIsEditingTemplate] = useState<string | null>(null);
     const [editingTemplate, setEditingTemplate] = useState<FollowUpTemplate | null>(null);
+    const [batchSettings, setBatchSettings] = useState<BatchSettings>({
+        startDateTime: new Date().toISOString().slice(0, 16), // Format: YYYY-MM-DDTHH:mm
+        contactsPerBatch: 10,
+        repeatEvery: {
+            value: 0,
+            unit: 'minutes'
+        },
+        messageDelay: {
+            min: 1,
+            max: 2,
+            unit: 'seconds'
+        },
+        sleepSettings: {
+            enabled: false,
+            activeHours: {
+                start: '09:00',
+                end: '17:00'
+            }
+        },
+        isNeverending: false
+    });
     useEffect(() => {
         fetchTags();
     }, []);
@@ -444,7 +489,8 @@ const FollowUpsPage: React.FC = () => {
                 startTime: startTime,
                 isCustomStartTime: newTemplate.startType === 'custom',
                 triggerTags: newTemplate.triggerTags,
-                triggerKeywords: newTemplate.triggerKeywords
+                triggerKeywords: newTemplate.triggerKeywords,
+                batchSettings: batchSettings
             };
 
             const templateRef = collection(firestore, `companies/${userData.companyId}/followUpTemplates`);
@@ -749,7 +795,8 @@ const FollowUpsPage: React.FC = () => {
                 // Preserve other fields
                 status: editingTemplate!.status,
                 startTime: editingTemplate!.startTime,
-                isCustomStartTime: editingTemplate!.isCustomStartTime
+                isCustomStartTime: editingTemplate!.isCustomStartTime,
+                batchSettings: editingTemplate!.batchSettings
             };
 
             await updateDoc(templateRef, updateData);
@@ -989,7 +1036,7 @@ const FollowUpsPage: React.FC = () => {
                     {/* Add Template Modal */}
                     {isAddingTemplate && (
                         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-                            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-96">
+                            <div className="bg-white dark:bg-gray-800 p-6 rounded-lg w-[600px] max-h-[90vh] overflow-y-auto">
                                 <h3 className="text-lg font-semibold mb-4">New Template</h3>
                                 
                                 {/* Template Name */}
@@ -1159,6 +1206,184 @@ const FollowUpsPage: React.FC = () => {
                                         />
                                     </div>
                                 )}
+
+                                {/* Batch Processing Settings */}
+                                <div className="space-y-4 mt-6">
+                                    <h4 className="font-medium">Batch Processing Settings</h4>
+                                    
+                                    {/* Start Date & Time */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Start Date & Time</label>
+                                        <input
+                                            type="datetime-local"
+                                            className="w-full px-4 py-2 border rounded-lg"
+                                            value={batchSettings.startDateTime}
+                                            onChange={(e) => setBatchSettings({
+                                                ...batchSettings,
+                                                startDateTime: e.target.value
+                                            })}
+                                        />
+                                    </div>
+
+                                    {/* Contacts per Batch */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Contacts per Batch</label>
+                                        <input
+                                            type="number"
+                                            min="1"
+                                            className="w-full px-4 py-2 border rounded-lg"
+                                            value={batchSettings.contactsPerBatch}
+                                            onChange={(e) => setBatchSettings({
+                                                ...batchSettings,
+                                                contactsPerBatch: parseInt(e.target.value) || 1
+                                            })}
+                                        />
+                                    </div>
+
+                                    {/* Repeat Every */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Repeat Every</label>
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="number"
+                                                min="0"
+                                                className="w-24 px-4 py-2 border rounded-lg"
+                                                value={batchSettings.repeatEvery.value}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    repeatEvery: {
+                                                        ...batchSettings.repeatEvery,
+                                                        value: parseInt(e.target.value) || 0
+                                                    }
+                                                })}
+                                            />
+                                            <span className="py-2">Days</span>
+                                        </div>
+                                    </div>
+
+                                    {/* Message Delay */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-1">Delay between messages</label>
+                                        <div className="flex items-center gap-2">
+                                            <span>Wait between:</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                className="w-20 px-4 py-2 border rounded-lg"
+                                                value={batchSettings.messageDelay.min}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    messageDelay: {
+                                                        ...batchSettings.messageDelay,
+                                                        min: parseInt(e.target.value) || 1
+                                                    }
+                                                })}
+                                            />
+                                            <span>and</span>
+                                            <input
+                                                type="number"
+                                                min="1"
+                                                className="w-20 px-4 py-2 border rounded-lg"
+                                                value={batchSettings.messageDelay.max}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    messageDelay: {
+                                                        ...batchSettings.messageDelay,
+                                                        max: parseInt(e.target.value) || 1
+                                                    }
+                                                })}
+                                            />
+                                            <select
+                                                className="px-4 py-2 border rounded-lg"
+                                                value={batchSettings.messageDelay.unit}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    messageDelay: {
+                                                        ...batchSettings.messageDelay,
+                                                        unit: e.target.value as 'seconds' | 'minutes'
+                                                    }
+                                                })}
+                                            >
+                                                <option value="seconds">Seconds</option>
+                                                <option value="minutes">Minutes</option>
+                                            </select>
+                                        </div>
+                                    </div>
+
+                                    {/* Sleep Settings */}
+                                    <div>
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={batchSettings.sleepSettings.enabled}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    sleepSettings: {
+                                                        ...batchSettings.sleepSettings,
+                                                        enabled: e.target.checked
+                                                    }
+                                                })}
+                                            />
+                                            <span>Activate Sleep between sending</span>
+                                        </label>
+                                        
+                                        {batchSettings.sleepSettings.enabled && (
+                                            <div className="mt-2 flex gap-4">
+                                                <div>
+                                                    <label className="block text-sm">Start Time</label>
+                                                    <input
+                                                        type="time"
+                                                        className="px-4 py-2 border rounded-lg"
+                                                        value={batchSettings.sleepSettings.activeHours.start}
+                                                        onChange={(e) => setBatchSettings({
+                                                            ...batchSettings,
+                                                            sleepSettings: {
+                                                                ...batchSettings.sleepSettings,
+                                                                activeHours: {
+                                                                    ...batchSettings.sleepSettings.activeHours,
+                                                                    start: e.target.value
+                                                                }
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="block text-sm">End Time</label>
+                                                    <input
+                                                        type="time"
+                                                        className="px-4 py-2 border rounded-lg"
+                                                        value={batchSettings.sleepSettings.activeHours.end}
+                                                        onChange={(e) => setBatchSettings({
+                                                            ...batchSettings,
+                                                            sleepSettings: {
+                                                                ...batchSettings.sleepSettings,
+                                                                activeHours: {
+                                                                    ...batchSettings.sleepSettings.activeHours,
+                                                                    end: e.target.value
+                                                                }
+                                                            }
+                                                        })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Neverending Option */}
+                                    <div>
+                                        <label className="flex items-center gap-2">
+                                            <input
+                                                type="checkbox"
+                                                checked={batchSettings.isNeverending}
+                                                onChange={(e) => setBatchSettings({
+                                                    ...batchSettings,
+                                                    isNeverending: e.target.checked
+                                                })}
+                                            />
+                                            <span>Enable neverending messages (rotate back to first message)</span>
+                                        </label>
+                                    </div>
+                                </div>
 
                                 {/* Action Buttons */}
                                 <div className="flex justify-end gap-2">

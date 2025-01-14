@@ -85,6 +85,8 @@ import AIGenerativeResponses from "../pages/AIGenerativeResponses";
 import Ticket from "../pages/Ticket";
 import PublicTaskForm from "../pages/PublicTaskForm";
 import Settings from "../pages/Settings";
+import ScheduledMessages from "../pages/ScheduledMessages";
+
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const auth = getAuth();
@@ -126,6 +128,8 @@ function Router() {
         { path: "storage-pricing", element: <StoragePricing /> },
         { path: "/client-ticket", element: <PublicTaskForm /> },
         {path: "/loading2", element: <LoadingIcon2 />},
+        { path: "opportunities", element: <Opportunities /> },
+        { path: "scheduled-messages", element: <ScheduledMessages /> },
         {
           path: "/database-manager",
           element: <DatabaseManager />

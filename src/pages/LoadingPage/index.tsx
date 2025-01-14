@@ -51,7 +51,9 @@ interface Contact {
 const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 
-
+interface MessageCache {
+  [chatId: string]: any[]; // or specify more detailed message type if available
+}
 
 function LoadingPage() {
   const [progress, setProgress] = useState(0);
@@ -88,7 +90,7 @@ function LoadingPage() {
   
   const fetchQRCode = async () => {
     if (!isAuthReady) {
-      return; // Don't proceed if auth isn't ready
+      return;
     }
 
     const user = auth.currentUser;
@@ -146,13 +148,22 @@ function LoadingPage() {
       }
 
       // Only proceed with QR code and bot status if v2 exists
+      const headers = companyData.apiUrl 
+        ?  {
+          'Authorization': `Bearer ${await user?.getIdToken()}`,
+          'Content-Type': 'application/json',
+          'ngrok-skip-browser-warning': 'true',  // Add this for ngrok
+        }
+        : {
+            'Authorization': `Bearer ${await user?.getIdToken()}`,
+            'Content-Type': 'application/json'
+          };
+
       const botStatusResponse = await axios.get(
         `${baseUrl}/api/bot-status/${companyId}`,
         {
-          withCredentials: true,
-          headers: {
-            'Authorization': `Bearer ${await user.getIdToken()}`,
-          }
+          headers,
+          withCredentials:false
         }
       );
 
@@ -181,17 +192,16 @@ function LoadingPage() {
         const statusArray = Array.isArray(botStatusResponse.data) 
           ? botStatusResponse.data 
           : [botStatusResponse.data];
-
-        // Check if any phone is authenticated/ready
-        const anyPhoneReady = statusArray.some(phone => 
-          phone.status === 'authenticated' || phone.status === 'ready'
-        );
-        if (anyPhoneReady) {
-          console.log('At least one phone is authenticated/ready, navigating to chat');
-          setShouldFetchContacts(true);
-          navigate('/chat');
-          return;
-        }
+    // Check if any phone is authenticated/ready
+    const anyPhoneReady = statusArray.some(phone => 
+      phone.status === 'authenticated' || phone.status === 'ready'
+    );
+    if (anyPhoneReady) {
+      console.log('At least one phone is authenticated/ready, navigating to chat');
+      setShouldFetchContacts(true);
+      navigate('/chat');
+      return;
+    }
         // Only check the first phone's status
         const firstPhone = statusArray[0];
         console.log('Checking first phone status:', firstPhone.status);
@@ -218,7 +228,7 @@ function LoadingPage() {
         if (error.code === 'ERR_NETWORK') {
           setError('Network error. Please check your internet connection and try again.');
         } else {
-          setError(error.response?.data || 'Failed to fetch QR code. Please try again.');
+          setError(error.response?.data?.message || 'Failed to fetch QR code. Please try again.');
         }
       } else if (error instanceof Error) {
         setError(error.message);
@@ -448,7 +458,6 @@ function LoadingPage() {
           : new Date(0);
       return dateB.getTime() - dateA.getTime();
     });
-
     // Cache the contacts
     setLoadingPhase('caching');
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
@@ -457,6 +466,10 @@ function LoadingPage() {
 
     setContacts(allContacts);
     setContactsFetched(true);
+
+    // Cache messages for first 100 contacts
+    await fetchAndCacheMessages(allContacts, companyId, user);
+    
     setLoadingPhase('complete');
 
     // After contacts are loaded, fetch chats
@@ -479,6 +492,7 @@ const getLoadingMessage = () => {
     case 'caching': return 'Caching data...';
     case 'complete': return 'Loading complete!';
     case 'error': return 'Error loading contacts';
+    case 'caching_messages': return 'Caching recent messages...';
     default: return 'Loading...';
   }
 };
@@ -574,7 +588,7 @@ useEffect(() => {
     try {
       const user = getAuth().currentUser;
       if (!user) {
-        console.error("User not authenticated");
+        throw new Error("User not authenticated");
       }
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
@@ -592,9 +606,23 @@ useEffect(() => {
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      const response = await axios.post(`${baseUrl}/api/request-pairing-code/${companyId}`, {
-        phoneNumber
-      });
+      const headers = data2.apiUrl 
+        ? {
+            'Authorization': `Bearer ${await user.getIdToken()}`
+          }
+        : {
+            'Authorization': `Bearer ${await user.getIdToken()}`,
+            'Content-Type': 'application/json'
+          };
+
+      const response = await axios.post(
+        `${baseUrl}/api/request-pairing-code/${companyId}`,
+        { phoneNumber },
+        { 
+          headers,
+          withCredentials: false
+        }
+      );
       setPairingCode(response.data.pairingCode);
     } catch (error) {
       console.error('Error requesting pairing code:', error);
@@ -622,6 +650,96 @@ useEffect(() => {
       navigate('/chat');
     }
   }, [botStatus, navigate]);
+
+  const fetchAndCacheMessages = async (contacts: Contact[], companyId: string, user: any) => {
+    setLoadingPhase('caching_messages');
+    
+    // Reduce number of cached contacts
+    const mostRecentContacts = contacts
+      .sort((a, b) => {
+        const getTimestamp = (contact: Contact) => {
+          if (!contact.last_message) return 0;
+          return contact.last_message.createdAt
+            ? new Date(contact.last_message.createdAt).getTime()
+            : contact.last_message.timestamp
+              ? contact.last_message.timestamp * 1000
+              : 0;
+        };
+        return getTimestamp(b) - getTimestamp(a);
+      })
+      .slice(0, 10); // Reduce from 100 to 20 most recent contacts
+
+    // Only cache last 50 messages per contact
+    const messagePromises = mostRecentContacts.map(async (contact) => {
+      try {
+        // Get company data to access baseUrl
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        const companyData = docSnapshot.data();
+        if (!docSnapshot.exists() || !companyData) {
+          console.error('Company data not found');
+          return null;
+        }
+
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        const response = await axios.get(
+          `${baseUrl}/api/messages/${contact.chat_id}/${companyData.whapiToken}?limit=20`,
+          {
+            headers: {
+              'Authorization': `Bearer ${await user.getIdToken()}`
+            }
+          }
+        );
+
+        return {
+          chatId: contact.chat_id,
+          messages: response.data.messages
+        };
+      } catch (error) {
+        console.error(`Error fetching messages for chat ${contact.chat_id}:`, error);
+        return null;
+      }
+    });
+
+    // Wait for all message fetching promises to complete
+    const results = await Promise.all(messagePromises);
+
+    // Create messages cache object from results
+    const messagesCache = results.reduce<MessageCache>((acc, result) => {
+      if (result) {
+        acc[result.chatId] = result.messages;
+      }
+      return acc;
+    }, {});
+
+    const cacheData = {
+      messages: messagesCache,
+      timestamp: Date.now(),
+      expiry: Date.now() + (30 * 60 * 1000)
+    };
+
+    const compressedData = LZString.compress(JSON.stringify(cacheData));
+    localStorage.setItem('messagesCache', compressedData);
+  };
+
+  // Add storage cleanup on page load/refresh
+  useEffect(() => {
+    const cleanupStorage = () => {
+      // Clear old message caches
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key?.startsWith('messages_') || key?.startsWith('messagesCache')) {
+          localStorage.removeItem(key);
+        }
+      }
+    };
+
+    cleanupStorage();
+    
+    // Also clean up on page unload
+    window.addEventListener('beforeunload', cleanupStorage);
+    return () => window.removeEventListener('beforeunload', cleanupStorage);
+  }, []);
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">

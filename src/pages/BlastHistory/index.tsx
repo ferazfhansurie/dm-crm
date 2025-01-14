@@ -21,21 +21,38 @@ interface ScheduledMessage {
   message: string;
   chatIds: string[];
   companyId: string;
-  count: number;
   createdAt: Date;
-  documentUrl?: string;
-  fileName?: string;
-  mediaUrl?: string;
+  documentUrl: string;
+  fileName: string | null;
+  mediaUrl: string;
   status: 'scheduled' | 'completed' | 'failed';
   batchQuantity: number;
+  activateSleep: boolean;
+  maxDelay: number | null;
+  minDelay: number | null;
+  numberOfBatches: number;
+  phoneIndex: number;
+  repeatInterval: number;
+  repeatUnit: string;
+  scheduledTime: Date;
+  sleepAfterMessages: number | null;
+  sleepDuration: number | null;
+  type: string;
+  v2: boolean;
+  whapiToken: string | null;
+  messages?: {
+    chatId: string;
+    message: string;
+    mimeType: string | null;
+  }[];
+  recipients?: {
+    name: string;
+    phone: string;
+  }[];
   batches?: {
     id: string;
     status: string;
     count: number;
-  }[];
-  recipients: {
-    name: string;
-    phone: string;
   }[];
 }
 
@@ -107,52 +124,60 @@ const BlastHistoryPage: React.FC = () => {
             
             const fetchedMessages = await Promise.all(messagesSnapshot.docs.map(async (docSnapshot) => {
                 const messageData = docSnapshot.data();
-                console.log('Processing message:', docSnapshot.id);
-                console.log('Chat IDs:', messageData.chatIds);
                 
                 // Fetch recipient details for each chatId
-                const recipients = await Promise.all(messageData.chatIds.map(async (chatId: string) => {
-                    // Extract phone number and add '+' prefix
+                const recipients = await Promise.all((messageData.chatIds || []).map(async (chatId: string) => {
                     const phoneNumber = '+' + chatId.split('@')[0];
-                    console.log('Looking up contact with ID:', phoneNumber);
                     
                     const contactRef = doc(firestore, `companies/${userData.companyId}/contacts`, phoneNumber);
                     const contactDoc = await getDoc(contactRef);
                     
                     if (contactDoc.exists()) {
                         const contactData = contactDoc.data();
-                        console.log('Contact found:', contactData);
-                        
-                        // Try to get the name in order of preference
                         const name = contactData.contactName || 
                                    contactData.name ||
                                    contactData.fullName ||
                                    phoneNumber;
-                                   
-                        console.log('Selected name:', name);
                         
                         return {
                             name,
                             phone: phoneNumber
                         };
-                    } else {
-                        console.log('No contact found for:', phoneNumber);
-                        return {
-                            name: phoneNumber,
-                            phone: phoneNumber
-                        };
                     }
+                    return {
+                        name: phoneNumber,
+                        phone: phoneNumber
+                    };
                 }));
-                
-                console.log('Final recipients for message:', recipients);
                 
                 return {
                     id: docSnapshot.id,
-                    ...messageData,
-                    recipients,
+                    message: messageData.message || '',
+                    chatIds: messageData.chatIds || [],
+                    companyId: messageData.companyId,
                     createdAt: messageData.createdAt?.toDate() || new Date(),
-                };
-            })) as ScheduledMessage[];
+                    documentUrl: messageData.documentUrl || '',
+                    fileName: messageData.fileName || null,
+                    mediaUrl: messageData.mediaUrl || '',
+                    status: messageData.status,
+                    batchQuantity: messageData.batchQuantity || 1,
+                    activateSleep: messageData.activateSleep || false,
+                    maxDelay: messageData.maxDelay || null,
+                    minDelay: messageData.minDelay || null,
+                    numberOfBatches: messageData.numberOfBatches || 1,
+                    phoneIndex: messageData.phoneIndex || 0,
+                    repeatInterval: messageData.repeatInterval || 0,
+                    repeatUnit: messageData.repeatUnit || 'days',
+                    scheduledTime: messageData.scheduledTime?.toDate() || new Date(),
+                    sleepAfterMessages: messageData.sleepAfterMessages || null,
+                    sleepDuration: messageData.sleepDuration || null,
+                    type: messageData.type || '',
+                    v2: messageData.v2 || false,
+                    whapiToken: messageData.whapiToken || null,
+                    messages: messageData.messages || [],
+                    recipients,
+                } as ScheduledMessage;
+            }));
 
             setMessages(fetchedMessages);
         } catch (error) {

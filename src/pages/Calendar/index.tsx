@@ -10,14 +10,15 @@ import { ChangeEvent, JSXElementConstructor, Key, ReactElement, ReactNode, useEf
 import axios from "axios";
 import { getAuth } from 'firebase/auth';
 import { initializeApp } from "firebase/app";
-import { format, parse, addHours } from 'date-fns';
-import { getDoc, getFirestore, doc, setDoc, collection, addDoc, getDocs, updateDoc, deleteDoc, QueryDocumentSnapshot, DocumentData, query, where } from 'firebase/firestore';
+import { format, parse, addHours, subHours } from 'date-fns';
+import { getDoc, getFirestore, doc, setDoc, collection, addDoc, getDocs, updateDoc, deleteDoc, QueryDocumentSnapshot, DocumentData, query, where, Timestamp } from 'firebase/firestore';
 import { useContacts } from "@/contact";
 import Select from 'react-select';
 import { error } from "console";
 import { title } from "process";
 import CreatableSelect from 'react-select/creatable';
 import React from "react";
+import { toast } from 'react-toastify';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -46,11 +47,12 @@ interface Appointment {
   color: string;
   packageId: string | null;
   dateAdded: string;
-  contacts: { id: string, name: string, session: number }[];
+  contacts: { id: string, name: string, session: number, phone: string, email: string }[];
   meetLink?: string;
   notificationSent?: boolean;
   minyak?: number;
   toll?: number;
+  details?: string;
 }
 interface CalendarConfig {
   calendarId: string;
@@ -116,6 +118,43 @@ interface Tag {
   name: string;
 }
 
+// Add these new types at the top of the file
+interface ReminderSettings {
+  enabled: boolean;
+  message24h: string;
+  message3h: string;
+  message1h: string;
+  messageAfter: string;
+}
+
+// Add these interfaces at the top of your file
+interface ReminderOption {
+  type: '24h' | '3h' | '1h' | 'after';
+  enabled: boolean;
+  message: string;
+}
+
+interface AppointmentReminders {
+  enabled: boolean;
+  options: ReminderOption[];
+  sentReminders: Record<string, boolean>;
+}
+
+// Add the ScheduledMessage interface (similar to CrudDataList)
+interface ScheduledReminder {
+  id?: string;
+  chatIds: string[];
+  message: string;
+  scheduledTime: Timestamp;
+  appointmentId: string; // Add this to link reminder to appointment
+  status: 'scheduled' | 'sent' | 'failed';
+  createdAt: Timestamp;
+  sentAt?: Timestamp;
+  error?: string;
+  v2?: boolean;
+  whapiToken?: string;
+}
+
 function Main() {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [loading, setLoading] = useState(true);
@@ -163,9 +202,11 @@ function Main() {
     startHour: 11,
     endHour: 21,
     slotDuration: 30,
-    daysAhead: 3
+    daysAhead: 3,
   });
   const [isCalendarConfigOpen, setIsCalendarConfigOpen] = useState(false);
+  const [scheduledReminders, setScheduledReminders] = useState<ScheduledReminder[]>([]);
+
   useEffect(() => {
     const fetchCompanyId = async () => {
       const auth = getAuth(app);
@@ -402,6 +443,86 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     fetchAppointments(employeeId);
   };
 
+  const fetchContacts = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user?.email) return;
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        console.log('No such document for user!');
+        return;
+      }
+  
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser.companyId;
+      
+      const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsSnapshot = await getDocs(contactsRef);
+  
+      const contactsData: Contact[] = [];
+      contactsSnapshot.forEach((doc) => {
+        const contactData = doc.data();
+        contactsData.push({ 
+          id: doc.id,
+          additionalEmails: contactData.additionalEmails || [],
+          address1: contactData.address1 || null,
+          assignedTo: contactData.assignedTo || null,
+          businessId: contactData.businessId || null,
+          city: contactData.city || null,
+          companyName: contactData.companyName || null,
+          contactName: contactData.contactName || '',
+          country: contactData.country || '',
+          customFields: contactData.customFields || [],
+          dateAdded: contactData.dateAdded || new Date().toISOString(),
+          dateOfBirth: contactData.dateOfBirth || null,
+          dateUpdated: contactData.dateUpdated || new Date().toISOString(),
+          dnd: contactData.dnd || false,
+          dndSettings: contactData.dndSettings || {},
+          email: contactData.email || null,
+          firstName: contactData.firstName || '',
+          followers: contactData.followers || [],
+          lastName: contactData.lastName || '',
+          locationId: contactData.locationId || '',
+          phone: contactData.phone || null,
+          postalCode: contactData.postalCode || null,
+          source: contactData.source || null,
+          state: contactData.state || null,
+          tags: contactData.tags || [],
+          type: contactData.type || '',
+          website: contactData.website || null
+        });
+      });
+  
+      // Remove duplicates by contactName before setting state
+      const uniqueContacts = contactsData.reduce((acc: Contact[], current) => {
+        const isDuplicate = acc.find(contact => 
+          contact.contactName === current.contactName || 
+          contact.id === current.id
+        );
+        if (!isDuplicate) {
+          acc.push(current);
+        }
+        return acc;
+      }, []);
+
+      // Sort alphabetically
+      const sortedContacts = uniqueContacts.sort((a, b) => 
+        (a.contactName || '').localeCompare(b.contactName || '')
+      );
+
+      setContacts(sortedContacts);
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+    }
+  };
+  
+  // Add this useEffect to fetch contacts when component mounts
+  useEffect(() => {
+    fetchContacts();
+  }, []);
+
   const fetchContactSession = async (contactId: string) => {
     try {
       const auth = getAuth(app);
@@ -436,10 +557,11 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   };
 
   const handleContactChange = (selectedOptions: any) => {
-    const selectedContactsArray = selectedOptions.map((option: any) => contacts.find(contact => contact.id === option.value)!);
-    setSelectedContacts(selectedContactsArray);
-
-    selectedContactsArray.forEach((contact: { id: string; }) => fetchContactSession(contact.id));
+    const selectedContactIds = selectedOptions.map((option: any) => option.value);
+    const selectedContactsData = contacts.filter(contact => 
+      selectedContactIds.includes(contact.id)
+    );
+    setSelectedContacts(selectedContactsData);
   };
 
   const handleEventClick = async (info: any) => {
@@ -457,6 +579,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     const dayOfWeek = date.getUTCDay();
     const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
     const eventContacts = appointment.contacts || [];
+    const eventDetails = appointment.details || '';
+    const eventMeetLink = appointment.meetLink || '';
   
     console.log('Event info:', info);
     console.log('Event contacts:', eventContacts);
@@ -532,10 +656,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         package: packages.find(p => p.id === appointment.packageId) || null,
         dateAdded: appointment.dateAdded,
         contacts: eventContacts, // Include contacts in currentEvent
-        tags: appointment.tags || []
+        tags: appointment.tags || [],
+        details: appointment.details || '',
+        meetLink: appointment.meetLink || '',
       },
       isWeekend: isWeekend,
-      timeSlots: generateTimeSlots(isWeekend)
+      timeSlots: generateTimeSlots(isWeekend),
+      details: eventDetails,
+      meetLink: eventMeetLink
     });
     console.log('Current event set:', {
       id: appointment.id,
@@ -550,10 +678,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         package: packages.find(p => p.id === appointment.packageId) || null,
         dateAdded: appointment.dateAdded,
         contacts: eventContacts,
-        tags: appointment.tags || []
+        tags: appointment.tags || [],
+        details: appointment.details || '',
+        meetLink: appointment.meetLink || '',
       },
       isWeekend: isWeekend,
-      timeSlots: generateTimeSlots(isWeekend)
+      timeSlots: generateTimeSlots(isWeekend),
+      details: eventDetails,
+      meetLink: eventMeetLink
     });
     setInitialAppointmentStatus(appointment.appointmentStatus);
     setEditModalOpen(true);
@@ -636,6 +768,187 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return false;
     }
   };
+
+  const scheduleReminder = async (appointment: Appointment, reminderType: string, message: string) => {
+    try {
+      const user = auth.currentUser;
+      if (!user?.email) return;
+
+      // Get user and company data
+      const docUserRef = doc(firestore, 'user', user.email);
+      const userDoc = await getDoc(docUserRef);
+      if (!userDoc.exists()) return;
+
+      const userData = userDoc.data();
+      const companyId = userData.companyId;
+
+      // Get company configuration
+      const companyRef = doc(firestore, 'companies', companyId);
+      const companyDoc = await getDoc(companyRef);
+      if (!companyDoc.exists()) throw new Error('No company document found');
+      
+      const companyData = companyDoc.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      const isV2 = companyData.v2 || false;
+      const whapiToken = companyData.whapiToken || '';
+
+      // Calculate scheduled time based on reminder type
+      let scheduledTime = new Date(appointment.startTime);
+      switch (reminderType) {
+        case '24h':
+          scheduledTime = subHours(scheduledTime, 24);
+          break;
+        case '3h':
+          scheduledTime = subHours(scheduledTime, 3);
+          break;
+        case '1h':
+          scheduledTime = subHours(scheduledTime, 1);
+          break;
+        case 'after':
+          scheduledTime = addHours(scheduledTime, 1);
+          break;
+      }
+
+      // Process contacts and create chat IDs
+      const chatIds = appointment.contacts
+        .map(contact => {
+          const phoneNumber = contact.phone?.replace(/\D/g, '');
+          return phoneNumber ? `${phoneNumber}@s.whatsapp.net` : null;
+        })
+        .filter((id): id is string => id !== null);
+
+      if (chatIds.length === 0) {
+        console.warn('No valid chat IDs found');
+        return;
+      }
+
+      // Create messages array with personalized messages for each contact
+      const messages = appointment.contacts.map(contact => {
+        const phoneNumber = contact.phone?.replace(/\D/g, '');
+        if (!phoneNumber) return null;
+
+        let messageTemplate = '';
+        const appointmentDate = format(new Date(appointment.startTime), 'MMMM dd, yyyy');
+        const appointmentTime = format(new Date(appointment.startTime), 'h:mm a');
+
+        switch (reminderType) {
+          case '24h':
+            messageTemplate = `Dear ${contact.name},\n\n` +
+              `This is a reminder for your appointment tomorrow:\n\n` +
+              `📅 ${appointment.title}\n` +
+              `📆 Date: ${appointmentDate}\n` +
+              `⏰ Time: ${appointmentTime}`;
+            break;
+          case '3h':
+            messageTemplate = `Dear ${contact.name},\n\n` +
+              `Your appointment is in 3 hours:\n\n` +
+              `📅 ${appointment.title}\n` +
+              `⏰ Time: ${appointmentTime}`;
+            break;
+          case '1h':
+            messageTemplate = `Dear ${contact.name},\n\n` +
+              `Your appointment is in 1 hour:\n\n` +
+              `📅 ${appointment.title}\n` +
+              `⏰ Time: ${appointmentTime}`;
+            break;
+          case 'after':
+            messageTemplate = `Dear ${contact.name},\n\n` +
+              `Thank you for your visit today.\n\n` +
+              `We hope you had a great experience with us!\n` +
+              `See you next time! 😊`;
+            break;
+        }
+
+        // Add meeting link if available (except for after-appointment message)
+        if (appointment.meetLink && reminderType !== 'after') {
+          messageTemplate += `\n\n🎥 Join Meeting: ${appointment.meetLink}`;
+        }
+
+        // Add custom message if provided
+        if (message && message.trim()) {
+          messageTemplate += `\n\n${message}`;
+        }
+
+        return {
+          chatId: `${phoneNumber}@s.whatsapp.net`,
+          message: messageTemplate
+        };
+      }).filter((msg): msg is { chatId: string; message: string } => msg !== null);
+
+      // Prepare reminder data
+      const reminderData = {
+        chatIds,
+        phoneIndex: userData.phone || 0,
+        message: messages[0]?.message || '', // Use first message as default
+        messages, // Array of personalized messages
+        batchQuantity: 10,
+        companyId,
+        createdAt: Timestamp.now(),
+        scheduledTime: Timestamp.fromDate(scheduledTime),
+        status: "scheduled",
+        v2: isV2,
+        whapiToken: isV2 ? null : whapiToken,
+        minDelay: 1,
+        maxDelay: 2,
+        activateSleep: false,
+        appointmentId: appointment.id,
+        reminderType,
+        appointmentDetails: {
+          title: appointment.title,
+          startTime: appointment.startTime,
+          endTime: appointment.endTime,
+          meetLink: appointment.meetLink || null
+        }
+      };
+
+      // Schedule the reminder via API
+      const response = await axios.post(
+        `${baseUrl}/api/schedule-message/${companyId}`,
+        reminderData,
+        {
+          headers: { 'Content-Type': 'application/json' },
+          timeout: 10000
+        }
+      );
+
+      if (response.data?.id) {
+        // Save reminder to Firestore
+        const remindersRef = collection(firestore, `companies/${companyId}/scheduledReminders`);
+        const docRef = await addDoc(remindersRef, {
+          ...reminderData,
+          id: response.data.id
+        });
+
+        // Update appointment with reminder status
+        const appointmentRef = doc(firestore, `user/${user.email}/appointments/${appointment.id}`);
+        await updateDoc(appointmentRef, {
+          [`reminders.sentReminders.${reminderType}`]: true
+        });
+        // Update local state
+        setScheduledReminders(prev => [
+          ...prev,
+          {
+            ...reminderData,
+            id: docRef.id,
+            status: "scheduled" as "scheduled" | "sent" | "failed"
+          }
+        ]);
+        
+        toast.success(`Successfully scheduled ${reminderType} reminder`);
+        console.log(`Scheduled ${reminderType} reminder for appointment ${appointment.id}`);
+      }
+
+    } catch (error) {
+      console.error('Error scheduling reminder:', error);
+      if (axios.isAxiosError(error)) {
+        const errorMessage = error.response?.data?.error || 'Unknown server error';
+        toast.error(`Failed to schedule reminder: ${errorMessage}`);
+      } else {
+        toast.error('An unexpected error occurred while scheduling the reminder.');
+      }
+      throw error;
+    }
+  };
   
   const handleSaveAppointment = async () => {
     const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
@@ -673,7 +986,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       }
       const companyId = userDocSnap.data().companyId;
   
-      // Create a clean appointment object with no undefined values
+      // Create appointment object with reminder settings
       const updatedAppointment: Partial<Appointment> = {
         id,
         title: combinedTitle,
@@ -689,10 +1002,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         contacts: selectedContacts.map(contact => ({
           id: contact.id,
           name: contact.contactName,
+          phone: contact.phone || '',
+          email: contact.email || '',
           session: contactSessions[contact.id] || 0
         })),
         minyak: Number(extendedProps.minyak) || 0,
         toll: Number(extendedProps.toll) || 0,
+        details: extendedProps.details || '',
+        meetLink: extendedProps.meetLink || '',
       };
   
       // Only add meetLink and notificationSent if they exist
@@ -725,8 +1042,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         }
       }
   
-      // Send WhatsApp notification only if meetLink exists
-      if (cleanAppointment.meetLink && !cleanAppointment.notificationSent) {
+      // Send WhatsApp notification only if meetLink exists and contacts are selected
+      if (cleanAppointment.meetLink && !cleanAppointment.notificationSent && selectedContacts.length > 0) {
         const notificationSent = await sendWhatsAppNotification(selectedContacts, cleanAppointment, companyId);
         if (notificationSent) {
           cleanAppointment.notificationSent = true;
@@ -741,10 +1058,45 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   
       // Close the modal
       setEditModalOpen(false);
+  
     } catch (error) {
       console.error('Error saving appointment:', error);
+      toast.error('Failed to save appointment');
     }
   };
+
+  const fetchScheduledReminders = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user?.email) return;
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const userDoc = await getDoc(docUserRef);
+      if (!userDoc.exists()) return;
+  
+      const userData = userDoc.data();
+      const companyId = userData.companyId;
+  
+      const remindersRef = collection(firestore, `companies/${companyId}/scheduledReminders`);
+      const q = query(remindersRef, where("status", "==", "scheduled"));
+      const querySnapshot = await getDocs(q);
+  
+      const reminders = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as ScheduledReminder[];
+  
+      setScheduledReminders(reminders);
+    } catch (error) {
+      console.error('Error fetching scheduled reminders:', error);
+    }
+  };
+  
+  // Add useEffect to fetch reminders when component mounts
+  useEffect(() => {
+    fetchScheduledReminders();
+  }, []);
+
   const handleDateSelect = (selectInfo: any) => {
     const dateStr = format(new Date(selectInfo.startStr), 'yyyy-MM-dd');
     const date = new Date(dateStr);
@@ -762,7 +1114,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         staff: '',
         package: '',
         dateAdded: new Date().toISOString(),
-        tags: []
+        tags: [],
+        details: '',
+        meetLink: '',
       },
       isWeekend: isWeekend,
       timeSlots: generateTimeSlots(isWeekend)
@@ -807,6 +1161,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       packageId: currentEvent.extendedProps.package?.id || null,
       minyak: currentEvent.extendedProps?.minyak || 0,
       toll: currentEvent.extendedProps?.toll || 0,
+      details: currentEvent.extendedProps?.details || '',
+      meetLink: currentEvent.extendedProps?.meetLink || '',
     };
 
     const newAppointment = await createAppointment(newEvent);
@@ -824,7 +1180,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           extendedProps: {
             appointmentStatus: newAppointment.appointmentStatus,
             staff: newAppointment.staff,
-            tags: newAppointment.tags || []
+            tags: newAppointment.tags || [],
+            details: newAppointment.details || '',
+            meetLink: newAppointment.meetLink || '',
           }
         });
       }
@@ -856,7 +1214,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         packageId: newEvent.packageId,
         dateAdded: new Date().toISOString(),
         contacts: newEvent.contacts,
-        tags: newEvent.tags || []
+        tags: newEvent.tags || [],
+        details: newEvent.details || '',
+        meetLink: newEvent.meetLink || '',
       };
 
       await setDoc(newAppointmentRef, newAppointment);
@@ -1018,7 +1378,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         package: packages.find(p => p.id === appointment.packageId) || null,
         dateAdded: appointment.dateAdded,
         contacts: appointment.contacts, // Include contacts in currentEvent
-        tags: appointment.tags || []
+        tags: appointment.tags || [],
+        details: appointment.details || '',
+        meetLink: appointment.meetLink || '',
       }
     });
     console.log('Current event set:', {
@@ -1034,7 +1396,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         package: packages.find(p => p.id === appointment.packageId) || null,
         dateAdded: appointment.dateAdded,
         contacts: appointment.contacts,
-        tags: appointment.tags || []
+        tags: appointment.tags || [],
+        details: appointment.details || '',
+        meetLink: appointment.meetLink || '',
       }
     });
     setInitialAppointmentStatus(appointment.appointmentStatus);
@@ -1403,7 +1767,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             startHour: 11,
             endHour: 21,
             slotDuration: 30,
-            daysAhead: 3
+            daysAhead: 3,
           };
           await setDoc(configRef, defaultConfig);
           setConfig(defaultConfig);
@@ -1435,6 +1799,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       console.error('Error updating calendar config:', error);
       throw error;
     }
+  };
+
+  // Helper function to format reminder message
+  const formatReminderMessage = (template: string, appointment: any, startTime: Date) => {
+    return `${template}\n\n` +
+      `📅 Date: ${format(startTime, 'MMMM dd, yyyy')}\n` +
+      `⏰ Time: ${format(startTime, 'h:mm a')}\n` +
+      `${appointment.meetLink ? `\n🎥 Join Meeting: ${appointment.meetLink}` : ''}`;
   };
 
   
@@ -1538,6 +1910,82 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </button>
             </div>
           </div>
+          
+          {/* <div className="mt-6 border-t pt-6">
+            <h3 className="text-lg font-medium mb-4 dark:text-white">Reminder Settings</h3>
+            
+            <div className="space-y-4">
+              <div className="flex items-center">
+                <input
+                  type="checkbox"
+                  id="enable-reminders"
+                  checked={reminderSettings.enabled}
+                  onChange={(e) => setReminderSettings({
+                    ...reminderSettings,
+                    enabled: e.target.checked
+                  })}
+                  className="mr-2"
+                />
+                <label htmlFor="enable-reminders">Enable appointment reminders</label>
+              </div>
+
+              {reminderSettings.enabled && (
+                <>
+                  <div>
+                    <label className="block text-sm font-medium">24 Hour Reminder Message</label>
+                    <textarea
+                      value={reminderSettings.message24h}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        message24h: e.target.value
+                      })}
+                      className="w-full mt-1 rounded-md border p-2"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">3 Hour Reminder Message</label>
+                    <textarea
+                      value={reminderSettings.message3h}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        message3h: e.target.value
+                      })}
+                      className="w-full mt-1 rounded-md border p-2"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">1 Hour Reminder Message</label>
+                    <textarea
+                      value={reminderSettings.message1h}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        message1h: e.target.value
+                      })}
+                      className="w-full mt-1 rounded-md border p-2"
+                      rows={2}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium">Post-Appointment Reminder Message</label>
+                    <textarea
+                      value={reminderSettings.messageAfter}
+                      onChange={(e) => setReminderSettings({
+                        ...reminderSettings,
+                        messageAfter: e.target.value
+                      })}
+                      className="w-full mt-1 rounded-md border p-2"
+                      rows={2}
+                    />
+                  </div>
+                </>
+              )}
+            </div>
+          </div> */}
         </Dialog.Panel>
       </div>
     </Dialog>
@@ -1686,7 +2134,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             package: packages.find(p => p.id === appointment.packageId) || null,
             dateAdded: appointment.dateAdded,
             contacts: appointment.contacts,
-            tags: appointment.tags || []
+            tags: appointment.tags || [],
+            details: appointment.details || '',
+            meetLink: appointment.meetLink || '',
           }
         }))
       },
@@ -1755,6 +2205,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   // Add new component for grid view
   const GridView = () => {
     const hours = ['9:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '2:00 PM', '3:00 PM', '4:00 PM'];
+    const [selectedCell, setSelectedCell] = useState<{ row: number; col: number } | null>(null);
+    const gridRef = useRef<HTMLDivElement>(null);
     
     // Debug logs
     console.log('Selected date:', format(selectedDate, 'yyyy-MM-dd'));
@@ -1776,24 +2228,94 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       
       return aptDateStr === selectedDateStr;
     });
-
+  
     console.log('Filtered appointments:', selectedDateAppointments);
-
+  
     const formatAppointmentTime = (isoString: string) => {
       const date = new Date(isoString);
-      // Don't adjust for timezone since we want to display the stored time
       return format(date, 'h:mm a');
     };
-
+  
     // Helper function to find employee by email
     const findEmployeeByEmail = (email: string) => {
       const employee = employees.find(emp => emp.id === email);
       console.log('Finding employee for email:', email, 'Found:', employee);
       return employee;
     };
+  
     const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
-
-    // Add this useEffect to fetch expenses when the date changes
+  
+    // Handle keyboard navigation
+    useEffect(() => {
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (!selectedCell) return;
+  
+        const { row, col } = selectedCell;
+        const maxRow = hours.length - 1;
+        const maxCol = employees.length - 1;
+  
+        switch (e.key) {
+          case 'ArrowUp':
+            e.preventDefault();
+            if (row > 0) {
+              setSelectedCell({ row: row - 1, col });
+              scrollToCell(row - 1, col);
+            }
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            if (row < maxRow) {
+              setSelectedCell({ row: row + 1, col });
+              scrollToCell(row + 1, col);
+            }
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            if (col > 0) {
+              setSelectedCell({ row, col: col - 1 });
+              scrollToCell(row, col - 1);
+            }
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            if (col < maxCol) {
+              setSelectedCell({ row, col: col + 1 });
+              scrollToCell(row, col + 1);
+            }
+            break;
+          case 'Enter':
+          case ' ':
+            e.preventDefault();
+            const employee = employees[col];
+            const hour = hours[row];
+            if (employee && hour) {
+              // Assuming handleEmptySlotClick is a function that needs to be defined
+              const handleEmptySlotClick = () => {
+                console.log('Empty slot clicked');
+              };
+              handleEmptySlotClick();
+            }
+            break;
+        }
+      };
+  
+      window.addEventListener('keydown', handleKeyDown);
+      return () => window.removeEventListener('keydown', handleKeyDown);
+    }, [selectedCell, hours, employees]);
+  
+    // Helper function to scroll to a specific cell
+    const scrollToCell = (row: number, col: number) => {
+      const cell = document.querySelector(`[data-row="${row}"][data-col="${col}"]`);
+      if (cell && gridRef.current) {
+        cell.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+          inline: 'nearest'
+        });
+      }
+    };
+  
+    // Fetch expenses useEffect
     useEffect(() => {
       const fetchExpenses = async () => {
         try {
@@ -1826,8 +2348,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     
       fetchExpenses();
     }, [selectedDate, employees]);
+  
     return (
-      <div>
+      <div className="flex flex-col h-[calc(100vh-200px)]">
         {/* Date selector */}
         <div className="mb-4 flex items-center gap-2">
           <button
@@ -1876,12 +2399,20 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             Today
           </button>
         </div>
-
-        <div className="overflow-x-auto">
-          <table className="min-w-full border-collapse border border-gray-300 dark:border-gray-600">
-            <thead>
+  
+        {/* Grid container with scroll */}
+        <div 
+          ref={gridRef}
+          className="overflow-auto flex-1 border border-gray-300 dark:border-gray-600 rounded-lg"
+          style={{
+            scrollbarWidth: 'thin',
+            scrollbarColor: 'rgb(156 163 175) transparent'
+          }}
+        >
+          <table className="min-w-full border-collapse h-full">
+            <thead className="sticky top-0 z-10 bg-gray-100 dark:bg-gray-700">
               <tr>
-                <th className="border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
+                <th className="sticky left-0 z-20 border border-gray-300 dark:border-gray-600 p-2 bg-gray-100 dark:bg-gray-700">
                   <div className="flex justify-between items-center">
                     <span className="text-gray-800 dark:text-white">TIME</span>
                     <span className="text-sm text-gray-600 dark:text-white">
@@ -1899,38 +2430,24 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </tr>
             </thead>
             <tbody>
-              {hours.map((hour) => (
+              {hours.map((hour, rowIndex) => (
                 <tr key={hour}>
-                  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+                  <td className="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
                     {hour}
                   </td>
-                  {employees.map((employee) => {
+                  {employees.map((employee, colIndex) => {
                     const appointments = selectedDateAppointments.filter(apt => {
                       const aptTime = formatAppointmentTime(apt.startTime);
                       const isAssignedToStaff = apt.staff.length === 0 || apt.staff.includes(employee.id);
-                      
-                      console.log('Checking appointment slot:', {
-                        appointment: apt.title,
-                        hour,
-                        aptTime,
-                        employee: employee.id,
-                        isAssignedToStaff,
-                        matches: aptTime === hour && isAssignedToStaff
-                      });
-                      
                       return aptTime === hour && isAssignedToStaff;
                     });
-
+  
                     const handleEmptySlotClick = () => {
-                      // Convert the hour string to 24-hour format for consistency
                       const timeDate = parse(hour, 'h:mm a', new Date());
                       const formattedHour = format(timeDate, 'HH:mm');
-                      
-                      // Create end time (1 hour after start time)
                       const endTimeDate = addHours(timeDate, 1);
                       const formattedEndHour = format(endTimeDate, 'HH:mm');
-
-                      // Set up the new appointment
+  
                       setCurrentEvent({
                         title: '',
                         dateStr: format(selectedDate, 'yyyy-MM-dd'),
@@ -1939,29 +2456,36 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                         extendedProps: {
                           address: '',
                           appointmentStatus: 'new',
-                          staff: [employee.id], // Pre-select the employee
+                          staff: [employee.id],
                           package: '',
                           dateAdded: new Date().toISOString(),
-                          tags: []
+                          tags: [],
+                          details: '',
+                          meetLink: '',
                         }
                       });
-
-                      // Pre-select the employee
+  
                       setSelectedEmployeeIds([employee.id]);
-                      
-                      // Open the add modal
                       setAddModalOpen(true);
                     };
-
+  
                     return (
                       <td 
-                        key={`${employee.id}-${hour}`} 
-                        className="border border-gray-300 dark:border-gray-600 p-2 min-w-[200px] relative cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700"
+                        key={`${employee.id}-${hour}`}
+                        data-row={rowIndex}
+                        data-col={colIndex}
+                        className={`border border-gray-300 dark:border-gray-600 p-2 min-w-[200px] relative cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                          selectedCell?.row === rowIndex && selectedCell?.col === colIndex
+                            ? 'ring-2 ring-primary ring-inset'
+                            : ''
+                        }`}
                         onClick={() => {
+                          setSelectedCell({ row: rowIndex, col: colIndex });
                           if (appointments.length === 0) {
                             handleEmptySlotClick();
                           }
                         }}
+                        tabIndex={0}
                       >
                         {appointments.map((apt) => (
                           <div 
@@ -1971,11 +2495,10 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                               backgroundColor: '#51484f',
                             }}
                             onClick={(e) => {
-                              e.stopPropagation(); // Prevent triggering the empty slot click
+                              e.stopPropagation();
                               handleAppointmentClick(apt);
                             }}
                           >
-                            {/* Existing appointment content */}
                             <div className="font-medium flex justify-between items-center">
                               <span>{apt.title || 'Untitled'}</span>
                               {apt.appointmentStatus && (
@@ -2021,94 +2544,97 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   })}
                 </tr>
               ))}
-             <tr>
-  <td className="border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
-    MINYAK & TOL
-  </td>
-  {employees.map((employee) => {
-    const expenses = employeeExpenses[employee.id] || { minyak: 0, toll: 0 };
-
-    const handleExpenseChange = async (type: 'minyak' | 'toll', value: number) => {
-      try {
-        const user = auth.currentUser;
-        if (!user?.email) return;
-
-        const newExpenses = {
-          ...expenses,
-          [type]: value
-        };
-
-        // Update local state immediately
-        setEmployeeExpenses(prev => ({
-          ...prev,
-          [employee.id]: newExpenses
-        }));
-
-        // Save to Firestore
-        const expenseRef = doc(
-          firestore,
-          `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
-        );
-
-        await setDoc(expenseRef, {
-          date: format(selectedDate, 'yyyy-MM-dd'),
-          employeeId: employee.id,
-          ...newExpenses
-        }, { merge: true });
-
-      } catch (error) {
-        console.error('Error updating expense:', error);
-      }
-    };
-
-    return (
-      <td key={`${employee.id}-expenses`} className="border border-gray-300 dark:border-gray-600 p-2">
-        <div className="text-sm">
-          <div className="flex justify-between items-center mb-2">
-            <span>Minyak:</span>
-            <div className="flex items-center">
-              <span className="mr-1">RM</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                value={expenses.minyak === 0 ? "0" : expenses.minyak || ""}
-                onChange={(e) => {
-                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                  handleExpenseChange('minyak', value);
-                }}
-              />
-            </div>
-          </div>
-          <div className="flex justify-between items-center mb-2">
-            <span>Toll:</span>
-            <div className="flex items-center">
-              <span className="mr-1">RM</span>
-              <input
-                type="number"
-                min="0"
-                step="1"
-                className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                value={expenses.toll === 0 ? "0" : expenses.toll || ""}
-                onChange={(e) => {
-                  const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
-                  handleExpenseChange('toll', value);
-                }}
-              />
-            </div>
-          </div>
-          <div className="flex justify-between font-medium border-t border-gray-200 dark:border-gray-600 mt-1 pt-1">
-            <span>Total:</span>
-            <span>RM {((expenses.minyak || 0) + (expenses.toll || 0)).toFixed(2)}</span>
-          </div>
-        </div>
-      </td>
-    );
-  })}
-</tr>
+              <tr>
+                <td className="sticky left-0 z-10 bg-gray-100 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 p-2 font-medium text-gray-800 dark:text-white">
+                  MINYAK & TOL
+                </td>
+                {employees.map((employee) => {
+                  const expenses = employeeExpenses[employee.id] || { minyak: 0, toll: 0 };
+  
+                  const handleExpenseChange = async (type: 'minyak' | 'toll', value: number) => {
+                    try {
+                      const user = auth.currentUser;
+                      if (!user?.email) return;
+  
+                      const newExpenses = {
+                        ...expenses,
+                        [type]: value
+                      };
+  
+                      setEmployeeExpenses(prev => ({
+                        ...prev,
+                        [employee.id]: newExpenses
+                      }));
+  
+                      const expenseRef = doc(
+                        firestore,
+                        `user/${user.email}/expenses/${format(selectedDate, 'yyyy-MM-dd')}_${employee.id}`
+                      );
+  
+                      await setDoc(expenseRef, {
+                        date: format(selectedDate, 'yyyy-MM-dd'),
+                        employeeId: employee.id,
+                        ...newExpenses
+                      }, { merge: true });
+  
+                    } catch (error) {
+                      console.error('Error updating expense:', error);
+                    }
+                  };
+  
+                  return (
+                    <td key={`${employee.id}-expenses`} className="border border-gray-300 dark:border-gray-600 p-2">
+                      <div className="text-sm">
+                        <div className="flex justify-between items-center mb-2">
+                          <span>Minyak:</span>
+                          <div className="flex items-center">
+                            <span className="mr-1">RM</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                              value={expenses.minyak === 0 ? "0" : expenses.minyak || ""}
+                              onChange={(e) => {
+                                const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                handleExpenseChange('minyak', value);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between items-center mb-2">
+                          <span>Toll:</span>
+                          <div className="flex items-center">
+                            <span className="mr-1">RM</span>
+                            <input
+                              type="number"
+                              min="0"
+                              step="1"
+                              className="w-20 px-2 py-1 text-right border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                              value={expenses.toll === 0 ? "0" : expenses.toll || ""}
+                              onChange={(e) => {
+                                const value = e.target.value === "" ? 0 : parseFloat(e.target.value);
+                                handleExpenseChange('toll', value);
+                              }}
+                            />
+                          </div>
+                        </div>
+                        <div className="flex justify-between font-medium border-t border-gray-200 dark:border-gray-600 mt-1 pt-1">
+                          <span>Total:</span>
+                          <span>RM {((expenses.minyak || 0) + (expenses.toll || 0)).toFixed(2)}</span>
+                        </div>
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
             </tbody>
           </table>
+        </div>
+  
+        {/* Scroll indicators */}
+        <div className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+          Use arrow keys to navigate or scroll to view more
         </div>
       </div>
     );
@@ -2121,7 +2647,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
            {/* Add view toggle button */}
            <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
           <button
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-700 dark:hover:bg-blue-600"
             onClick={() => setViewType(viewType === 'calendar' ? 'grid' : 'calendar')}
           >
             <Lucide icon={viewType === 'calendar' ? 'TableProperties' : 'Calendar'} className="w-4 h-4 mr-2 inline-block" />
@@ -2219,7 +2745,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   staff: '',
                   package: '',
                   dateAdded: new Date().toISOString(),
-                  tags: []
+                  tags: [],
+                  details: '',
+                  meetLink: '',
                 }
               });
               setAddModalOpen(true);
@@ -2300,6 +2828,11 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                             </div>
                           ))}
                         </div>
+                        {appointment.details && (
+                          <div className="mt-1 text-sm text-gray-500 dark:text-gray-400 truncate">
+                            {appointment.details}
+                          </div>
+                        )}
                           </div>
                           <div className="text-slate-500 text-xs mt-0.5 dark:text-gray-300 text-right">
                             <div>
@@ -2363,9 +2896,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                 </div>
               </div>
               <div className="mt-6 space-y-4">
-                {/* Phone Number (Title) */}
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2385,41 +2917,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   />
                 </div>
 
-                {/* Units */}
-                <div className="w-1/3">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
-                  <input
-                    type="number"
-                    min="0"
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.extendedProps?.units || ''}
-                    onChange={(e) => setCurrentEvent({ 
-                      ...currentEvent, 
-                      extendedProps: { 
-                        ...currentEvent.extendedProps, 
-                        units: e.target.value 
-                      } 
-                    })}
-                  />
-                </div>
-
-                {/* Type */}
-                <div className="w-1/3">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-                  <input
-                    type="text"
-                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    value={currentEvent?.extendedProps?.type || ''}
-                    onChange={(e) => setCurrentEvent({
-                      ...currentEvent,
-                      extendedProps: {
-                        ...currentEvent.extendedProps,
-                        type: e.target.value
-                      }
-                    })}
-                  />
-                </div>
-
                 {/* Date and Time */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
@@ -2436,7 +2933,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   <div className="flex gap-2">
                     <div className="flex-1">
                       <label className="block text-xs text-gray-500 dark:text-gray-400">Start Time</label>
-                      <select
+                      <input
+                        type="time"
                         className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                         value={currentEvent?.startTimeStr || ''}
                         onChange={(e) => {
@@ -2444,56 +2942,37 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                           setCurrentEvent((prev: { endTimeStr: any; }) => ({
                             ...prev,
                             startTimeStr: startTime,
+                            // Automatically set end time to 1 hour after start time if not set
                             endTimeStr: prev?.endTimeStr || format(addHours(parse(startTime, 'HH:mm', new Date()), 1), 'HH:mm')
                           }));
                         }}
-                      >
-                        <option value="" disabled>Start Time</option>
-                        {Array.from({ length: 24 }, (_, i) => {
-                          const hour = i.toString().padStart(2, '0');
-                          return (
-                            <>
-                              <option value={`${hour}:00`}>{format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}</option>
-                              <option value={`${hour}:30`}>{format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}</option>
-                            </>
-                          );
-                        })}
-                      </select>
+                      />
                     </div>
 
                     <div className="flex-1">
                       <label className="block text-xs text-gray-500 dark:text-gray-400">End Time</label>
-                      <select
+                      <input
+                        type="time"
                         className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                         value={currentEvent?.endTimeStr || ''}
+                        min={currentEvent?.startTimeStr || '00:00'}
                         onChange={(e) => {
-                          setCurrentEvent((prev: any) => ({
-                            ...prev,
-                            endTimeStr: e.target.value
-                          }));
+                          const endTime = e.target.value;
+                          if (endTime <= (currentEvent?.startTimeStr || '00:00')) {
+                            // If end time is before or equal to start time, set it to 1 hour after start time
+                            const newEndTime = format(addHours(parse(currentEvent?.startTimeStr || '00:00', 'HH:mm', new Date()), 1), 'HH:mm');
+                            setCurrentEvent((prev: any) => ({
+                              ...prev,
+                              endTimeStr: newEndTime
+                            }));
+                          } else {
+                            setCurrentEvent((prev: any) => ({
+                              ...prev,
+                              endTimeStr: endTime
+                            }));
+                          }
                         }}
-                      >
-                        <option value="" disabled>End Time</option>
-                        {Array.from({ length: 24 }, (_, i) => {
-                          const hour = i.toString().padStart(2, '0');
-                          return (
-                            <>
-                              <option 
-                                value={`${hour}:00`}
-                                disabled={currentEvent?.startTimeStr && `${hour}:00` <= currentEvent.startTimeStr}
-                              >
-                                {format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}
-                              </option>
-                              <option 
-                                value={`${hour}:30`}
-                                disabled={currentEvent?.startTimeStr && `${hour}:30` <= currentEvent.startTimeStr}
-                              >
-                                {format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}
-                              </option>
-                            </>
-                          );
-                        })}
-                      </select>
+                      />
                     </div>
                   </div>
                 </div>
@@ -2685,66 +3164,58 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contacts</label>
                   <Select
                     isMulti
-                    value={selectedContacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
-                    options={contacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
+                    options={contacts
+                      // Remove duplicates and sort alphabetically
+                      .filter((contact, index, self) => 
+                        index === self.findIndex(c => c.id === contact.id)
+                      )
+                      .sort((a, b) => a.contactName.localeCompare(b.contactName))
+                      .map(contact => ({
+                        value: contact.id,
+                        label: contact.contactName || `${contact.firstName} ${contact.lastName}`.trim()
+                      }))}
+                    value={selectedContacts.map(contact => ({
+                      value: contact.id,
+                      label: contact.contactName || `${contact.firstName} ${contact.lastName}`.trim()
+                    }))}
                     onChange={handleContactChange}
+                    className="react-select-container"
                     classNamePrefix="react-select"
-                    className="capitalize"
                     styles={{
-                      control: (provided, state) => ({
-                        ...provided,
-                        backgroundColor: state.isFocused ? '#f9fafb' : '#ffffff', // Light mode background
-                        borderColor: state.isFocused ? '#3b82f6' : '#d1d5db', // Light mode border
-                        boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
+                      control: (base) => ({
+                        ...base,
+                        minHeight: '42px',
+                        borderColor: 'rgb(209 213 219)',
+                        backgroundColor: 'white',
                         '&:hover': {
-                          borderColor: '#3b82f6',
-                        },
-                        '.dark &': {
-                          backgroundColor: state.isFocused ? '#374151' : '#1f2937', // Dark mode background
-                          borderColor: state.isFocused ? '#3b82f6' : '#4b5563', // Dark mode border
-                          boxShadow: state.isFocused ? '0 0 0 1px #3b82f6' : 'none',
-                          '&:hover': {
-                            borderColor: '#3b82f6',
-                          },
-                        },
+                          borderColor: 'rgb(107 114 128)'
+                        }
                       }),
-                      menu: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#ffffff', // Light mode background
-                        '.dark &': {
-                          backgroundColor: '#1f2937', // Dark mode background
-                        },
+                      option: (base, state) => ({
+                        ...base,
+                        backgroundColor: state.isSelected ? '#1e40af' : state.isFocused ? '#e5e7eb' : 'white',
+                        color: state.isSelected ? 'white' : 'black',
+                        '&:active': {
+                          backgroundColor: '#1e40af'
+                        }
                       }),
-                      multiValue: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#e5e7eb', // Light mode background
-                        '.dark &': {
-                          backgroundColor: '#4b5563', // Dark mode background
-                        },
+                      multiValue: (base) => ({
+                        ...base,
+                        backgroundColor: '#e5e7eb'
                       }),
-                      multiValueLabel: (provided) => ({
-                        ...provided,
-                        color: '#111827', // Light mode text color
-                        '.dark &': {
-                          color: '#d1d5db', // Dark mode text color
-                        },
+                      multiValueLabel: (base) => ({
+                        ...base,
+                        color: '#374151'
                       }),
-                      multiValueRemove: (provided) => ({
-                        ...provided,
-                        color: '#111827', // Light mode text color
+                      multiValueRemove: (base) => ({
+                        ...base,
                         '&:hover': {
-                          backgroundColor: '#d1d5db', // Light mode hover background
-                          color: '#111827', // Light mode hover text color
-                        },
-                        '.dark &': {
-                          color: '#d1d5db', // Dark mode text color
-                          '&:hover': {
-                            backgroundColor: '#4b5563', // Dark mode hover background
-                            color: '#f9fafb', // Dark mode hover text color
-                          },
-                        },
-                      }),
+                          backgroundColor: '#d1d5db',
+                          color: '#374151'
+                        }
+                      })
                     }}
+                    placeholder="Select contacts..."
                   />
                   {selectedContacts.map(contact => (
                     <div key={contact.id} className="capitalize text-sm text-gray-600 dark:text-gray-300">
@@ -2752,6 +3223,136 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     </div>
                   ))}
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                    Additional Details
+                  </label>
+                  <textarea
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                    value={currentEvent?.extendedProps?.details || ''}
+                    onChange={(e) => setCurrentEvent({
+                      ...currentEvent,
+                      extendedProps: {
+                        ...currentEvent.extendedProps,
+                        details: e.target.value
+                      }
+                    })}
+                    rows={4}
+                    placeholder="Add any additional details about the appointment..."
+                  />
+                </div>
+                {/* <div className="mt-6 border-t pt-6">
+                  <h3 className="text-lg font-medium mb-4 dark:text-white">Reminder Settings</h3>
+                  
+                  {selectedContacts.length > 0 ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center">
+                        <input
+                          type="checkbox"
+                          id="enable-reminders"
+                          checked={currentEvent?.reminders?.enabled ?? true}
+                          onChange={(e) => {
+                            const defaultOptions = [
+                              { type: '24h', enabled: true, message: "Your appointment is tomorrow" },
+                              { type: '3h', enabled: true, message: "Your appointment is in 3 hours" },
+                              { type: '1h', enabled: true, message: "Your appointment is in 1 hour" },
+                              { type: 'after', enabled: true, message: "Thank you for your visit today" }
+                            ];
+
+                            setCurrentEvent((prev: any) => ({
+                              ...prev,
+                              reminders: {
+                                enabled: e.target.checked,
+                                options: prev?.reminders?.options || defaultOptions
+                              }
+                            }));
+                          }}
+                          className="mr-2"
+                        />
+                        <label htmlFor="enable-reminders" className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Enable appointment reminders
+                        </label>
+                      </div>
+
+                      {currentEvent?.reminders?.enabled && (
+                        <div className="space-y-4 pl-6">
+                          {[
+                            { type: '24h', label: '24 Hour Reminder', defaultMessage: "Your appointment is tomorrow" },
+                            { type: '3h', label: '3 Hour Reminder', defaultMessage: "Your appointment is in 3 hours" },
+                            { type: '1h', label: '1 Hour Reminder', defaultMessage: "Your appointment is in 1 hour" },
+                            { type: 'after', label: 'Post-Appointment Message (1 hour after)', defaultMessage: "Thank you for your visit today" }
+                          ].map(({ type, label, defaultMessage }) => (
+                            <div key={type} className="space-y-2">
+                              <div className="flex items-center">
+                                <input
+                                  type="checkbox"
+                                  id={`${type}-reminder`}
+                                  checked={currentEvent?.reminders?.options?.find((o: any) => o.type === type)?.enabled ?? true}
+                                  onChange={(e) => {
+                                    setCurrentEvent((prev: any) => {
+                                      const options = [...(prev?.reminders?.options || [])];
+                                      const index = options.findIndex(o => o.type === type);
+                                      
+                                      if (index >= 0) {
+                                        options[index] = { ...options[index], enabled: e.target.checked };
+                                      } else {
+                                        options.push({ type, enabled: e.target.checked, message: defaultMessage });
+                                      }
+
+                                      return {
+                                        ...prev,
+                                        reminders: {
+                                          ...prev?.reminders,
+                                          options
+                                        }
+                                      };
+                                    });
+                                  }}
+                                  className="mr-2"
+                                />
+                                <label htmlFor={`${type}-reminder`} className="text-sm text-gray-700 dark:text-gray-300">
+                                  {label}
+                                </label>
+                              </div>
+                              {currentEvent?.reminders?.options?.find((o: any) => o.type === type)?.enabled && (
+                                <textarea
+                                  value={currentEvent?.reminders?.options?.find((o: any) => o.type === type)?.message || defaultMessage}
+                                  onChange={(e) => {
+                                    setCurrentEvent((prev: any) => {
+                                      const options = [...(prev?.reminders?.options || [])];
+                                      const index = options.findIndex(o => o.type === type);
+                                      
+                                      if (index >= 0) {
+                                        options[index] = { ...options[index], message: e.target.value };
+                                      } else {
+                                        options.push({ type, enabled: true, message: e.target.value });
+                                      }
+
+                                      return {
+                                        ...prev,
+                                        reminders: {
+                                          ...prev?.reminders,
+                                          options
+                                        }
+                                      };
+                                    });
+                                  }}
+                                  className="w-full mt-1 text-sm rounded-md border p-2 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                  rows={2}
+                                  placeholder={`Enter ${label.toLowerCase()} message...`}
+                                />
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      Select contacts to enable reminder settings
+                    </div>
+                  )}
+                </div> */}
               </div>
               <div className="flex justify-end mt-6 space-x-2">
                 {currentEvent?.id && (
@@ -2800,7 +3401,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
               </div>
               <div className="mt-6 space-y-4">
                 <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Phone Number</label>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Title</label>
                   <input
                     type="text"
                     className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2817,38 +3418,6 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     onChange={(e) => setCurrentEvent({ ...currentEvent, extendedProps: { ...currentEvent.extendedProps, address: e.target.value } })}
                   />
                 </div>
-                <div className="w-1/3">
-    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Units</label>
-    <input
-      type="number"
-      min="0"
-      className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-      value={currentEvent?.extendedProps?.units || ''}
-      onChange={(e) => setCurrentEvent({ 
-        ...currentEvent, 
-        extendedProps: { 
-          ...currentEvent.extendedProps, 
-          units: e.target.value 
-        } 
-      })}
-    />
-  </div>
- <div className="w-1/3">
-      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Type</label>
-      <input
-        type="text"
-        className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-        value={currentEvent?.extendedProps?.type || ''}
-        onChange={(e) => setCurrentEvent({
-          ...currentEvent,
-          extendedProps: {
-            ...currentEvent.extendedProps,
-            type: e.target.value
-          }
-        })}
-      />
-    </div>
-
                 <div>
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Date</label>
                   <input
@@ -2862,7 +3431,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   <div className="flex gap-2">
     <div className="flex-1">
       <label className="block text-xs text-gray-500 dark:text-gray-400">Start Time</label>
-      <select
+      <input
+        type="time"
         className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
         value={currentEvent?.startTimeStr || ''}
         onChange={(e) => {
@@ -2874,53 +3444,33 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             endTimeStr: prev?.endTimeStr || format(addHours(parse(startTime, 'HH:mm', new Date()), 1), 'HH:mm')
           }));
         }}
-      >
-        <option value="" disabled>Start Time</option>
-        {Array.from({ length: 24 }, (_, i) => {
-          const hour = i.toString().padStart(2, '0');
-          return (
-            <>
-              <option value={`${hour}:00`}>{format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}</option>
-              <option value={`${hour}:30`}>{format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}</option>
-            </>
-          );
-        })}
-      </select>
+      />
     </div>
 
     <div className="flex-1">
       <label className="block text-xs text-gray-500 dark:text-gray-400">End Time</label>
-      <select
+      <input
+        type="time"
         className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
         value={currentEvent?.endTimeStr || ''}
+        min={currentEvent?.startTimeStr || '00:00'}
         onChange={(e) => {
-          setCurrentEvent((prev: typeof currentEvent) => ({
-            ...prev,
-            endTimeStr: e.target.value
-          }));
+          const endTime = e.target.value;
+          if (endTime <= (currentEvent?.startTimeStr || '00:00')) {
+            // If end time is before or equal to start time, set it to 1 hour after start time
+            const newEndTime = format(addHours(parse(currentEvent?.startTimeStr || '00:00', 'HH:mm', new Date()), 1), 'HH:mm');
+            setCurrentEvent((prev: any) => ({
+              ...prev,
+              endTimeStr: newEndTime
+            }));
+          } else {
+            setCurrentEvent((prev: any) => ({
+              ...prev,
+              endTimeStr: endTime
+            }));
+          }
         }}
-      >
-        <option value="" disabled>End Time</option>
-        {Array.from({ length: 24 }, (_, i) => {
-          const hour = i.toString().padStart(2, '0');
-          return (
-            <>
-              <option 
-                value={`${hour}:00`}
-                disabled={currentEvent?.startTimeStr && `${hour}:00` <= currentEvent.startTimeStr}
-              >
-                {format(parse(`${hour}:00`, 'HH:mm', new Date()), 'h:mm a')}
-              </option>
-              <option 
-                value={`${hour}:30`}
-                disabled={currentEvent?.startTimeStr && `${hour}:30` <= currentEvent.startTimeStr}
-              >
-                {format(parse(`${hour}:30`, 'HH:mm', new Date()), 'h:mm a')}
-              </option>
-            </>
-          );
-        })}
-      </select>
+      />
     </div>
   </div>
 </div>
@@ -2970,35 +3520,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     options={appointmentTags.map((tag: any) => ({ value: tag.id, label: tag.name }))}
                     value={currentEvent?.extendedProps?.tags?.map((tag: any) => ({ value: tag.id, label: tag.name })) || []}
                     onChange={handleTagChange}
-                    className="capitalize dark:bg-gray-700 dark:text-white dark:border-gray-600"
-                    styles={{
-                      control: (provided: any) => ({
-                        ...provided,
-                        backgroundColor: '#1f2937', // Solid color for better visibility
-                        borderColor: 'border-gray-300 dark:border-gray-600',
-                        boxShadow: 'shadow-sm',
-                      }),
-                      menu: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#1f2937', // Solid color for better visibility
-                      }),
-                      multiValue: (provided) => ({
-                        ...provided,
-                        backgroundColor: '#4b5563', // Solid color for better visibility
-                      }),
-                      multiValueLabel: (provided) => ({
-                        ...provided,
-                        color: 'text-gray-800 dark:text-gray-200',
-                      }),
-                      multiValueRemove: (provided) => ({
-                        ...provided,
-                        color: 'text-gray-800 dark:text-gray-200',
-                        '&:hover': {
-                          backgroundColor: 'bg-gray-300 dark:bg-gray-500',
-                          color: 'text-gray-900 dark:text-gray-100',
-                        },
-                      }),
-                    }}
+                    className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 bg-white text-gray-700 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                   />
                 </div>
              
@@ -3030,7 +3552,14 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                   <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Contacts</label>
                   <Select
                     isMulti
-                    options={contacts.map(contact => ({ value: contact.id, label: contact.contactName }))}
+                    options={contacts.map(contact => ({ 
+                      value: contact.id, 
+                      label: contact.contactName 
+                    }))}
+                    value={selectedContacts.map(contact => ({ 
+                      value: contact.id, 
+                      label: contact.contactName 
+                    }))}
                     onChange={handleContactChange}
                     className="capitalize dark:bg-gray-700 dark:text-white"
                   />
@@ -3040,6 +3569,27 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                     </div>
                   ))}
                 </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mt-2">
+                  Additional Details
+                </label>
+                <textarea
+                  className="block w-full mt-1 border-gray-300 rounded-md shadow-sm focus:border-indigo-300 focus:ring focus:ring-indigo-200 focus:ring-opacity-50 dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                  value={currentEvent?.extendedProps?.details || ''}
+                  onChange={(e) => {
+                    const newDetails = e.target.value;
+                    setCurrentEvent({
+                      ...currentEvent,
+                      extendedProps: {
+                        ...currentEvent.extendedProps,
+                        details: newDetails
+                      }
+                    });
+                  }}
+                  rows={4}
+                  placeholder="Add any additional details about the appointment..."
+                />
               </div>
               <div className="flex justify-end mt-6 space-x-2">
                 <button

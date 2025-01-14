@@ -41,7 +41,13 @@ interface AssistantInfo {
   description: string;
   instructions: string;
   metadata: {
-    files: Array<{id: string, name: string, url: string}>;
+    files: Array<{
+      id: string;
+      name: string;
+      url: string;
+      vectorStoreId?: string;
+      openAIFileId?: string;
+    }>;
   };
 }
 
@@ -162,7 +168,12 @@ const Main: React.FC = () => {
   const [isMobile, setIsMobile] = useState(false);
   const [userRole, setUserRole] = useState<string>("");
   const [isWideScreen, setIsWideScreen] = useState(false);
-  const [files, setFiles] = useState<Array<{id: string, name: string, url: string}>>([]);
+  const [files, setFiles] = useState<Array<{
+    id: string;
+    name: string;
+    url: string;
+    vectorStoreId?: string;
+  }>>([]);
   const [uploading, setUploading] = useState(false);
   const [assistants, setAssistants] = useState<AssistantConfig[]>([]);
   const [selectedAssistant, setSelectedAssistant] = useState<string>('');
@@ -303,13 +314,20 @@ const Main: React.FC = () => {
 
     console.log("Updating assistant info with ID:", assistantId);
 
+    // Get all unique vector store IDs from files
+    const vectorStoreIds = [...new Set(files.map(file => file.vectorStoreId).filter(Boolean))];
+
     const payload = {
       name: assistantInfo.name || '',
       description: assistantInfo.description || '',
-      instructions: assistantInfo.instructions
+      instructions: assistantInfo.instructions,
+      tools: [{ type: "file_search" }],
+      tool_resources: {
+        file_search: {
+          vector_store_ids: vectorStoreIds
+        }
+      }
     };
-
-    console.log("Payload being sent:", payload);
 
     try {
       const response = await axios.post(`https://api.openai.com/v1/assistants/${assistantId}`, payload, {
@@ -324,11 +342,9 @@ const Main: React.FC = () => {
       toast.success('Assistant updated successfully');
     } catch (error) {
       if (axios.isAxiosError(error)) {
-        // Error is an AxiosError
         console.error('Error updating assistant information:', error.response?.data);
         setError(`Failed to update assistant information: ${error.response?.data.error.message}`);
       } else {
-        // Generic error handling
         console.error('Error updating assistant information:', error);
         setError('Failed to update assistant information');
       }
@@ -489,22 +505,78 @@ const Main: React.FC = () => {
     const storageRef = ref(storage, `files/${companyId}/${file.name}`);
 
     try {
+      // Upload to Firebase Storage
       await uploadBytes(storageRef, file);
       const downloadURL = await getDownloadURL(storageRef);
+      
+      // First, upload file to OpenAI
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('purpose', 'assistants');
+      
+      const openAIFileResponse = await axios.post('https://api.openai.com/v1/files', formData, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'multipart/form-data'
+        }
+      });
+
+      // Create or get existing vector store
+      let vectorStoreId;
+      try {
+        // Try to get existing vector store
+        const vectorStoreResponse = await axios.get(`https://api.openai.com/v1/vector_stores/${companyId}-knowledge-base`, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        });
+        vectorStoreId = vectorStoreResponse.data.id;
+      } catch (error) {
+        // If not found, create new vector store
+        const createVectorStoreResponse = await axios.post('https://api.openai.com/v1/vector_stores', {
+          name: `${companyId}-knowledge-base`,
+        }, {
+          headers: {
+            'Authorization': `Bearer ${apiKey}`,
+            'OpenAI-Beta': 'assistants=v2'
+          }
+        });
+        vectorStoreId = createVectorStoreResponse.data.id;
+      }
+
+      // Add file to vector store
+      await axios.post(`https://api.openai.com/v1/vector_stores/${vectorStoreId}/files`, {
+        file_id: openAIFileResponse.data.id
+      }, {
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'OpenAI-Beta': 'assistants=v2'
+        }
+      });
       
       // Add file info to Firestore
       const fileDocRef = doc(collection(firestore, 'companies', companyId, 'assistantFiles'));
       await setDoc(fileDocRef, {
         name: file.name,
-        url: downloadURL
+        url: downloadURL,
+        vectorStoreId: vectorStoreId,
+        openAIFileId: openAIFileResponse.data.id
       });
 
-      const newFile = { id: fileDocRef.id, name: file.name, url: downloadURL };
+      const newFile = { 
+        id: fileDocRef.id, 
+        name: file.name, 
+        url: downloadURL,
+        vectorStoreId: vectorStoreId
+      };
       setFiles(prevFiles => [...prevFiles, newFile]);
+
+      // Update the assistant with the new vector store
+      await updateAssistantInfo();
+      
       toast.success('File uploaded successfully');
 
-      // Update the assistant with the new file information
-      await updateAssistantWithFile(newFile);
     } catch (error) {
       console.error('Error uploading file:', error);
       toast.error('Failed to upload file');
@@ -554,15 +626,16 @@ const Main: React.FC = () => {
       const response = await axios.post(`https://api.openai.com/v1/assistants/${assistantId}`, {
         metadata: {
           ...assistantInfo.metadata,
-          files: JSON.stringify(updatedFiles) // Stringify the files array
+          files: JSON.stringify(updatedFiles)
         }
       }, {
         headers: {
           'Authorization': `Bearer ${apiKey}`,
           'Content-Type': 'application/json',
-          'OpenAI-Beta': 'assistants=v1'
+          'OpenAI-Beta': 'assistants=v2'
         }
       });
+      
       console.log('Assistant metadata updated:', response.data);
       
       // Update local state
@@ -573,7 +646,7 @@ const Main: React.FC = () => {
           files: updatedFiles
         }
       }));
-  
+
       toast.success('Assistant metadata updated successfully');
     } catch (error) {
       if (axios.isAxiosError(error)) {

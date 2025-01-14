@@ -59,6 +59,8 @@ function AIResponses() {
 
     const [keywordSource, setKeywordSource] = useState<'user' | 'bot'>('user');
 
+    const [tagActionMode, setTagActionMode] = useState<'add' | 'delete'>('add');
+
     const firestore = getFirestore();
     const auth = getAuth();
     const darkMode = useAppSelector(selectDarkMode);
@@ -251,6 +253,22 @@ function AIResponses() {
             
             // Handle different response types
             switch (responseType) {
+                case 'Tag':
+                    if (selectedTags.length === 0) {
+                        toast.error('Please select at least one tag');
+                        return;
+                    }
+                    const tagNames = selectedTags.map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        return tag ? tag.name : '';
+                    }).filter(name => name !== '');
+
+                    additionalData = {
+                        tags: tagNames,
+                        keywordSource: keywordSource,
+                        tagActionMode: tagActionMode
+                    };
+                    break;
                 case 'Image':
                     if (selectedImages.length === 0) {
                         toast.error('Please select at least one image');
@@ -282,19 +300,6 @@ function AIResponses() {
                     additionalData = { 
                         documentUrls: docUrls,
                         documentNames: selectedDocs.map(doc => doc.name)
-                    };
-                    break;
-                case 'Tag':
-                    if (selectedTags.length === 0) {
-                        toast.error('Please select at least one tag');
-                        return;
-                    }
-                    additionalData = {
-                        tags: selectedTags.map(tagId => {
-                            const tag = availableTags.find(t => t.id === tagId);
-                            return tag ? tag.name : '';
-                        }).filter(name => name !== ''),
-                        keywordSource: keywordSource
                     };
                     break;
                     case 'Assign':
@@ -474,16 +479,38 @@ function AIResponses() {
                 description: response.description,
                 status: response.status,
                 keyword: response.keywords[0],
-                keywordSource: keywordSource
+                keywordSource: keywordSource,
+                tagActionMode: tagActionMode
             };
 
             switch (responseType) {
                 case 'Tag':
                     if (selectedTags.length > 0) {
-                        updatedData.tags = selectedTags.map(tagId => {
-                            const tag = availableTags.find(t => t.id === tagId);
-                            return tag ? tag.name : '';
-                        }).filter(name => name !== '');
+                        const existingTags = (response as AITagResponse).tags || [];
+                        let updatedTags: string[];
+
+                        if (tagActionMode === 'add') {
+                            // Add new tags
+                            const newTags = selectedTags.map(tagId => {
+                                const tag = availableTags.find(t => t.id === tagId);
+                                return tag ? tag.name : '';
+                            }).filter(name => name !== '');
+                            updatedTags = [...new Set([...existingTags, ...newTags])];
+                        } else {
+                            // Remove selected tags
+                            const tagsToRemove = selectedTags.map(tagId => {
+                                const tag = availableTags.find(t => t.id === tagId);
+                                return tag ? tag.name : '';
+                            }).filter(name => name !== '');
+                            updatedTags = existingTags.filter(tag => !tagsToRemove.includes(tag));
+                        }
+
+                        if (updatedTags.length === 0) {
+                            toast.error('Cannot remove all tags. At least one tag must remain.');
+                            return;
+                        }
+
+                        updatedData.tags = updatedTags;
                     }
                     break;
                 case 'Image':
@@ -669,6 +696,8 @@ function AIResponses() {
                                     onTagSelection={handleTagSelection}
                                     keywordSource={keywordSource}
                                     onKeywordSourceChange={setKeywordSource}
+                                    tagActionMode={tagActionMode}
+                                    onTagActionModeChange={setTagActionMode}
                                 />
                             )}
                             {responseType === 'Image' && (
@@ -846,6 +875,8 @@ function AIResponses() {
                                                             onTagSelection={handleTagSelection}
                                                             keywordSource={keywordSource}
                                                             onKeywordSourceChange={setKeywordSource}
+                                                            tagActionMode={tagActionMode}
+                                                            onTagActionModeChange={setTagActionMode}
                                                         />
                                                     )}
                                                     {response.type === 'Image' && (

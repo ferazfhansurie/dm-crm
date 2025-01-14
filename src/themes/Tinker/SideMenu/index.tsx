@@ -252,7 +252,7 @@ function Main() {
                 </Link>
               </Menu.Button>
             <Menu.Button className="block w-8 h-8 overflow-hidden rounded-md bg-red-700 flex items-center justify-center text-white">
-              <Link to="/logins" onClick={handleSignOut}>
+              <Link to="/login" onClick={handleSignOut}>
                 <Lucide icon="LogOut" className="text-center justify-center w-4 h-4" />
               </Link>
             </Menu.Button>

@@ -22,6 +22,7 @@ function SettingsPage() {
   const [phoneCount, setPhoneCount] = useState(0);
   const [role, setRole] = useState<string>('');
   const [aiDelay, setAiDelay] = useState<number>(0);
+  const [aiAutoResponse, setAiAutoResponse] = useState(false);
 
   const firestore = getFirestore();
 
@@ -54,6 +55,7 @@ function SettingsPage() {
       setBaseUrl(companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app');
       setPhoneCount(companyData.phoneCount || 0);
       setAiDelay(companyData.aiDelay || 0);
+      setAiAutoResponse(companyData.aiAutoResponse || false);
 
       // Get reporting settings
       const settingsDoc = await getDoc(doc(firestore, `companies/${userCompanyId}/settings/reporting`));
@@ -120,6 +122,19 @@ function SettingsPage() {
     } catch (error) {
       console.error('Error saving AI delay:', error);
       alert('Failed to save AI delay setting');
+    }
+  };
+
+  const handleSaveAiSettings = async () => {
+    try {
+      await updateDoc(doc(firestore, 'companies', companyId!), {
+        aiDelay: aiDelay,
+        aiAutoResponse: aiAutoResponse
+      });
+      alert('AI settings saved successfully!');
+    } catch (error) {
+      console.error('Error saving AI settings:', error);
+      alert('Failed to save AI settings');
     }
   };
 
@@ -196,6 +211,18 @@ function SettingsPage() {
           
           <div className="space-y-6">
             <div>
+              <label className="flex items-center space-x-2 mb-4">
+                <input
+                  type="checkbox"
+                  checked={aiAutoResponse}
+                  onChange={(e) => setAiAutoResponse(e.target.checked)}
+                  className="form-checkbox"
+                />
+                <span>Enable AI Auto-Response for New Contacts</span>
+              </label>
+            </div>
+
+            <div>
               <label className="block mb-2">Response Delay (seconds)</label>
               <input
                 type="number"
@@ -213,10 +240,10 @@ function SettingsPage() {
             <div>
               <Button
                 variant="primary"
-                onClick={handleSaveAiDelay}
+                onClick={handleSaveAiSettings}
                 className="shadow-md"
               >
-                Save AI Delay
+                Save AI Settings
               </Button>
             </div>
           </div>

@@ -28,6 +28,10 @@ import { saveAs } from 'file-saver';
 import Papa from 'papaparse';
 import ReactPaginate from 'react-paginate';
 import { Tab } from '@headlessui/react';
+import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
+
+import type { DropResult } from '@hello-pangea/dnd';
+
 
 
 const firebaseConfig = {
@@ -179,6 +183,13 @@ function Main() {
     text: string;
     delayAfter: number;
   }
+
+  type ColumnConfig = {
+    id: string;
+    label: string;
+    sortKey?: string;
+  };
+
   const DatePickerComponent = DatePicker as any;
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
@@ -288,12 +299,13 @@ function Main() {
   const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
   const [sleepDuration, setSleepDuration] = useState(5);
   const [activeTimeStart, setActiveTimeStart] = useState('09:00');
-const [activeTimeEnd, setActiveTimeEnd] = useState('17:00');
-const [messages, setMessages] = useState<Message[]>([{ text: '', delayAfter: 0 }]);
-const [infiniteLoop, setInfiniteLoop] = useState(false);
+  const [activeTimeEnd, setActiveTimeEnd] = useState('17:00');
+  const [messages, setMessages] = useState<Message[]>([{ text: '', delayAfter: 0 }]);
+  const [infiniteLoop, setInfiniteLoop] = useState(false);
   const [showScheduledMessages, setShowScheduledMessages] = useState<boolean>(true);
   // First, add a state to track visible columns
   const [visibleColumns, setVisibleColumns] = useState<{ [key: string]: boolean }>({
+    checkbox: true,  // Make sure this is included and set to true
     contact: true,
     phone: true,
     tags: true,
@@ -305,6 +317,33 @@ const [infiniteLoop, setInfiniteLoop] = useState(false);
     }), {}) : {},
     actions: true,
   });
+
+  const [columnOrder, setColumnOrder] = useState<string[]>(() => {
+    const saved = localStorage.getItem('contactsColumnOrder');
+    return saved ? JSON.parse(saved) : [
+      'checkbox',
+      'contact',
+      'phone',
+      'tags',
+      'points',
+      'notes',
+      'actions',
+      ...Object.keys(visibleColumns)
+        .filter(key => key.startsWith('customField_'))
+    ];
+  });
+
+  // Add this handler function
+  const handleColumnReorder = (result: DropResult) => {
+    if (!result.destination) return;
+    
+    const newColumnOrder = Array.from(columnOrder);
+    const [reorderedItem] = newColumnOrder.splice(result.source.index, 1);
+    newColumnOrder.splice(result.destination.index, 0, reorderedItem);
+    
+    setColumnOrder(newColumnOrder);
+    localStorage.setItem('contactsColumnOrder', JSON.stringify(newColumnOrder));
+  };
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -2738,7 +2777,7 @@ const sendBlastMessage = async () => {
         end: activeTimeEnd
       },
       infiniteLoop,
-      numberOfBatches: 1,
+      numberOfBatches: 1
     };
 
     console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
@@ -2746,7 +2785,7 @@ const sendBlastMessage = async () => {
     // Make API call to schedule the messages
     const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
-    if (response.data.success || response.data.message === "Message scheduled successfully") {
+    if (response.data.success) {
       toast.success(`Blast messages scheduled successfully for ${selectedContacts.length} contacts.`);
       toast.info(`Messages will be sent at: ${scheduledMessageData.scheduledTime.toDate().toLocaleString()} (local time)`);
 
@@ -4803,149 +4842,158 @@ const getFilteredScheduledMessages = () => {
           <div className="overflow-x-auto">
           <div className="h-[calc(150vh-200px)] overflow-y-auto mb-4" ref={contactListRef}>
           <table className="w-full border-collapse hidden sm:table" style={{ minWidth: '1200px' }}>
-            <thead className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2">
-              <tr className="text-left">
-                <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
-                  <input
-                    type="checkbox"
-                    checked={currentContacts.length > 0 && currentContacts.every(contact => 
-                      selectedContacts.some(sc => sc.phone === contact.phone)
-                    )}
-                    onChange={() => handleSelectCurrentPage()}
-                    className="rounded border-gray-300"
-                  />
-                </th>
-                {visibleColumns.contact && (
-                  <th 
-                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('contactName')}
-                    onDoubleClick={resetSort}
+            <DragDropContext onDragEnd={handleColumnReorder}>
+              <Droppable droppableId="thead" direction="horizontal">
+                {(provided) => (
+                  <thead 
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className="sticky top-0 bg-white dark:bg-gray-700 z-10 py-2"
                   >
-                    <div className="flex items-center">
-                      Contact
-                      {sortField === 'contactName' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
-                    </div>
-                  </th>
+                    <tr className="text-left">
+                      {columnOrder.map((columnId, index) => {
+                        if (!visibleColumns[columnId.replace('customField_', '')]) return null;
+                        
+                        return (
+                          <Draggable key={columnId} draggableId={columnId} index={index}>
+                            {(provided) => (
+                              <th
+                                ref={provided.innerRef}
+                                {...provided.draggableProps}
+                                {...provided.dragHandleProps}
+                                className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-move hover:bg-gray-50 dark:hover:bg-gray-600"
+                              >
+                                {columnId === 'checkbox' && (
+                                  <input
+                                    type="checkbox"
+                                    checked={currentContacts.length > 0 && currentContacts.every(contact => 
+                                      selectedContacts.some(sc => sc.phone === contact.phone)
+                                    )}
+                                    onChange={() => handleSelectCurrentPage()}
+                                    className="rounded border-gray-300"
+                                  />
+                                )}
+                                {columnId === 'contact' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('contactName')}
+                                  >
+                                    Contact
+                                    {sortField === 'contactName' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {columnId === 'phone' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('phone')}
+                                  >
+                                    Phone
+                                    {sortField === 'phone' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {columnId === 'tags' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('tags')}
+                                  >
+                                    Tags
+                                    {sortField === 'tags' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {columnId === 'points' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('points')}
+                                  >
+                                    Points
+                                    {sortField === 'points' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {columnId === 'notes' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('notes')}
+                                  >
+                                    Notes
+                                    {sortField === 'notes' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                                {columnId === 'actions' && (
+                                  <div className="flex items-center">
+                                    Actions
+                                  </div>
+                                )}
+                                {columnId.startsWith('customField_') && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort(columnId)}
+                                  >
+                                    {columnId.replace('customField_', '')}
+                                    {sortField === columnId && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
+                              </th>
+                            )}
+                          </Draggable>
+                        );
+                      })}
+                      {provided.placeholder}
+                    </tr>
+                  </thead>
                 )}
-                {visibleColumns.phone && (
-                  <th 
-                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('phone')}
+              </Droppable>
+              <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
+                {getDisplayedContacts().map((contact, index) => (
+                  <tr 
+                    key={index}
+                    className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
+                      selectedContacts.some((c) => c.phone === contact.phone) ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                    }`}
                   >
-                    <div className="flex items-center">
-                      Phone
-                      {sortField === 'phone' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.tags && (
-                  <th 
-                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('tags')}
-                  >
-                    <div className="flex items-center">
-                      Tags
-                      {sortField === 'tags' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.points && (
-                  <th 
-                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('points')}
-                  >
-                    <div className="flex items-center">
-                      Points
-                      {sortField === 'points' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
-                    </div>
-                  </th>
-                )}
-                {visibleColumns.notes && (
-                  <th 
-                    className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                    onClick={() => handleSort('notes')}
-                  >
-                    <div className="flex items-center">
-                      Notes
-                      {sortField === 'notes' && (
-                        <Lucide 
-                          icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                          className="w-4 h-4 ml-1"
-                        />
-                      )}
-                    </div>
-                  </th>
-                )}
-                {Object.entries(visibleColumns)
-                  .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
-                  .map(([key]) => {
-                    const fieldName = key.replace('customField_', '');
-                    return (
-                      <th 
-                        key={key} 
-                        className="p-4 font-medium text-gray-700 dark:text-gray-300 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-600"
-                        onClick={() => handleSort(`customField_${fieldName}`)}
-                      >
-                        <div className="flex items-center">
-                          {fieldName}
-                          {sortField === `customField_${fieldName}` && (
-                            <Lucide 
-                              icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
-                              className="w-4 h-4 ml-1"
+                    {columnOrder.map(columnId => {
+                      if (!visibleColumns[columnId.replace('customField_', '')]) return null;
+
+                      return (
+                        <td key={`${contact.id}-${columnId}`} className="p-4">
+                          {columnId === 'checkbox' && (
+                            <input
+                              type="checkbox"
+                              checked={selectedContacts.some((c) => c.phone === contact.phone)}
+                              onChange={() => toggleContactSelection(contact)}
+                              className="rounded border-gray-300"
                             />
                           )}
-                        </div>
-                      </th>
-                    );
-                  })}
-                {visibleColumns.actions && (
-                  <th className="p-4 font-medium text-gray-700 dark:text-gray-300">
-                    Actions
-                  </th>
-                )}
-                  </tr>
-                </thead>
-                
-                <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
-                  {getDisplayedContacts().map((contact, index) => {
-                    const isSelected = selectedContacts.some((c) => c.phone === contact.phone);
-                    return (
-                      <tr 
-                        key={index}
-                        className={`hover:bg-gray-50 dark:hover:bg-gray-700 ${
-                          isSelected ? 'bg-blue-50 dark:bg-blue-900/20' : ''
-                        }`}
-                      >
-                        <td className="p-4">
-                          <input
-                            type="checkbox"
-                            checked={isSelected}
-                            onChange={() => toggleContactSelection(contact)}
-                            className="rounded border-gray-300"
-                          />
-                        </td>
-                        {visibleColumns.contact && (
-                          <td className="p-4">
+                          {columnId === 'contact' && (
                             <div className="flex items-center">
                               {contact.profilePicUrl ? (
                                 <img 
@@ -4966,15 +5014,13 @@ const getFilteredScheduledMessages = () => {
                                 {contact.contactName ? (contact.lastName ? `${contact.contactName} ${contact.lastName}` : contact.contactName) : contact.phone}
                               </span>
                             </div>
-                          </td>
-                        )}
-                        {visibleColumns.phone && (
-                          <td className="p-4 text-gray-600 dark:text-gray-400">
-                            {contact.phone ?? contact.source}
-                          </td>
-                        )}
-                        {visibleColumns.tags && (
-                          <td className="p-4">
+                          )}
+                          {columnId === 'phone' && (
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {contact.phone ?? contact.source}
+                            </span>
+                          )}
+                          {columnId === 'tags' && (
                             <div className="flex flex-wrap gap-2">
                               {contact.tags && contact.tags.length > 0 ? (
                                 contact.tags.map((tag, index) => (
@@ -4994,10 +5040,7 @@ const getFilteredScheduledMessages = () => {
                                       }}
                                     >
                                       <div className="w-4 h-4 bg-red-600 hover:bg-red-800 dark:bg-red-600 dark:hover:bg-red-800 rounded-full flex items-center justify-center">
-                                        <Lucide 
-                                          icon="X" 
-                                          className="w-3 h-3 text-white" 
-                                        />
+                                        <Lucide icon="X" className="w-3 h-3 text-white" />
                                       </div>
                                     </button>
                                   </div>
@@ -5006,30 +5049,18 @@ const getFilteredScheduledMessages = () => {
                                 <span className="text-sm text-gray-500 dark:text-gray-400">No tags</span>
                               )}
                             </div>
-                          </td>
-                        )}
-                        {visibleColumns.points && (
-                          <td className="p-4 text-gray-600 dark:text-gray-400">
-                            {contact.points || 0}
-                          </td>
-                        )}
-                        {visibleColumns.notes && (
-                          <td className="p-4 text-gray-600 dark:text-gray-400">
-                            {contact.notes || '-'}
-                          </td>
-                        )}
-                         {Object.entries(visibleColumns)
-                          .filter(([key, isVisible]) => key.startsWith('customField_') && isVisible)
-                          .map(([key]) => {
-                            const fieldName = key.replace('customField_', '');
-                            return (
-                              <td key={key} className="p-4 text-gray-600 dark:text-gray-400">
-                                {contact.customFields?.[fieldName] || '-'}
-                              </td>
-                            );
-                        })}
-                        {visibleColumns.actions && (
-                          <td className="p-4">
+                          )}
+                          {columnId === 'points' && (
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {contact.points || 0}
+                            </span>
+                          )}
+                          {columnId === 'notes' && (
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {contact.notes || '-'}
+                            </span>
+                          )}
+                          {columnId === 'actions' && (
                             <div className="flex space-x-2">
                               <button
                                 onClick={() => {
@@ -5059,13 +5090,20 @@ const getFilteredScheduledMessages = () => {
                                 <Lucide icon="Trash" className="w-5 h-5" />
                               </button>
                             </div>
-                          </td>
-                        )}
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
+                          )}
+                          {columnId.startsWith('customField_') && (
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {contact.customFields?.[columnId.replace('customField_', '')] || '-'}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                ))}
+              </tbody>
+            </DragDropContext>
+          </table>
                {/* Mobile Layout - Shown only on small screens */}
               <div className="sm:hidden">
                 {currentContacts.map((contact, index) => {

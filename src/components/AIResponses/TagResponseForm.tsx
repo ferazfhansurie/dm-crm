@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { FormLabel } from "@/components/Base/Form";
 import clsx from "clsx";
 import KeywordSourceSelector from './KeywordSourceSelector';
@@ -9,6 +9,8 @@ interface TagResponseFormProps {
     onTagSelection: (tagId: string) => void;
     keywordSource: 'user' | 'bot';
     onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    tagActionMode: 'add' | 'delete';
+    onTagActionModeChange: (mode: 'add' | 'delete') => void;
 }
 
 const TagResponseForm: React.FC<TagResponseFormProps> = ({ 
@@ -16,7 +18,9 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
     selectedTags, 
     onTagSelection,
     keywordSource,
-    onKeywordSourceChange 
+    onKeywordSourceChange,
+    tagActionMode,
+    onTagActionModeChange
 }) => {
     return (
         <div className="mb-4">
@@ -25,7 +29,33 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
                 onKeywordSourceChange={onKeywordSourceChange}
             />
 
-            <FormLabel className="dark:text-slate-200">Select Tags</FormLabel>
+            <div className="mb-4">
+                <FormLabel className="dark:text-slate-200">Tag Action</FormLabel>
+                <div className="flex space-x-4">
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="radio"
+                            className="form-radio"
+                            checked={tagActionMode === 'add'}
+                            onChange={() => onTagActionModeChange('add')}
+                        />
+                        <span className="ml-2 dark:text-slate-200">Add Tags</span>
+                    </label>
+                    <label className="flex items-center cursor-pointer">
+                        <input
+                            type="radio"
+                            className="form-radio"
+                            checked={tagActionMode === 'delete'}
+                            onChange={() => onTagActionModeChange('delete')}
+                        />
+                        <span className="ml-2 dark:text-slate-200">Remove Tags</span>
+                    </label>
+                </div>
+            </div>
+
+            <FormLabel className="dark:text-slate-200">
+                {tagActionMode === 'add' ? 'Select Tags to Add' : 'Select Tags to Remove'}
+            </FormLabel>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
                 {availableTags.map((tag) => (
                     <div 

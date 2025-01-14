@@ -41,8 +41,8 @@ function Main() {
   const [isVerificationSent, setIsVerificationSent] = useState(false);
   const [verificationStep, setVerificationStep] = useState(false);
   const [cooldown, setCooldown] = useState(0);
-  const navigate = useNavigate();
   const [selectedCountry, setSelectedCountry] = useState<CountryCode>('MY');
+  const navigate = useNavigate();
 
   useEffect(() => {
     let timer: NodeJS.Timeout;
@@ -59,6 +59,15 @@ function Main() {
   };
 
   const formatPhoneNumber = (number: string) => {
+    try {
+      const phoneNumber = parsePhoneNumber(number, selectedCountry);
+      return phoneNumber ? phoneNumber.format('E.164') : number;
+    } catch (error) {
+      // If parsing fails, return the original format with country code
+      const countryCode = getCountryCallingCode(selectedCountry);
+      const cleaned = number.replace(/[^\d]/g, '');
+      return `+${countryCode}${cleaned}`;
+    }
     try {
       const phoneNumber = parsePhoneNumber(number, selectedCountry);
       return phoneNumber ? phoneNumber.format('E.164') : number;

@@ -93,8 +93,12 @@ function Main() {
     quotaLeads: number;
     invoiceNumber: string | null;
     phone: number;
+    phone2?: number;
+    phone3?: number;
     imageUrl: string;
     weightage: number;
+    weightage2?: number;
+    weightage3?: number;
   }>({
     name: "",
     phoneNumber: "",
@@ -113,27 +117,52 @@ function Main() {
   });
 
   useEffect(() => {
-    if (contact) {
-      setUserData({
-        name: contact.name || "",
-        phoneNumber: contact.phoneNumber ? contact.phoneNumber.split('+6')[1] ?? "" : "",
-        email: contact.id || "",
-        password: "",
-        role: contact.role || "",
-        companyId: companyId || "",
-        group: contact.group || "",
-        employeeId: contact.employeeId || "",
-        notes: contact.notes || "",
-        quotaLeads: contact.quotaLeads || 0,
-        invoiceNumber: contact.invoiceNumber || null,
-        phone: contact.phone || -1,
-        imageUrl: contact.imageUrl || "",
-        weightage: contact.weightage || 0,
-      });
-      setCategories([contact.role]);
-    }
+    const fetchUserData = async () => {
+      if (contact && contact.id) {
+        try {
+          const userDocRef = doc(firestore, 'user', contact.id);
+          const userDocSnap = await getDoc(userDocRef);
+          
+          if (userDocSnap.exists()) {
+            const firebaseUserData = userDocSnap.data();
+            console.log("Firebase user data:", firebaseUserData);
+            
+            const userData = {
+              name: firebaseUserData.name || "",
+              phoneNumber: firebaseUserData.phoneNumber ? firebaseUserData.phoneNumber.split('+6')[1] ?? "" : "",
+              email: contact.id,
+              password: "",
+              role: firebaseUserData.role || "",
+              companyId: firebaseUserData.companyId || "",
+              group: firebaseUserData.group || "",
+              employeeId: firebaseUserData.employeeId || "",
+              notes: firebaseUserData.notes || "",
+              quotaLeads: firebaseUserData.quotaLeads || 0,
+              invoiceNumber: firebaseUserData.invoiceNumber || null,
+              phone: firebaseUserData.phone,
+              phone2: firebaseUserData.phone2,
+              phone3: firebaseUserData.phone3,
+              imageUrl: firebaseUserData.imageUrl || "",
+              weightage: firebaseUserData.weightage,
+              weightage2: firebaseUserData.weightage2,
+              weightage3: firebaseUserData.weightage3
+            };
+
+            console.log("Processed userData:", userData);
+            setUserData(userData);
+            setCategories([firebaseUserData.role]);
+          } else {
+            console.log("No user document found in Firebase");
+          }
+        } catch (error) {
+          console.error("Error fetching user data from Firebase:", error);
+        }
+      }
+    };
+
+    fetchUserData();
     fetchGroups();
-  }, [contact, companyId]);
+  }, [contact, companyId, firestore]);
 
   const fetchGroups = async () => {
     if (!companyId) {
@@ -276,7 +305,7 @@ function Main() {
 
   const saveUser = async () => {
     if (!validateForm()) {
-      toast.error("Please fill in all required fields");
+      // Don't return here, let the validation errors show in the form
       return;
     }
 
@@ -284,21 +313,37 @@ function Main() {
       setIsLoading(true);
       const userOri = auth.currentUser;
       if (!userOri || !userOri.email) {
-        throw new Error("No authenticated user found");
+        setErrorMessage("No authenticated user found. Please log in again.");
+        return;
       }
 
       // Check if the user is updating their own profile
       const isUpdatingSelf = userOri.email === userData.email;
 
       if (isUpdatingSelf && userData.password) {
-        // User is updating their own password
-        await updatePassword(userOri, userData.password);
-        toast.success("Password updated successfully");
+        try {
+          await updatePassword(userOri, userData.password);
+        } catch (error: any) {
+          // Handle specific Firebase password update errors
+          if (error.code === 'auth/requires-recent-login') {
+            setErrorMessage("For security reasons, please log out and log in again to change your password.");
+          } else {
+            setErrorMessage(`Password update failed: ${error.message}`);
+          }
+          setIsLoading(false);
+          return;
+        }
       }
 
       let imageUrl = userData.imageUrl;
       if (imageFile) {
-        imageUrl = await uploadImage() || "";
+        try {
+          imageUrl = await uploadImage() || "";
+        } catch (error: any) {
+          setErrorMessage(`Failed to upload image: ${error.message}`);
+          setIsLoading(false);
+          return;
+        }
       }
 
       // Continue with the rest of the user update logic
@@ -333,8 +378,18 @@ function Main() {
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
           phone: userData.phone || -1,
+          // Convert weightage values to numbers
+          ...(Object.keys(phoneNames).reduce((acc, index) => {
+            const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}` as keyof typeof userData;
+            const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}` as keyof typeof userData;
+            if (userData[phoneField] !== undefined) {
+              acc[phoneField] = userData[phoneField];
+              acc[weightageField] = Number(userData[weightageField]) || 0; // Convert to number
+            }
+            return acc;
+          }, {} as Record<string, any>)),
           imageUrl: imageUrl || "",
-          weightage: userData.weightage || 0,
+          weightage: Number(userData.weightage) || 0, // Convert main weightage to number
         };
 
         if (contactId) {
@@ -351,6 +406,18 @@ function Main() {
               'Content-Type': 'application/json'
             },
           });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            // Handle specific API error messages
+            if (errorData.error === 'auth/phone-number-already-exists') {
+              throw new Error('This phone number is already registered. Please use a different phone number.');
+            } else if (errorData.error.includes('phone-number')) {
+              throw new Error(`Phone number error: ${errorData.error}`);
+            }
+            throw new Error(errorData.error || `HTTP error! status: ${response.status}`);
+          }
+
           const responseData = await response.json();
           
           if (responseData.message === 'User created successfully') {
@@ -421,7 +488,7 @@ function Main() {
               throw new Error(`HTTP error! status: ${response.status}, message: ${errorText}`);
             }
           } else {
-            throw new Error(responseData.error);
+            throw new Error(responseData.error || 'Unknown error occurred while creating user');
           }
         }
       
@@ -432,9 +499,32 @@ function Main() {
       setErrorMessage('');
       setIsLoading(false);
       navigate('/users-layout-2');
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving user:", error);
-      setErrorMessage('An error occurred while saving the user');
+      // Enhanced error message handling
+      if (error.code === 'auth/email-already-in-use') {
+        setErrorMessage('This email is already registered. Please use a different email.');
+      } else if (error.code === 'auth/invalid-email') {
+        setErrorMessage('The email address is not valid.');
+      } else if (error.code === 'auth/weak-password') {
+        setErrorMessage('The password is too weak. Please use at least 6 characters.');
+      } else if (error.code === 'auth/phone-number-already-exists' || error.message.includes('phone number is already registered')) {
+        setErrorMessage('This phone number is already registered. Please use a different phone number.');
+      } else if (error.message.includes('Firebase')) {
+        setErrorMessage(`Authentication error: ${error.message.replace('Firebase: ', '')}`);
+      } else if (error.message.includes('Network')) {
+        setErrorMessage('Network error. Please check your internet connection.');
+      } else {
+        // Clean up the error message by removing any technical prefixes
+        const cleanErrorMessage = error.message
+          .replace('Error: ', '')
+          .replace('auth/', '')
+          .replace(/-/g, ' ')
+          .trim();
+        setErrorMessage(`Error: ${cleanErrorMessage}`);
+      }
+      setIsLoading(false);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -693,20 +783,7 @@ function Main() {
               disabled={isFieldDisabled("invoiceNumber")}
             />
           </div>
-          {currentUserRole === "1" && (
-            <div>
-              <FormLabel htmlFor="weightage">Weightage</FormLabel>
-              <FormInput
-                id="weightage"
-                name="weightage"
-                type="number"
-                value={userData.weightage}
-                onChange={(e) => setUserData(prev => ({ ...prev, weightage: parseInt(e.target.value) || 0 }))}
-                placeholder="Weightage"
-                min="0"
-              />
-            </div>
-          )}
+    
         </div>
         <div className="mt-4">
           <FormLabel htmlFor="notes">Notes</FormLabel>
@@ -720,7 +797,51 @@ function Main() {
             />
           </div>
         </div>
-        {errorMessage && <div className="text-red-500 mt-4">{errorMessage}</div>}
+        {currentUserRole === "1" && phoneOptions.length > 0 && (
+  <>
+    {Object.entries(phoneNames).map(([index, phoneName]) => {
+      // Map the field names correctly - first weightage has no number
+      const phoneField = index === '1' ? 'phone' : `phone${index}`;
+      const weightageField = index === '1' ? 'weightage' : `weightage${index}`;
+      
+      console.log('Index:', index, 'WeightageField:', weightageField); // Debug log
+      
+      // Get the correct weightage value based on the field name
+      const weightageValue = userData[weightageField as keyof typeof userData];
+      console.log('WeightageValue for', weightageField, ':', weightageValue); // Debug log
+      
+      return (
+        <div key={index} className="grid grid-cols-2 gap-4">
+          <div>
+            <FormLabel htmlFor={weightageField}>
+              Weightage for {phoneName}
+            </FormLabel>
+            <FormInput
+              id={weightageField}
+              name={weightageField}
+              type="number"
+              value={weightageValue ?? 0}
+              onChange={handleChange}
+              placeholder="Weightage"
+              min="0"
+            />
+            <input 
+              type="hidden" 
+              name={phoneField} 
+              value={index}
+            />
+          </div>
+        </div>
+      );
+    })}
+  </>
+)}
+        {errorMessage && (
+          <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mt-4" role="alert">
+            <strong className="font-bold">Error: </strong>
+            <span className="block sm:inline">{errorMessage}</span>
+          </div>
+        )}
         {successMessage && <div className="text-green-500 mt-4">{successMessage}</div>}
       </div>
       <div className="mt-4 flex justify-end">

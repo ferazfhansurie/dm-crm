@@ -236,6 +236,12 @@ interface EditMessagePopupProps {
   cancelEditMessage: () => void;
 }
 
+interface QRCodeData {
+  phoneIndex: number;
+  status: string;
+  qrCode: string | null;
+}
+
 const DatePickerComponent = DatePicker as any;
 
 const ReactMicComponent = ReactMic as any;
@@ -568,10 +574,55 @@ function Main() {
   const [videoCaption, setVideoCaption] = useState('');
   const [trialExpired, setTrialExpired] = useState(false);
   const [minDelay, setMinDelay] = useState(1);
-const [maxDelay, setMaxDelay] = useState(2);
-const [activateSleep, setActivateSleep] = useState(false);
-const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
-const [sleepDuration, setSleepDuration] = useState(5);
+  const [maxDelay, setMaxDelay] = useState(2);
+  const [activateSleep, setActivateSleep] = useState(false);
+  const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
+  const [sleepDuration, setSleepDuration] = useState(5);
+
+  const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
+
+  useEffect(() => {
+    const fetchPhoneStatuses = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+  
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+  
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        
+        if (!docSnapshot.exists()) return;
+  
+        const companyData = docSnapshot.data();
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        
+        const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`);
+  
+        if (botStatusResponse.status === 200) {
+          const qrCodesData = Array.isArray(botStatusResponse.data) 
+            ? botStatusResponse.data 
+            : [];
+          setQrCodes(qrCodesData);
+        }
+      } catch (error) {
+        console.error('Error fetching phone statuses:', error);
+      }
+    };
+  
+    fetchPhoneStatuses();
+    
+    // Set up an interval to refresh the status
+    const intervalId = setInterval(fetchPhoneStatuses, 30000); // Refresh every 30 seconds
+  
+    return () => clearInterval(intervalId);
+}, []);
+
   useEffect(() => {
     const checkTrialStatus = async () => {
       try {
@@ -6519,26 +6570,36 @@ console.log(prompt);
                   <Lucide icon="ChevronDown" className="w-4 h-4 text-gray-500" />
                 </Menu.Button>
               </div>
-           
-                <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5">
-                  <div className="py-1 max-h-60 overflow-y-auto" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
-                    {Object.entries(phoneNames).map(([index, phoneName]) => (
+              <Menu.Items className="absolute right-0 mt-2 w-56 rounded-md shadow-lg bg-white dark:bg-gray-800 ring-1 ring-black ring-opacity-5">
+                <div className="py-1 max-h-60 overflow-y-auto" role="menu" aria-orientation="vertical" aria-labelledby="options-menu">
+                  {Object.entries(phoneNames).map(([index, phoneName]) => {
+                    const phoneStatus = qrCodes[parseInt(index)]?.status;
+                    const isConnected = phoneStatus === 'ready' || phoneStatus === 'authenticated';
+                    
+                    return (
                       <Menu.Item key={index}>
                         {({ active }) => (
                           <button
                             onClick={() => handlePhoneChange(parseInt(index))}
                             className={`${
                               active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-200'
-                            } block w-full text-left px-4 py-2 text-sm`}
+                            } block w-full text-left px-4 py-2 text-sm flex items-center justify-between`}
                           >
-                            {phoneName}
+                            <span>{phoneName}</span>
+                            <span className={`text-xs px-2 py-1 rounded-full ${
+                              isConnected 
+                                ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
+                            }`}>
+                              {isConnected ? 'Connected' : 'Not Connected'}
+                            </span>
                           </button>
                         )}
                       </Menu.Item>
-                    ))}
-                  </div>
-                </Menu.Items>
-           
+                    );
+                  })}
+                </div>
+              </Menu.Items>
             </Menu>
           )}
   

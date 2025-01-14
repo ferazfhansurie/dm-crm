@@ -190,6 +190,12 @@ function Main() {
     sortKey?: string;
   };
 
+  interface QRCodeData {
+    phoneIndex: number;
+    status: string;
+    qrCode: string | null;
+  }
+
   const DatePickerComponent = DatePicker as any;
   
   const [deleteConfirmationModal, setDeleteConfirmationModal] = useState(false);
@@ -3796,6 +3802,56 @@ const parseCSV = async (): Promise<Array<any>> => {
     }
   });
 };
+
+// Add these to your existing state declarations
+const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
+
+// Add this helper function
+const getPhoneName = (phoneIndex: number) => {
+  if (companyId === '0123') {
+    return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru' : 'ShipGuru';
+  }
+  return `Phone ${phoneIndex + 1}`;
+};
+
+useEffect(() => {
+  const fetchPhoneStatuses = async () => {
+    try {
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      
+      if (!docSnapshot.exists()) {
+        throw new Error("Company document does not exist");
+      }
+
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      
+      const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
+        headers: companyId === '0123' 
+          ? {
+              'ngrok-skip-browser-warning': 'true',
+              'Accept': 'application/json',
+              'Content-Type': 'application/json'
+            }
+          : {}
+      });
+
+      if (botStatusResponse.status === 200) {
+        const qrCodesData = Array.isArray(botStatusResponse.data) 
+          ? botStatusResponse.data 
+          : [];
+        setQrCodes(qrCodesData);
+      }
+    } catch (error) {
+      console.error('Error fetching phone statuses:', error);
+    }
+  };
+
+  if (companyId) {
+    fetchPhoneStatuses();
+  }
+}, [companyId]);
   
 
   const filterRecipients = (chatIds: string[], search: string) => {
@@ -6027,12 +6083,37 @@ const getFilteredScheduledMessages = () => {
               className="mt-1 text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
             >
               <option value="">Select a phone</option>
-              {Object.entries(phoneNames).map(([index, phoneName]) => (
-                <option key={index} value={parseInt(index) - 1}>
-                  {phoneName}
-                </option>
-              ))}
+              {Object.entries(phoneNames).map(([index, phoneName]) => {
+                const phoneStatus = qrCodes[parseInt(index)]?.status;
+                const isConnected = phoneStatus === 'ready' || phoneStatus === 'authenticated';
+                
+                return (
+                  <option 
+                    key={index} 
+                    value={parseInt(index) - 1}
+                  >
+                    Phone {parseInt(index)}
+                  </option>
+                );
+              })}
             </select>
+            {phoneIndex !== null && phoneIndex >= 0 && (
+              <div className="mt-1">
+                <span 
+                  className={
+                    qrCodes[phoneIndex]?.status === 'ready' || qrCodes[phoneIndex]?.status === 'authenticated'
+                      ? 'text-green-600 text-sm'
+                      : 'text-red-600 text-sm'
+                  }
+                >
+                  Status: {
+                    qrCodes[phoneIndex]?.status === 'ready' || qrCodes[phoneIndex]?.status === 'authenticated'
+                      ? 'Connected'
+                      : 'Not Connected'
+                  }
+                </span>
+              </div>
+            )}
           </div>
 
           {/* Submit Button */}

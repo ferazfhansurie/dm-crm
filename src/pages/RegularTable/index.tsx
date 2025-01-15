@@ -133,7 +133,7 @@ function Main() {
     try {
       const url = `https://services.leadconnectorhq.com/users?locationId=${locationId}`;
       const response = await fetchData(url);
-      console.log(response)
+      
       setUsers(response.data.users);
     } catch (error) {
       console.error('Error fetching users:', error);
@@ -147,7 +147,7 @@ function Main() {
         const docUserRef = doc(firestore, 'user', user?.email!);
         const docUserSnapshot = await getDoc(docUserRef);
         if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
+          
           return;
         }
         const userData = docUserSnapshot.data();
@@ -158,7 +158,7 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document for company!');
+          
           return;
         }
         const companyData = docSnapshot.data();
@@ -183,13 +183,13 @@ function Main() {
 
   const handleSaveNewAppointment = async () => {
     try {
-      console.log(newAppointment);
+      
 
       const user = auth.currentUser;
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -197,7 +197,7 @@ function Main() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
@@ -225,7 +225,7 @@ function Main() {
       };
 
       const response = await axios.request(options);
-      console.log(response);
+      
       if (response.status === 201) {
         toast.success("Appointment added successfully!");
         setAddAppointmentModal(false);
@@ -255,7 +255,7 @@ function Main() {
         const docUserRef = doc(firestore, 'user', user?.email!);
         const docUserSnapshot = await getDoc(docUserRef);
         if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
+          
           return;
         }
         const userData = docUserSnapshot.data();
@@ -263,7 +263,7 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document for company!');
+          
           return;
         }
         const companyData = docSnapshot.data();
@@ -304,7 +304,7 @@ function Main() {
         const docUserRef = doc(firestore, 'user', user?.email!);
         const docUserSnapshot = await getDoc(docUserRef);
         if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
+          
           return;
         }
         const userData = docUserSnapshot.data();
@@ -312,7 +312,7 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document for company!');
+          
           return;
         }
         const companyData = docSnapshot.data();
@@ -376,7 +376,7 @@ function Main() {
   
         try {
           const response = await axios.request(options);
-          console.log(response.data);
+          
           return response;
         } catch (error: any) {
           if (error.response && error.response.status === 429 && retries < maxRetries) {

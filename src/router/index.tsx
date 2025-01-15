@@ -86,6 +86,7 @@ import Ticket from "../pages/Ticket";
 import PublicTaskForm from "../pages/PublicTaskForm";
 import Settings from "../pages/Settings";
 import ScheduledMessages from "../pages/ScheduledMessages";
+import AppointmentRequests from "../pages/AppointmentRequests";
 
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -129,6 +130,7 @@ function Router() {
         { path: "/client-ticket", element: <PublicTaskForm /> },
         {path: "/loading2", element: <LoadingIcon2 />},
         { path: "opportunities", element: <Opportunities /> },
+        { path: "appointment-requests", element: <AppointmentRequests /> },
         { path: "scheduled-messages", element: <ScheduledMessages /> },
         {
           path: "/database-manager",

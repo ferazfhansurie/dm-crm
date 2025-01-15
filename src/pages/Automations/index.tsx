@@ -37,7 +37,7 @@ const Automations: React.FC = () => {
         return folder;
       });
       // Note: This won't actually update the hardcoded folders
-      console.log('New workflow added:', updatedFolders);
+      
     }
   };
 

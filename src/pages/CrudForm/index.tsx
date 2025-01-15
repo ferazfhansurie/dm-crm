@@ -56,18 +56,18 @@ function Main() {
             const userData = userDocSnap.data();
             setCompanyId(userData.companyId);
             setCurrentUserRole(userData.role);
-            console.log("Fetched companyId:", userData.companyId);
+            
             
             // Fetch phoneIndex from company document
             fetchPhoneIndex(userData.companyId);
           } else {
-            console.log("No user document found");
+            
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
         }
       } else {
-        console.log("No user signed in");
+        
       }
     });
 
@@ -125,7 +125,7 @@ function Main() {
           
           if (userDocSnap.exists()) {
             const firebaseUserData = userDocSnap.data();
-            console.log("Firebase user data:", firebaseUserData);
+            
             
             const userData = {
               name: firebaseUserData.name || "",
@@ -148,11 +148,11 @@ function Main() {
               weightage3: firebaseUserData.weightage3
             };
 
-            console.log("Processed userData:", userData);
+            
             setUserData(userData);
             setCategories([firebaseUserData.role]);
           } else {
-            console.log("No user document found in Firebase");
+            
           }
         } catch (error) {
           console.error("Error fetching user data from Firebase:", error);
@@ -166,10 +166,10 @@ function Main() {
 
   const fetchGroups = async () => {
     if (!companyId) {
-      console.log("No companyId available");
+      
       return;
     }
-    console.log("Fetching groups for company:", companyId);
+    
     try {
       const employeeCollectionRef = collection(firestore, `companies/${companyId}/employee`);
       const employeeSnapshot = await getDocs(employeeCollectionRef);
@@ -181,7 +181,7 @@ function Main() {
         }
       });
       const groupsArray = Array.from(uniqueGroups);
-      console.log("Fetched groups:", groupsArray);
+      
       setGroups(groupsArray);
     } catch (error) {
       console.error("Error fetching groups:", error);
@@ -195,7 +195,7 @@ function Main() {
       if (companyDocSnap.exists()) {
         const companyData = companyDocSnap.data();
         const phoneCount = companyData.phoneCount || 0;
-        console.log('phoneCount for this company:', phoneCount);
+        
         
         // Generate phoneNames object
         const phoneNamesData: { [key: number]: string } = {};
@@ -205,7 +205,7 @@ function Main() {
             phoneNamesData[i] = phoneName;
           }
         }
-        console.log('Phone names:', phoneNamesData);
+        
         setPhoneNames(phoneNamesData);
         setPhoneOptions(Object.keys(phoneNamesData).map(Number));
       }
@@ -356,7 +356,7 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document!');
+          
           return;
         }
         const data2 = docSnapshot.data();
@@ -458,15 +458,14 @@ function Main() {
               formattedPhone = '6' + formattedPhone;
             }
             formattedPhone += '@c.us';
-            console.log('Formatted user chat_id:', formattedPhone);
+            
               url = `${baseUrl}/api/v2/messages/text/${companyId}/${formattedPhone}`;
               requestBody = { 
                 message,
                 phoneIndex: 0, // Include phoneIndex in the request body
               };
       
-            console.log('Sending request to:', url);
-            console.log('Request body:', JSON.stringify(requestBody));
+     
       
             console.log('Full request details:', {
               url,
@@ -804,11 +803,11 @@ function Main() {
       const phoneField = index === '1' ? 'phone' : `phone${index}`;
       const weightageField = index === '1' ? 'weightage' : `weightage${index}`;
       
-      console.log('Index:', index, 'WeightageField:', weightageField); // Debug log
+       // Debug log
       
       // Get the correct weightage value based on the field name
       const weightageValue = userData[weightageField as keyof typeof userData];
-      console.log('WeightageValue for', weightageField, ':', weightageValue); // Debug log
+       // Debug log
       
       return (
         <div key={index} className="grid grid-cols-2 gap-4">

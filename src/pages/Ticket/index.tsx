@@ -132,7 +132,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
   
@@ -172,7 +172,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -181,7 +181,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
@@ -226,7 +226,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -335,7 +335,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
     try {
          // Skip notification if task is completed
     if (task.status === 'completed') {
-        console.log('Task is completed, skipping notification');
+        
         return;
       }
   
@@ -364,7 +364,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
       const querySnapshot = await getDocs(q);
       
       if (querySnapshot.empty) {
-        console.log(`No employee found with email ${poc}`);
+        
         return;
       }
 
@@ -427,7 +427,7 @@ const [employeeStats, setEmployeeStats] = useState<{ [email: string]: EmployeeSt
         }
       }
 
-      console.log('Task notifications sent successfully');
+      
     } catch (error) {
       console.error('Error sending task notification:', error);
     }

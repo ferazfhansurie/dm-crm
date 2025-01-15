@@ -190,7 +190,7 @@ function LoadingPage() {
   
     const pipelineRef = collection(firestore, `user/${selectedEmployeeEmail}/pipeline/${selectedPipelineId}/leads`);
     for (const contact of selectedContacts) {
-      console.log(contact);
+      
       const leadData = {
         name: contact.contactName || '',
         source: contact.phone || '',
@@ -290,14 +290,14 @@ function LoadingPage() {
     if (!user) return;
 
     const itemDocRef = doc(firestore, `user/${selectedEmployeeEmail}/pipeline/${pipelineId}/leads/${updatedItem.id}`);
-    console.log(itemDocRef);
+    
    
     // Convert updatedItem to a plain object and ensure notes is included
     const updatedItemData = {
       ...updatedItem,
       notes: updatedItem.notes || ''
     };
-    console.log(updatedItemData);
+    
     try {
       // Set the document, which will create or update the item
       await setDoc(itemDocRef, updatedItemData);
@@ -320,7 +320,7 @@ function LoadingPage() {
     }
   };
   const filterItemsWithIndexes = (items: Item[], query: string) => {
-console.log(items);
+
     if (!query) return items.map((item, index) => ({ item, originalIndex: index }));
     const formattedQuery = query.replace(/[-\s]/g, '').toLowerCase(); // Remove hyphens and spaces from query and convert to lowercase
     return items
@@ -338,7 +338,7 @@ console.log(items);
     setLoading(true);
     const user = auth.currentUser;
     if (!user) {
-      console.log('No user is logged in!');
+      
       return;
     }
 
@@ -346,7 +346,7 @@ console.log(items);
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -433,11 +433,11 @@ console.log(items);
 
       setColumns(sortedColumns);
       setUserRole(userData.role); // Set the user's role in state
-      console.log(userData.role);
-      console.log(contacts);
+      
+      
       // Import contacts and filter out groups
       const filteredContacts = Array.isArray(contacts) ? contacts.filter(contact => contact.chat_id && !contact.chat_id.includes('@g.us')) : [];
-      console.log(filteredContacts);
+      
       // Check which contacts are already in the pipelines
       const pipelineContacts = new Set();
       for (const column of Object.values(fetchedColumns)) {
@@ -464,13 +464,13 @@ console.log(items);
   const fetchUserData2 = async (email: string, contacts: any[]) => {
     setLoading(true);
     if (!email) {
-      console.log('No email provided!');
+      
       setLoading(false);
       return;
     }
 
     try {
-      console.log(`Fetching data for user: ${email}`);
+      
       const docUserRef = doc(firestore, 'user', email);
       const docUserSnapshot = await getDoc(docUserRef);
       
@@ -481,7 +481,7 @@ console.log(items);
       }
 
       const userData = docUserSnapshot.data();
-      console.log('User data:', userData);
+      
       const companyId = userData.companyId;
 
       if (!companyId) {
@@ -567,7 +567,7 @@ console.log(items);
         acc[column.id] = column;
         return acc;
       }, {} as Columns);
-console.log(sortedColumns);
+
       setColumns(sortedColumns);
       setLoading(false);
     } catch (error) {
@@ -583,7 +583,7 @@ console.log(sortedColumns);
     const user = auth.currentUser;
     if (user) {
       setSelectedEmployeeEmail(user.email);
-      console.log("Contacts:", contacts); // Add this line to log contacts
+       // Add this line to log contacts
       fetchUserData(contacts);
     }
   }, [contacts]);
@@ -711,7 +711,7 @@ console.log(sortedColumns);
         isCalled: newItem.isCalled,
         callCount: newItem.callCount
       });
-      console.log('Document successfully updated:', newItem);
+      
   
       setColumns(prevColumns => {
         const updatedColumns = { ...prevColumns };

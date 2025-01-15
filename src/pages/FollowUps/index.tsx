@@ -734,7 +734,7 @@ const FollowUpsPage: React.FC = () => {
             );
             
             // Log the data being saved for debugging
-            console.log('Saving message data:', messageData);
+            
             
             await addDoc(messagesRef, messageData);
             
@@ -1488,7 +1488,7 @@ const FollowUpsPage: React.FC = () => {
                                             className="mr-2"
                                             checked={newMessage.specificNumbers.enabled}
                                             onChange={(e) => {
-                                                console.log('Checkbox changed:', e.target.checked);
+                                                
                                                 setNewMessage({
                                                     ...newMessage,
                                                     specificNumbers: {
@@ -1514,9 +1514,9 @@ const FollowUpsPage: React.FC = () => {
                                                 <Button
                                                     onClick={() => {
                                                         if (newNumber.trim()) {
-                                                            console.log('Current numbers:', newMessage.specificNumbers.numbers);
+                                                            
                                                             const updatedNumbers = [...newMessage.specificNumbers.numbers, newNumber.trim()];
-                                                            console.log('Updated numbers:', updatedNumbers);
+                                                            
                                                             
                                                             setNewMessage({
                                                                 ...newMessage,

@@ -76,7 +76,7 @@ function Main() {
         collectionRef = collection(firestore, collectionName);
       }
 
-      console.log('Fetching from path:', collectionRef.path);
+      
 
       const snapshot = await getDocs(collectionRef);
       const docs = snapshot.docs.map(doc => {
@@ -90,7 +90,7 @@ function Main() {
         };
       });
 
-      console.log('Fetched documents:', docs);
+      
 
       const allColumns = new Set<string>();
       allColumns.add('id');

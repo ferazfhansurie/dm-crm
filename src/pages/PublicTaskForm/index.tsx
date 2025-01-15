@@ -47,7 +47,7 @@ const sendTaskNotification = async (poc: string, task: TaskSubmission, isNew: bo
     const docUserRef = doc(firestore, 'user', user.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document for user!');
+      
       return;
     }
 
@@ -68,7 +68,7 @@ const sendTaskNotification = async (poc: string, task: TaskSubmission, isNew: bo
     const querySnapshot = await getDocs(q);
     
     if (querySnapshot.empty) {
-      console.log(`No employee found with email ${poc}`);
+      
       return;
     }
 
@@ -115,7 +115,7 @@ const sendTaskNotification = async (poc: string, task: TaskSubmission, isNew: bo
       }
     }
 
-    console.log('Issue notifications sent successfully');
+    
   } catch (error) {
     console.error('Error sending notification:', error);
   }

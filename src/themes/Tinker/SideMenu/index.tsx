@@ -41,7 +41,7 @@ function Main() {
   const handleSignOut = () => {
     signOut(auth)
       .then(() => {
-        console.log("Sign-out successful.");
+        
         localStorage.removeItem('contacts'); // Clear contacts from localStorage
         sessionStorage.removeItem('contactsFetched'); // Clear the session marker
   

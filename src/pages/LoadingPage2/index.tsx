@@ -107,7 +107,7 @@ function LoadingPage2() {
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -119,7 +119,7 @@ function LoadingPage2() {
       setV2(v2);
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Only proceed with QR code and bot status if v2 exists
-      console.log(`${baseUrl}/api/bot-status/${companyId}`,);
+      
       const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
         headers: companyId === '0123' 
         ? {
@@ -132,7 +132,7 @@ function LoadingPage2() {
           }
       });
 
-      console.log(botStatusResponse.data);
+      
       if (botStatusResponse.status !== 200) {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
@@ -173,10 +173,22 @@ function LoadingPage2() {
       console.error("Error fetching QR code:", error);
     }
   };
-
-  const handleRefresh = () => {
-    fetchQRCode();
-    console.log(currentQrIndex);
+  const getPhoneName = (phoneIndex: number) => {
+    if (companyId === '0123') {
+      return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru':'ShipGuru';
+    }
+    return phoneIndex;
+  };
+  const handleRefresh = async () => {
+    // Reset states
+    setQrCodeImage(null);
+    setCurrentQrIndex(null);
+    setBotStatus(null);
+    setError(null);
+    
+    
+    // Fetch new QR code
+    await fetchQRCode();
   };
 
   useEffect(() => {
@@ -211,21 +223,21 @@ function LoadingPage2() {
         const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
         // Remove 'https://' from baseUrl when creating WebSocket connection
         const wsBaseUrl = baseUrl.replace('https://', '');
-        console.log(wsBaseUrl);
+        
         ws.current = new WebSocket(`wss://${wsBaseUrl}/ws/${user?.email}/${companyId}`);
         
         ws.current.onopen = () => {
-          console.log('WebSocket connected');
+          
           setWsConnected(true);
         };
         
         
         ws.current.onmessage = async (event) => {
           const data = JSON.parse(event.data);
-       
+          
 
           if (data.type === 'auth_status') {
-            console.log(`Bot status: ${data.status}`);
+            
             setBotStatus(data.status);
             if (data.status === 'qr') {
               console.log(`Received QR for bot ${data.botName} at index ${data.phoneIndex}`);
@@ -260,7 +272,7 @@ function LoadingPage2() {
         };
         
         ws.current.onclose = () => {
-          console.log('WebSocket disconnected');
+          
           setWsConnected(false);
         };
       }
@@ -273,22 +285,22 @@ function LoadingPage2() {
   useEffect(() => {
     return () => {
       if (ws.current && processingComplete && !isLoading && contacts.length > 0) {
-        console.log('Closing WebSocket connection');
+        
         ws.current.close();
       }
     };
   }, [processingComplete, isLoading, contacts]);
 
   useEffect(() => {
-    console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
+    
     if (shouldFetchContacts && !isLoading) {
-      console.log("Conditions met, calling fetchContacts");
+      
       fetchContacts();
     }
   }, [shouldFetchContacts, isLoading]);
 
   useEffect(() => {
-    console.log("Contact state changed. contactsFetched:", contactsFetched, "fetchedChats:", fetchedChats, "totalChats:", totalChats, "contacts length:", contacts.length);
+    
  
   }, [contactsFetched, fetchedChats, totalChats, contacts, navigate]);
 
@@ -419,9 +431,9 @@ function LoadingPage2() {
   };
 
   useEffect(() => {
-    console.log('Current bot status:', botStatus);
-    console.log('Is processing chats:', isProcessingChats);
-    console.log('Processing progress:', fetchedChats, totalChats);
+    
+    
+    
   }, [botStatus, isProcessingChats, fetchedChats, totalChats]);
 
   useEffect(() => {
@@ -456,7 +468,7 @@ function LoadingPage2() {
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       setCompanyId(companyId); // Store companyId in state
-      console.log(companyId);
+      
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
@@ -487,8 +499,10 @@ function LoadingPage2() {
       setIsPairingCodeLoading(false);
     }
   };
-
-  const unscannedPhones = qrCodes.filter(qr => qr.status !== 'ready');
+  
+  const unscannedPhones = Array.isArray(qrCodes) 
+    ? qrCodes.filter(qr => qr.status !== 'ready')
+    : [];
 
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 p-4">

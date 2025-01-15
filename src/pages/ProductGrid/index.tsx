@@ -140,8 +140,8 @@ const [submittedOrders, setSubmittedOrders] = useState<Order[]>([]);
         }
       });
   
-      console.log("Fetched Draft Orders:", draftList);
-      console.log("Fetched Submitted Orders:", submittedList);
+      
+      
   
       const applyFilters = (orders: Order[]) => {
         return orders.filter(order => {

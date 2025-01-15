@@ -122,11 +122,11 @@ function Main() {
     const auth = getAuth(app);
     const user = auth.currentUser;
     if (user) {
-      console.log("Current user:", user.email);
+      
       setCurrentUserEmail(user.email);
       fetchEmployees();
     } else {
-      console.log("No user is signed in.");
+      
     }
   }, []);
 
@@ -186,8 +186,8 @@ function Main() {
               }
               
               setPhoneNames(newPhoneNames);
-              console.log('Matched bot:', matchingBot);
-              console.log('Set phone names:', newPhoneNames);
+              
+              
               
             } catch (error) {
               console.error('Error fetching bot data:', error);
@@ -222,7 +222,7 @@ function Main() {
       const dataUser = docUserSnapshot.data();
       companyId = dataUser.companyId;
       setRole(dataUser.role);
-      console.log("User role:", dataUser.role);
+      
 
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -282,14 +282,14 @@ function Main() {
         } as Employee);
       });
 
-      console.log("All employees:", employeeListData);
-      console.log("Current user email:", user?.email);
+      
+      
 
       const filteredEmployeeList = dataUser.role === "3"
         ? employeeListData.filter(employee => employee.email === user?.email)
         : employeeListData;
       
-      console.log("Filtered employees:", filteredEmployeeList);
+      
       setEmployeeList(filteredEmployeeList);
       setGroups(Array.from(groupSet));
       
@@ -326,7 +326,7 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
     const docUserRef = doc(firestore, 'user', user?.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const dataUser = docUserSnapshot.data();
@@ -334,7 +334,7 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const data2 = docSnapshot.data();
@@ -347,18 +347,18 @@ const handleDeleteEmployee = async (employeeId: string, companyId: any) => {
       throw new Error('Employee email not found');
     }
 
-    console.log('Attempting to delete employee:', { employeeId, employeeEmail, companyId });
+    
 
     // Delete from Firestore
     await deleteDoc(employeeRef);
-    console.log('Successfully deleted from Firestore');
+    
     
     // Delete from Firebase Auth via your API endpoint
-    console.log('Sending delete request to API for email:', employeeEmail);
+    
     const response = await axios.delete(`${baseUrl}/api/auth/user`, {
       data: { email: employeeEmail }
     });
-    console.log('API Response:', response.data);
+    
     
     if (response.status !== 200) {
       throw new Error('Failed to delete user from authentication');

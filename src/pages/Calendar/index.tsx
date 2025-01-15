@@ -19,6 +19,7 @@ import { title } from "process";
 import CreatableSelect from 'react-select/creatable';
 import React from "react";
 import { toast } from 'react-toastify';
+import { useNavigate } from 'react-router-dom';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -187,7 +188,7 @@ function Main() {
   const [viewType, setViewType] = useState('calendar'); // 'calendar' or 'grid'
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [employeeExpenses, setEmployeeExpenses] = useState<Record<string, { minyak: number; toll: number }>>({});
-
+  const navigate = useNavigate();
   class ErrorBoundary extends Component<{ children: ReactNode; onError: (error: Error) => void }> {
     componentDidCatch(error: Error, errorInfo: ErrorInfo) {
       this.props.onError(error);
@@ -226,12 +227,12 @@ function Main() {
   }, []);
   
   const fetchTags = async () => {
-    console.log('Fetching tags for company:', companyId);
+    
     if (companyId) {
       const tagsCollectionRef = collection(firestore, `companies/${companyId}/tags`);
       const querySnapshot = await getDocs(tagsCollectionRef);
       const tags = querySnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
-      console.log('Fetched tags:', tags);
+      
       setAppointmentTags(tags);
     }
   };
@@ -322,7 +323,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -331,7 +332,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
@@ -363,8 +364,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
 
   const fetchAppointments = async (selectedUserId: string) => {
     setLoading(true);
-    console.log('fetcing appointments');
-    console.log(selectedUserId);
+    
+    
     try {
       const userRef = doc(firestore, 'user', selectedUserId);
       const userSnapshot = await getDoc(userRef);
@@ -379,19 +380,19 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       let appointmentsQuery;
       if (selectedEmployeeId) {
         // If an employee is selected, fetch only their appointments
-        console.log('Fetching appointments for employee:', selectedEmployeeId);
+        
         appointmentsQuery = query(
           collection(firestore, `user/${selectedUserId}/appointments`)
         );
       } else {
         // If no employee is selected, fetch all appointments
-        console.log('Fetching all appointments');
+        
         appointmentsQuery = collection(firestore, `user/${selectedUserId}/appointments`);
       }
       
       const querySnapshot = await getDocs(appointmentsQuery);
-      console.log('Number of appointments found:', querySnapshot.size);
-      console.log('Query path:', appointmentsQuery);
+      
+      
       const allAppointments = querySnapshot.docs.map(doc => {
         const data = doc.data();
         console.log('Appointment data:', {
@@ -439,7 +440,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   const handleEmployeeChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const employeeId = event.target.value;
     setSelectedEmployeeId(employeeId);
-    console.log(employeeId);
+    
     fetchAppointments(employeeId);
   };
 
@@ -451,7 +452,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
   
@@ -531,7 +532,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -582,8 +583,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     const eventDetails = appointment.details || '';
     const eventMeetLink = appointment.meetLink || '';
   
-    console.log('Event info:', info);
-    console.log('Event contacts:', eventContacts);
+    
+    
   
     // Fetch the contact sessions if not already fetched
     const fetchContactSessions = async () => {
@@ -611,13 +612,13 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         if (contactSnapshot.exists()) {
           const contactData = contactSnapshot.data();
           newContactSessions[contact.id] = contactData.session;
-          console.log(`Fetched session for contact ${contact.id}: ${contactData.session}`);
+          
         }
       }));
   
       setContactSessions((prevSessions) => {
         const updatedSessions = { ...prevSessions, ...newContactSessions };
-        console.log('Updated contact sessions:', updatedSessions);
+        
         return updatedSessions;
       });
     };
@@ -629,7 +630,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     const fullContacts: ContactWithSession[] = eventContacts.map((contact: { id: string }) => {
       const foundContact = contacts.find(c => c.id === contact.id);
       if (foundContact) {
-        console.log(`Mapping contact ${contact.id} with session ${contactSessions[contact.id] || 0}`);
+        
         return {
           ...foundContact,
           session: contactSessions[contact.id] || 0
@@ -638,10 +639,10 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return null;
     }).filter((contact): contact is ContactWithSession => contact !== null);
   
-    console.log('Full contacts after mapping:', fullContacts);
+    
   
     setSelectedContacts(fullContacts);
-    console.log('Selected contacts:', fullContacts);
+    
   
     setCurrentEvent({
       id: appointment.id,
@@ -710,7 +711,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -718,7 +719,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -753,7 +754,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           }
   
           const result = await response.json();
-          console.log(`WhatsApp notification sent to contact ${contact.id}:`, result);
+          
           return result;
         } catch (error) {
           console.error(`Failed to send WhatsApp notification to contact ${contact.id}:`, error);
@@ -935,7 +936,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         ]);
         
         toast.success(`Successfully scheduled ${reminderType} reminder`);
-        console.log(`Scheduled ${reminderType} reminder for appointment ${appointment.id}`);
+        
       }
 
     } catch (error) {
@@ -1245,11 +1246,11 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   const handleEventDrop = async (eventDropInfo: any) => {
     const { event } = eventDropInfo;
   
-    console.log('Event Drop Info:', eventDropInfo);
-    console.log('Event:', event);
-    console.log('Event Start:', event.start);
-    console.log('Event End:', event.end);
-    console.log('Event Extended Props:', event.extendedProps);
+    
+    
+    
+    
+    
   
     // Fetch the full appointment data to get the contacts array
     try {
@@ -1277,7 +1278,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         endTime: event.end.toISOString()
       };
   
-      console.log('Updated Appointment:', updatedAppointment);
+      
   
       await setDoc(appointmentRef, updatedAppointment);
   
@@ -1333,13 +1334,13 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         if (contactSnapshot.exists()) {
           const contactData = contactSnapshot.data();
           newContactSessions[contact.id] = contactData.session;
-          console.log(`Fetched session for contact ${contact.id}: ${contactData.session}`);
+          
         }
       }));
   
       setContactSessions((prevSessions) => {
         const updatedSessions = { ...prevSessions, ...newContactSessions };
-        console.log('Updated contact sessions:', updatedSessions);
+        
         return updatedSessions;
       });
     };
@@ -1351,7 +1352,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     const fullContacts: ContactWithSession[] = appointment.contacts.map(contact => {
       const foundContact = contacts.find(c => c.id === contact.id);
       if (foundContact) {
-        console.log(`Mapping contact ${contact.id} with session ${contactSessions[contact.id] || 0}`);
+        
         return {
           ...foundContact,
           session: contactSessions[contact.id] || 0
@@ -1360,10 +1361,10 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return null;
     }).filter((contact): contact is ContactWithSession => contact !== null);
   
-    console.log('Full contacts after mapping:', fullContacts);
+    
   
     setSelectedContacts(fullContacts);
-    console.log('Selected contacts:', fullContacts);
+    
   
     setCurrentEvent({
       id: appointment.id,
@@ -1654,10 +1655,10 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   
       const contactData = contactSnapshot.data();
       const currentSessionCount = contactData.session;
-      console.log(currentSessionCount);
+      
       // Increment the session count
       const newSessionCount = currentSessionCount < getPackageSessions ? currentSessionCount + getPackageSessions : 0;
-      console.log(newSessionCount);
+      
       // Update the session count in the state
       setContactSessions({
         ...contactSessions,
@@ -1685,7 +1686,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -1715,7 +1716,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -1748,7 +1749,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         const docUserRef = doc(firestore, 'user', user.email!);
         const docUserSnapshot = await getDoc(docUserRef);
         if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
+          
           return;
         }
   
@@ -1993,7 +1994,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
 
   // Add this logging function to help debug
   const debugLog = (message: string, data?: any) => {
-    console.log(`Calendar Config - ${message}:`, data);
+    
   };
 
   // Update the validation function to be more permissive and add logging
@@ -2209,8 +2210,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     const gridRef = useRef<HTMLDivElement>(null);
     
     // Debug logs
-    console.log('Selected date:', format(selectedDate, 'yyyy-MM-dd'));
-    console.log('All appointments:', appointments);
+
     
     // Convert UTC to local time for comparison
     const selectedDateAppointments = appointments.filter(apt => {
@@ -2229,7 +2229,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return aptDateStr === selectedDateStr;
     });
   
-    console.log('Filtered appointments:', selectedDateAppointments);
+    
   
     const formatAppointmentTime = (isoString: string) => {
       const date = new Date(isoString);
@@ -2239,7 +2239,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
     // Helper function to find employee by email
     const findEmployeeByEmail = (email: string) => {
       const employee = employees.find(emp => emp.id === email);
-      console.log('Finding employee for email:', email, 'Found:', employee);
+      
       return employee;
     };
   
@@ -2291,7 +2291,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             if (employee && hour) {
               // Assuming handleEmptySlotClick is a function that needs to be defined
               const handleEmptySlotClick = () => {
-                console.log('Empty slot clicked');
+                
               };
               handleEmptySlotClick();
             }
@@ -2358,7 +2358,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             onClick={() => {
               const newDate = new Date(selectedDate);
               newDate.setDate(newDate.getDate() - 1);
-              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+              
               setSelectedDate(newDate);
             }}
           >
@@ -2370,7 +2370,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             value={format(selectedDate, 'yyyy-MM-dd')}
             onChange={(e) => {
               const newDate = new Date(e.target.value);
-              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+          
               setSelectedDate(newDate);
             }}
             className="px-3 py-2 text-sm font-medium border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
@@ -2381,7 +2381,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             onClick={() => {
               const newDate = new Date(selectedDate);
               newDate.setDate(newDate.getDate() + 1);
-              console.log('Setting date to:', format(newDate, 'yyyy-MM-dd'));
+        
               setSelectedDate(newDate);
             }}
           >
@@ -2392,7 +2392,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             className="px-3 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 dark:bg-gray-600 dark:text-white dark:hover:bg-gray-500"
             onClick={() => {
               const newDate = new Date();
-              console.log('Setting date to today:', format(newDate, 'yyyy-MM-dd'));
+           
               setSelectedDate(newDate);
             }}
           >
@@ -2652,6 +2652,16 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           >
             <Lucide icon={viewType === 'calendar' ? 'TableProperties' : 'Calendar'} className="w-4 h-4 mr-2 inline-block" />
             {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
+          </button>
+        </div>
+             {/* Add new Appointment Requests button */}
+             <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
+          <button
+            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+            onClick={() => navigate('/appointment-requests')}
+          >
+            <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
+            Appointment Requests
           </button>
         </div>
         {/* Employee selection dropdown */}

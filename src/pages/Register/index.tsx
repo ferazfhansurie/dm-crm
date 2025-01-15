@@ -102,7 +102,7 @@ function Main() {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -110,7 +110,7 @@ function Main() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -213,7 +213,7 @@ function Main() {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -221,14 +221,14 @@ function Main() {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const response2 = await axios.post(`${baseUrl}/api/channel/create/${newCompanyId}`);
 
-      console.log(response2);
+      
 
       // Sign in the user after successful registration
       navigate('/loading');

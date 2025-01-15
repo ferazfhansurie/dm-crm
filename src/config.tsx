@@ -73,9 +73,9 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser?.companyId;
         const role = dataUser?.role; // Get the user role
-        console.log(dataUser);
-        console.log(companyId);
-        console.log('test')
+        
+        
+        
         setUserRole(role); // Set the user role
 
         if (!companyId) {

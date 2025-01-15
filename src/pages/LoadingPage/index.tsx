@@ -122,7 +122,7 @@ function LoadingPage() {
 
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      console.log('baseUrl: '+baseUrl);
+      
       if (companyData.trialEndDate) {
         const trialEnd = companyData.trialEndDate.toDate();
         const now = new Date();
@@ -167,27 +167,27 @@ function LoadingPage() {
         }
       );
 
-      console.log(botStatusResponse.data);
+      
       if (botStatusResponse.status !== 200) {
         throw new Error(`Unexpected response status: ${botStatusResponse.status}`);
       }
       let phoneCount = companyData.phoneCount ?? null;
-      console.log('Phone count:', phoneCount);
+      
       
       if (phoneCount === null || phoneCount === 1) {
         const { status, qrCode } = botStatusResponse.data;
-        console.log('Single bot status response:', botStatusResponse.data);
+        
         setBotStatus(status);
         if (status === 'qr') {
           setQrCodeImage(qrCode);
         } else if (status === 'authenticated' || status === 'ready') {
-          console.log('Single bot is authenticated/ready, navigating to chat');
+          
           setShouldFetchContacts(true);
           navigate('/chat');
           return;
         }
       } else {
-        console.log("Multiple phones configuration:", botStatusResponse.data);
+        
         // Check if response is an array
         const statusArray = Array.isArray(botStatusResponse.data) 
           ? botStatusResponse.data 
@@ -197,26 +197,26 @@ function LoadingPage() {
       phone.status === 'authenticated' || phone.status === 'ready'
     );
     if (anyPhoneReady) {
-      console.log('At least one phone is authenticated/ready, navigating to chat');
+      
       setShouldFetchContacts(true);
       navigate('/chat');
       return;
     }
         // Only check the first phone's status
         const firstPhone = statusArray[0];
-        console.log('Checking first phone status:', firstPhone.status);
+        
         
         if (firstPhone.status === 'authenticated' || firstPhone.status === 'ready') {
-          console.log('First phone is authenticated/ready, navigating to chat');
+          
           setShouldFetchContacts(true);
           navigate('/chat');
           return;
         } else if (firstPhone.status === 'qr' && firstPhone.qrCode) {
-          console.log('Setting QR code for first phone');
+          
           setBotStatus('qr');
           setQrCodeImage(firstPhone.qrCode);
         } else {
-          console.log('First phone is in a different state:', firstPhone.status);
+          
           setBotStatus(firstPhone.status);
         }
       }
@@ -272,8 +272,8 @@ function LoadingPage() {
           
           if (!docUserSnapshot.exists()) {
             if (retries > 0) {
-              console.log(`User document not found. Retrying... (${retries} attempts left)`);
-              setTimeout(() => initWebSocket(retries - 1), 2000);
+            
+              setTimeout(() => initWebSocket(retries - 1), 2000); // Retry after 2 seconds
               return;
             } else {
               throw new Error("User document does not exist after retries");
@@ -296,23 +296,23 @@ function LoadingPage() {
           
           ws.current = new WebSocket(`${wsUrl}/ws/${user?.email}/${companyId}`);
           ws.current.onopen = () => {
-            console.log('WebSocket connected');
+            
             setWsConnected(true);
             setError('')
           };
           
           ws.current.onmessage = async (event) => {
             const data = JSON.parse(event.data);
-        
+            
       
             if (data.type === 'auth_status') {
-              console.log(`Bot status update: ${data.status}`);
+              
               setBotStatus(data.status);
               
               if (data.status === 'qr') {
                 setQrCodeImage(data.qrCode);
               } else if (data.status === 'authenticated' || data.status === 'ready') {
-                console.log('Bot authenticated/ready via WebSocket, navigating to chat');
+                
                 setShouldFetchContacts(true);
                 navigate('/chat');
                 return;
@@ -338,7 +338,7 @@ function LoadingPage() {
           };
           
           ws.current.onclose = () => {
-            console.log('WebSocket disconnected');
+            
             setWsConnected(false);
           };
         } catch (error) {
@@ -350,7 +350,6 @@ function LoadingPage() {
           }
           
           if (retries > 0) {
-            console.log(`Retrying WebSocket connection... (${retries} attempts left)`);
             setTimeout(() => initWebSocket(retries - 1), 2000);
           }
         }
@@ -366,30 +365,30 @@ function LoadingPage() {
   useEffect(() => {
     return () => {
       if (ws.current && processingComplete && !isLoading && contacts.length > 0) {
-        console.log('Closing WebSocket connection');
+        
         ws.current.close();
       }
     };
   }, [processingComplete, isLoading, contacts]);
 
   useEffect(() => {
-    console.log("useEffect triggered. shouldFetchContacts:", shouldFetchContacts, "isLoading:", isLoading);
+
     if (shouldFetchContacts && !isLoading) {
-      console.log("Conditions met for navigation, navigating to chat");
+      
       navigate('/chat');
     }
   }, [shouldFetchContacts, isLoading, navigate]);
 
   useEffect(() => {
-    console.log("Contact state changed. contactsFetched:", contactsFetched, "fetchedChats:", fetchedChats, "totalChats:", totalChats, "contacts length:", contacts.length);
+    
     if (contactsFetched && fetchedChats === totalChats && contacts.length > 0) {
-      console.log('Contacts and chats fetched and loaded, navigating to chat');
+      
       navigate('/chat');
     }
   }, [contactsFetched, fetchedChats, totalChats, contacts, navigate]);
 
   const fetchContacts = async () => {
-    console.log('fetchContacts triggered');
+    
     try {
       setLoadingPhase('fetching_contacts');
       const user = auth.currentUser;
@@ -519,7 +518,7 @@ const getLoadingMessage = () => {
 )}
 
 useEffect(() => {
-  console.log('useEffect triggered. processingComplete:', processingComplete, 'contactsFetched:', contactsFetched, 'isLoading:', isLoading);
+  
   if (processingComplete && contactsFetched && !isLoading) {
     const timer = setTimeout(() => {
       navigate('/chat');
@@ -548,9 +547,9 @@ useEffect(() => {
   };
 
   useEffect(() => {
-    console.log('Current bot status:', botStatus);
-    console.log('Is processing chats:', isProcessingChats);
-    console.log('Processing progress:', fetchedChats, totalChats);
+    
+    
+    
   }, [botStatus, isProcessingChats, fetchedChats, totalChats]);
 
   useEffect(() => {
@@ -569,7 +568,7 @@ useEffect(() => {
     try {
       // Close WebSocket connection if it exists
       if (ws.current) {
-        console.log('Closing WebSocket connection');
+        
         ws.current.close();
         setWsConnected(false);
       }
@@ -593,7 +592,7 @@ useEffect(() => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -601,7 +600,7 @@ useEffect(() => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -645,7 +644,6 @@ useEffect(() => {
 
   useEffect(() => {
     if (botStatus === 'ready' || botStatus === 'authenticated') {
-      console.log('Bot status changed to ready/authenticated, navigating to chat');
       setShouldFetchContacts(true);
       navigate('/chat');
     }
@@ -653,7 +651,7 @@ useEffect(() => {
 
   const fetchAndCacheMessages = async (contacts: Contact[], companyId: string, user: any) => {
     setLoadingPhase('caching_messages');
-    
+    console.log('fetchAndCacheMessages');
     // Reduce number of cached contacts
     const mostRecentContacts = contacts
       .sort((a, b) => {

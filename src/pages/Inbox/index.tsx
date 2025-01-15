@@ -281,7 +281,7 @@ const Main: React.FC = () => {
   };
 
   const fetchAssistantInfo = async (assistantId: string, apiKey: string) => {
-    console.log("Fetching assistant info with ID:", assistantId);
+    
     setLoading(true);
     try {
       const response = await axios.get(`https://api.openai.com/v1/assistants/${assistantId}`, {
@@ -312,7 +312,7 @@ const Main: React.FC = () => {
       return;
     }
 
-    console.log("Updating assistant info with ID:", assistantId);
+    
 
     // Get all unique vector store IDs from files
     const vectorStoreIds = [...new Set(files.map(file => file.vectorStoreId).filter(Boolean))];
@@ -338,7 +338,7 @@ const Main: React.FC = () => {
         }
       });
 
-      console.log('Assistant info updated successfully:', response.data);
+      
       toast.success('Assistant updated successfully');
     } catch (error) {
       if (axios.isAxiosError(error)) {
@@ -368,7 +368,7 @@ const Main: React.FC = () => {
       }
     });
   
-    console.log("Sending message with Assistant ID:", assistantId); // Log assistantId
+     // Log assistantId
   
     try {
       const user = getAuth().currentUser;
@@ -381,7 +381,7 @@ const Main: React.FC = () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -389,7 +389,7 @@ const Main: React.FC = () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -402,7 +402,7 @@ const Main: React.FC = () => {
         },
       });
       const data = res.data;
-      console.log(data);
+      
   
       const assistantResponse: ChatMessage = {
         from_me: false,
@@ -445,7 +445,7 @@ const Main: React.FC = () => {
   
       await updateDoc(docUserRef, { threadid: '' });
       setThreadId(''); // Clear threadId in state
-      console.log(`Thread ID set to empty string successfully.`);
+      
       // Clear the messages state
       setMessages([]);
     } catch (error) {
@@ -589,7 +589,7 @@ const Main: React.FC = () => {
     try {
       const updatedFiles = [...(assistantInfo.metadata?.files || []), file];
       await updateAssistantMetadata(updatedFiles);
-      console.log('Assistant updated with new file');
+      
     } catch (error) {
       if (axios.isAxiosError(error)) {
         console.error('Error updating assistant with file:', error.response?.data);
@@ -636,7 +636,7 @@ const Main: React.FC = () => {
         }
       });
       
-      console.log('Assistant metadata updated:', response.data);
+      
       
       // Update local state
       setAssistantInfo(prevInfo => ({

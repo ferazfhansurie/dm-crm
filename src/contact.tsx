@@ -156,8 +156,6 @@ export const ContactsProvider = ({ children }: { children: ReactNode }) => {
             : new Date(0);
         return dateB.getTime() - dateA.getTime();
       });
-  
-      console.log("Fetched contacts:", allContacts.length);
       setContacts(allContacts);
       localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
   
@@ -346,7 +344,7 @@ export { ContactsContext };
 // Updated fetchMessagesFromFirebase function
 async function fetchMessagesFromFirebase(companyId: string, chatId: string): Promise<any[]> {
   const number = '+' + chatId.split('@')[0];
-  console.log(number);
+
   const messagesRef = collection(firestore, `companies/${companyId}/contacts/${number}/messages`);
   const messagesQuery = query(messagesRef, orderBy('timestamp', 'desc'), limit(10));
   const messagesSnapshot = await getDocs(messagesQuery);
@@ -508,9 +506,9 @@ function formatMessages(messages: any[]): any[] {
             formattedMessage.reactions = message.reactions ? message.reactions : undefined;
             break;
             case 'privateNote':
-console.log('Private note data:', message);
+
 formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
-console.log('Formatted private note text:', formattedMessage.text);
+
 formattedMessage.from_me = true;
 formattedMessage.from_name = message.from;
 break;

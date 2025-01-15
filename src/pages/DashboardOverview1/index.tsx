@@ -92,7 +92,7 @@ export const updateMonthlyAssignments = async (employeeName: string, incrementVa
       lastUpdated: serverTimestamp()
     }, { merge: true });
 
-    console.log(`Updated monthly assignments for employee ${employeeName}`);
+    
   } catch (error) {
     console.error('Error updating monthly assignments:', error);
   }
@@ -302,16 +302,16 @@ interface Tag {
         const tokens = usageData.total_tokens || 0;
         const price = (tokens / 1000) * 0.003;
 
-        console.log('Document ID:', doc.id);
-        console.log('Tokens:', tokens);
-        console.log('Price:', price);
+        
+        
+        
 
         labels.push(doc.id); // Assuming doc.id is in the format 'YYYY-MM'
         data.push(price);
       });
 
-      console.log('Labels:', labels);
-      console.log('Data:', data);
+      
+      
 
       if (labels.length === 0) {
         console.warn('No usage data available');
@@ -335,7 +335,7 @@ interface Tag {
 
   const calculateMonthlyPrice = (tokens: number) => {
     const price = (tokens / 1000) * 0.003;
-    console.log(price);
+    
     setMonthlyPrice(price);
   };
 
@@ -358,7 +358,7 @@ interface Tag {
       }
 
       setTotalAppointments(totalAppointments);
-      console.log('Total Appointments:', totalAppointments);
+      
     } catch (error) {
       console.error('Error fetching appointments:', error);
     }
@@ -440,12 +440,12 @@ interface Tag {
       const docUserRef = doc(firestore, 'user', userEmail);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
       if (!dataUser) {
-        console.log('User document exists but has no data!');
+        
         return;
       }
   
@@ -453,19 +453,19 @@ interface Tag {
       role = dataUser.role;
   
       if (!companyId) {
-        console.log('No company ID found for user!');
+        
         return;
       }
   
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const data = docSnapshot.data();
       if (!data) {
-        console.log('Company document exists but has no data!');
+        
         return;
       }
   
@@ -493,7 +493,7 @@ interface Tag {
       contactsWithReplies = results.filter(Boolean).length;
   
       setReplies(contactsWithReplies);
-      console.log('Contacts with replies:', contactsWithReplies);
+      
   
     } catch (error) {
       console.error('Error fetching config:', error);
@@ -513,7 +513,7 @@ interface Tag {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
      
@@ -524,14 +524,14 @@ interface Tag {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
  
 
       // Assuming refreshAccessToken is defined elsewhere
-      console.log(companyData);
+      
 
 
     } catch (error) {
@@ -605,7 +605,7 @@ interface Tag {
       employeeListData.sort((a, b) => (b.assignedContacts || 0) - (a.assignedContacts || 0));
 
       setEmployees(employeeListData);
-      console.log('Updated employee data:', employeeListData);
+      
 
     } catch (error) {
       console.error('Error fetching employees and contacts:', error);
@@ -676,8 +676,8 @@ interface Tag {
   // Add this useEffect to log the selected employee
   useEffect(() => {
     if (selectedEmployee) {
-      console.log("Selected Employee:", selectedEmployee);
-      console.log("Monthly Assignments:", selectedEmployee.monthlyAssignments);
+      
+      
     }
   }, [selectedEmployee]);
 
@@ -746,7 +746,7 @@ interface Tag {
     if (!selectedEmployee) return null;
 
     const last12Months = getLast12MonthsData(selectedEmployee.monthlyAssignments);
-    console.log('Chart data:', last12Months); // Debug log
+     // Debug log
     
     return {
       labels: last12Months.map(d => `${d.month} ${d.year}`),
@@ -924,7 +924,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
 
   // Modify the handleEmployeeSelect function
   const handleEmployeeSelect = async (employee: Employee) => {
-    console.log("Employee selected:", employee);
+    
     setSelectedEmployee(employee);
     fetchEmployeeStats(employee.id);
   };
@@ -1365,7 +1365,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   // Add this new function
   const fetchEmployeeStats = async (employeeId: string) => {
     try {
-      console.log('Fetching stats for employee:', employeeId);
+      
       const user = getAuth().currentUser;
       if (!user) {
         console.error("User not authenticated");
@@ -1375,7 +1375,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -1383,14 +1383,14 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       // Update the URL to match your actual API endpoint
       const response = await axios.get(`${baseUrl}/api/stats/${companyId}?employeeId=${employeeId}`);
-      console.log('Received employee stats:', response.data);
+      
       setEmployeeStats(response.data);
     } catch (error) {
       console.error('Error fetching employee stats:', error);
@@ -2040,7 +2040,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
         // Update monthly assignments
         await updateMonthlyAssignments(employeeName, 1);
 
-        console.log(`Contact ${contactId} assigned to ${employeeName}`);
+        
       }
 
     } catch (error) {
@@ -2094,7 +2094,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
         // Update monthly assignments
         await updateMonthlyAssignments(employeeName, -1);
 
-        console.log(`Contact ${contactId} unassigned from ${employeeName}`);
+        
       }
 
     } catch (error) {

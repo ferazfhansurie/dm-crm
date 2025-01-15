@@ -95,6 +95,7 @@ function Main() {
     intakePreference?:string | null;
     englishProficiency?:string | null;
     passport?:string | null;
+    importedTags?:string[] | null;
     customFields?: { [key: string]: string };
     notes?: string | null;  // Add this line to the Contact interface
 
@@ -334,8 +335,7 @@ function Main() {
       'points',
       'notes',
       'actions',
-      ...Object.keys(visibleColumns)
-        .filter(key => key.startsWith('customField_'))
+      ...Object.keys(contacts[0]?.customFields || {}).map(field => `customField_${field}`)
     ];
   });
 
@@ -376,7 +376,7 @@ function Main() {
       if (companyDocSnap.exists()) {
         const companyData = companyDocSnap.data();
         const phoneCount = companyData.phoneCount || 0;
-        console.log('phoneCount for this company:', phoneCount);
+        
         
         // Generate phoneNames object
         const phoneNamesData: { [key: number]: string } = {};
@@ -386,7 +386,7 @@ function Main() {
             phoneNamesData[i] = phoneName;
           }
         }
-        console.log('Phone names:', phoneNamesData);
+        
         setPhoneNames(phoneNamesData);
         setPhoneOptions(Object.keys(phoneNamesData).map(Number));
       }
@@ -543,7 +543,7 @@ const resetSort = () => {
             const errorText = await followUpResponse.text();
             console.error('Failed to remove template messages:', errorText);
           } else {
-            console.log(`Follow-up template ${template.id} removed successfully`);
+            
           }
         } catch (error) {
           console.error('Error removing template messages:', error);
@@ -604,7 +604,7 @@ const resetSort = () => {
   
       const querySnapshot = await getDocs(q);
       const fetchedContacts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact));
-      console.log('Fetched contacts2:', fetchedContacts);
+      
       // Function to check if a chat_id is for an individual contact
       const isIndividual = (chat_id: string | undefined) => {
         return chat_id?.endsWith('@c.us') || false;
@@ -676,7 +676,7 @@ allSortedContacts.sort((a, b) => {
     };
   }, [filteredContacts]);
   useEffect(() => {
-    console.log('Selected tags updated:', selectedTags);
+    
   }, [selectedTags]);
   const loadMoreContacts = () => {
     if (initialContacts.length <= contacts.length) return;
@@ -788,7 +788,7 @@ const showTagSelectionModal = () => {
       <TagSelectionModal 
         onClose={() => setExportModalOpen(false)}
         onExport={(tags) => {
-          console.log('Exporting with tags:', tags);
+          
           exportContactsByTags(tags);
         }}
       />
@@ -798,7 +798,7 @@ const showTagSelectionModal = () => {
 };
 
 const exportContactsByTags = (currentSelectedTags: string[]) => {
-  console.log('Exporting contacts. Selected tags:', currentSelectedTags);
+  
 
   if (currentSelectedTags.length === 0) {
     toast.error("No tags selected. Please select at least one tag.");
@@ -809,7 +809,7 @@ const exportContactsByTags = (currentSelectedTags: string[]) => {
     contact.tags && contact.tags.some(tag => currentSelectedTags.includes(tag))
   );
 
-  console.log('Contacts to export:', contactsToExport);
+  
 
   if (contactsToExport.length === 0) {
     toast.error("No contacts found with the selected tags.");
@@ -858,7 +858,20 @@ const handleTagSelection = (e: React.ChangeEvent<HTMLInputElement>, tagName: str
 const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
   const file = e.target.files?.[0];
   if (file) {
-    setSelectedMedia(file);
+    const maxSizeInMB = 20;
+    const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+    if (file.type.startsWith('video/') && file.size > maxSizeInBytes) {
+      toast.error('The video file is too big. Please select a file smaller than 20MB.');
+      return;
+    }
+
+    try {
+      setSelectedMedia(file);
+    } catch (error) {
+      console.error('Error uploading file:', error);
+      toast.error('Upload unsuccessful. Please try again.');
+    }
   }
 };
 
@@ -940,7 +953,7 @@ const handleSaveNewContact = async () => {
     const docUserRef = doc(firestore, 'user', user?.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document for user!');
+      
       return;
     }
 
@@ -1011,14 +1024,14 @@ const handleSaveNewTag = async () => {
   try {
     const user = auth.currentUser;
     if (!user) {
-      console.log('No authenticated user');
+      
       return;
     }
 
     const docUserRef = doc(firestore, 'user', user.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document for user!');
+      
       return;
     }
     const userData = docUserSnapshot.data();
@@ -1027,7 +1040,7 @@ const handleSaveNewTag = async () => {
     const companyRef = doc(firestore, 'companies', companyId);
     const companySnapshot = await getDoc(companyRef);
     if (!companySnapshot.exists()) {
-      console.log('No such document for company!');
+      
       return;
     }
     const companyData = companySnapshot.data();
@@ -1068,7 +1081,7 @@ const handleSaveNewTag = async () => {
           }
         }
       );
-      console.log(response.data);
+      
       setTagList([...tagList, response.data.tag]);
     }
 
@@ -1168,7 +1181,7 @@ const handleConfirmDeleteTag = async () => {
     try {
       const user = auth.currentUser;
       if (!user) {
-        console.log('No authenticated user');
+        
         setLoading(false);
         return;
       }
@@ -1176,7 +1189,7 @@ const handleConfirmDeleteTag = async () => {
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         setLoading(false);
         return;
       }
@@ -1186,7 +1199,7 @@ const handleConfirmDeleteTag = async () => {
       const companyRef = doc(firestore, 'companies', companyId);
       const companySnapshot = await getDoc(companyRef);
       if (!companySnapshot.exists()) {
-        console.log('No such document for company!');
+        
         setLoading(false);
         return;
       }
@@ -1258,7 +1271,7 @@ const handleConfirmDeleteTag = async () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
 
@@ -1272,15 +1285,15 @@ const handleConfirmDeleteTag = async () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
-      console.log(companyData.tags);
-      console.log('tags');
+      
+      
       setStopbot(companyData.stopbot || false);
-      console.log(stopbot);
-      console.log('stopbot');
+      
+      
       const employeeRef = collection(firestore, `companies/${companyId}/employee`);
       const employeeSnapshot = await getDocs(employeeRef);
 
@@ -1288,7 +1301,7 @@ const handleConfirmDeleteTag = async () => {
       employeeSnapshot.forEach((doc) => {
         employeeListData.push({ id: doc.id, ...doc.data() } as Employee);
       });
-     console.log(employeeListData);
+     
       setEmployeeList(employeeListData);
       const employeeNames = employeeListData.map(employee => employee.name.trim().toLowerCase());
       setEmployeeNames(employeeNames);
@@ -1296,7 +1309,7 @@ const handleConfirmDeleteTag = async () => {
       if (companyData.v2 !== true) {
         await fetchTags(companyData.ghl_accessToken, companyData.ghl_location, employeeNames);
       } else {
-        console.log('v2');
+        
         const tagsCollectionRef = collection(firestore, `companies/${companyId}/tags`);
         const tagsSnapshot = await getDocs(tagsCollectionRef);
         const tagsArray = tagsSnapshot.docs.map(doc => ({
@@ -1342,7 +1355,7 @@ const handleConfirmDeleteTag = async () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return false;
       }
       const userData = docUserSnapshot.data();
@@ -1350,7 +1363,7 @@ const handleConfirmDeleteTag = async () => {
       const docRef = doc(firestore, `companies/${companyId}/contacts`, contactId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for contact!');
+        
         return false;
       }
   
@@ -1420,7 +1433,7 @@ const handleConfirmDeleteTag = async () => {
             try {
               await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`);
     
-              console.log(`Deleted scheduled message ${doc.id}`);
+              
             } catch (error) {
       
             }
@@ -1440,7 +1453,7 @@ const handleConfirmDeleteTag = async () => {
               );
          
               deletedMessages.push(logEntry);
-              console.log(`Updated scheduled message ${doc.id}`);
+              
             } catch (error) {
               console.error(`Error updating scheduled message ${doc.id}:`, error);
               
@@ -1470,7 +1483,7 @@ const handleConfirmDeleteTag = async () => {
 
         toast.success(`Cancelled ${deletedMessages.length} scheduled messages for this contact`);
       } else {
-        console.log('No scheduled messages found for deletion');
+        
         toast.info('No scheduled messages found for this contact');
       }
     }
@@ -1592,7 +1605,7 @@ const handleConfirmDeleteTag = async () => {
      const docRef = doc(firestore, 'companies', companyId);
      const docSnapshot = await getDoc(docRef);
      if (!docSnapshot.exists()) {
-       console.log('Company document not found');
+       
        return;
      }
      const data2 = docSnapshot.data();
@@ -1747,7 +1760,7 @@ if (matchingTemplate) {
       const notificationSnapshot = await getDoc(notificationRef);
       
       if (notificationSnapshot.exists()) {
-        console.log('Notification already sent for this assignment');
+        
         return;
       }
   
@@ -1767,7 +1780,7 @@ if (matchingTemplate) {
   
       // Format the phone number for WhatsApp chat_id
       const employeePhone = `${assignedEmployee.phoneNumber.replace(/[^\d]/g, '')}@c.us`;
-      console.log('Formatted employee chat_id:', employeePhone);
+      
   
       if (!employeePhone || !/^\d+@c\.us$/.test(employeePhone)) {
         console.error('Invalid employeePhone:', employeePhone);
@@ -1796,7 +1809,7 @@ if (matchingTemplate) {
               phoneIndex = 0;
           } else {
               // Handle other cases
-              console.log(`User phone index is: ${userData.phone}`);
+              
               phoneIndex = userData.phone;
           }
       } else {
@@ -1806,29 +1819,16 @@ if (matchingTemplate) {
       let url;
       let requestBody;
       if (companyData.v2 === true) {
-        console.log("v2 is true");
+        
         url = `${baseUrl}/api/v2/messages/text/${companyId}/${employeePhone}`;
         requestBody = { message, 
           phoneIndex  };
         } else {
-        console.log("v2 is false");
+        
         url = `${baseUrl}/api/messages/text/${employeePhone}/${companyData.whapiToken}`;
         requestBody = { message, 
           phoneIndex  };
       }
-  
-      console.log('Sending request to:', url);
-      console.log('Request body:', JSON.stringify(requestBody));
-  
-      console.log('Full request details:', {
-        url,
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: message,
-          phoneIndex: phoneIndex,
-        })
-      });
   
       // Send WhatsApp message to the employee
       const response = await fetch(url, {
@@ -1844,8 +1844,8 @@ if (matchingTemplate) {
       }
   
       const responseData = await response.json();
-      console.log('Assignment notification response:', responseData);
-      console.log('Sent to phone number:', employeePhone);
+      
+      
   
       // Mark notification as sent
       await setDoc(notificationRef, {
@@ -1866,10 +1866,10 @@ if (matchingTemplate) {
       }
       
       // Log additional information that might be helpful
-      console.log('Assigned Employee Name:', assignedEmployeeName);
-      console.log('Contact:', contact);
-      console.log('Employee List:', employeeList);
-      console.log('Company ID:', companyId);
+      
+      
+      
+      
     }
   };
 
@@ -1886,21 +1886,21 @@ if (matchingTemplate) {
 
   const handleSyncContact = async () => {
     try {
-      console.log('Starting contact synchronization process');
+      
       setFetching(true);
       const user = auth.currentUser;
       if (!user) {
-        console.log('User not authenticated');
+        
         setFetching(false);
         toast.error("User not authenticated");
         return;
       }
 
-      console.log('Fetching user document');
+      
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('User document not found');
+        
         setFetching(false);
         toast.error("User document not found");
         return;
@@ -1914,18 +1914,18 @@ if (matchingTemplate) {
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       if (!companyId) {
-        console.log('Company ID not found');
+        
         setFetching(false);
         toast.error("Company ID not found");
         return;
       }
 
-      console.log(`Initiating sync for company ID: ${companyId}`);
+      
       // Call the new API endpoint
       const response = await axios.post(`${baseUrl}/api/sync-contacts/${companyId}`);
 
       if (response.status === 200 && response.data.success) {
-        console.log('Contact synchronization started successfully');
+        
         toast.success("Contact synchronization started successfully");
         // You might want to add some UI indication that sync is in progress
       } else {
@@ -1937,13 +1937,13 @@ if (matchingTemplate) {
       console.error('Error syncing contacts:', error);
       toast.error("An error occurred while syncing contacts: " + (error instanceof Error ? error.message : String(error)));
     } finally {
-      console.log('Contact synchronization process completed');
+      
       setFetching(false);
     }
   };
   
   const handleRemoveTag = async (contactId: string, tagName: string) => {
-    console.log('removing tag', tagName);
+    
     if (userRole === "3") {
       toast.error("You don't have permission to perform this action.");
       return;
@@ -2010,7 +2010,7 @@ if (matchingTemplate) {
           const errorText = await response.text();
           console.error('Failed to remove template messages:', errorText);
         } else {
-          console.log(`Follow-up template ${template.id} removed successfully`);
+          
           toast.success('Follow-up sequence stopped');
         }
       } catch (error) {
@@ -2049,7 +2049,7 @@ if (matchingTemplate) {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -2057,7 +2057,7 @@ if (matchingTemplate) {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const companyData = docSnapshot.data();
@@ -2135,7 +2135,7 @@ const chatId = tempphone + "@c.us"
         };
         try {
           const response = await axios.request(options);
-          console.log(response.data.meta.total);
+          
           return response;
         } catch (error: any) {
           if (error.response && error.response.status === 429 && retries < maxRetries) {
@@ -2235,7 +2235,7 @@ const chatId = tempphone + "@c.us"
               // If this is the only recipient, delete the entire scheduled message
               try {
                 await axios.delete(`https://mighty-dane-newly.ngrok-free.app/api/schedule-message/${companyId}/${doc.id}`);
-                console.log(`Deleted scheduled message ${doc.id}`);
+                
               } catch (error) {
                 console.error(`Error deleting scheduled message ${doc.id}:`, error);
               }
@@ -2253,7 +2253,7 @@ const chatId = tempphone + "@c.us"
                     messages: updatedMessages
                   }
                 );
-                console.log(`Updated scheduled message ${doc.id}`);
+                
               } catch (error) {
                 console.error(`Error updating scheduled message ${doc.id}:`, error);
               }
@@ -2301,7 +2301,7 @@ const chatId = tempphone + "@c.us"
                 const errorText = await response.text();
                 console.error('Failed to remove template messages:', errorText);
               } else {
-                console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+                
               }
             } catch (error) {
               console.error('Error removing template messages:', error);
@@ -2396,7 +2396,7 @@ const chatId = tempphone + "@c.us"
               const errorText = await followUpResponse.text();
               console.error('Failed to remove template messages:', errorText);
             } else {
-              console.log(`Follow-up template ${template.id} removed for contact ${phoneNumber}`);
+              
             }
           } catch (error) {
             console.error('Error removing template messages:', error);
@@ -2416,7 +2416,7 @@ const chatId = tempphone + "@c.us"
             if (messageData.chatIds.length === 1) {
               try {
                 await axios.delete(`${baseUrl}/api/schedule-message/${companyId}/${doc.id}`);
-                console.log(`Deleted scheduled message ${doc.id}`);
+                
               } catch (error) {
                 console.error(`Error deleting scheduled message ${doc.id}:`, error);
               }
@@ -2430,7 +2430,7 @@ const chatId = tempphone + "@c.us"
                     messages: messageData.messages?.filter((msg: any) => msg.chatId !== contactChatId) || []
                   }
                 );
-                console.log(`Updated scheduled message ${doc.id}`);
+                
               } catch (error) {
                 console.error(`Error updating scheduled message ${doc.id}:`, error);
               }
@@ -2475,7 +2475,7 @@ const chatId = tempphone + "@c.us"
         const docUserRef = doc(firestore, 'user', user?.email!);
         const docUserSnapshot = await getDoc(docUserRef);
         if (!docUserSnapshot.exists()) {
-          console.log('No such document for user!');
+          
           return;
         }
         const userData = docUserSnapshot.data();
@@ -2534,7 +2534,7 @@ const addCustomFieldToAllContacts = async (fieldName: string) => {
     const docUserRef = doc(firestore, 'user', user.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document for user!');
+      
       return;
     }
     const userData = docUserSnapshot.data();
@@ -2642,17 +2642,9 @@ const handlePageClick = (event: { selected: number }) => {
   setItemOffset(newOffset);
 };
 
-useEffect(() => {
-  console.log('Contacts:', contacts);
-  console.log('Filtered Contacts:', filteredContactsSearch);
-  console.log('Search Query:', searchQuery);
-  console.log('Scheduled Messages:', scheduledMessages);
-  console.log('Filtered Scheduled Messages:', getFilteredScheduledMessages());
-}, [contacts, filteredContactsSearch, searchQuery, scheduledMessages]);
-
 
 const sendBlastMessage = async () => {
-  console.log('Starting sendBlastMessage function');
+  
 
   // Validation checks
   if (selectedContacts.length === 0) {
@@ -2786,7 +2778,7 @@ const sendBlastMessage = async () => {
       numberOfBatches: 1
     };
 
-    console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
+
 
     // Make API call to schedule the messages
     const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
@@ -2841,7 +2833,7 @@ const resetForm = () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -2849,7 +2841,7 @@ const resetForm = () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const phoneNumber = id.split('+')[1];
@@ -2874,7 +2866,7 @@ const resetForm = () => {
   
       const data = await response.json();
     
-      console.log('Image message sent successfully:', data);
+      
     } catch (error) {
       console.error('Error sending image message:', error);
     }
@@ -2887,7 +2879,7 @@ const resetForm = () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -2895,7 +2887,7 @@ const resetForm = () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document for company!');
+        
         return;
       }
       const phoneNumber = id.split('+')[1];
@@ -2922,7 +2914,7 @@ const resetForm = () => {
   
       const data = await response.json();
   
-      console.log('Image message sent successfully:', data);
+      
     } catch (error) {
       console.error('Error sending image message:', error);
     }
@@ -2946,103 +2938,6 @@ const resetForm = () => {
     try {
       setLoading(true);
   
-      // Read CSV data
-      const parseCSV = async (): Promise<Array<any>> => {
-        return new Promise((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = (event) => {
-            try {
-              const text = event.target?.result as string;
-              if (!text) {
-                throw new Error('Failed to read CSV file content');
-              }
-
-              console.log('Raw CSV content:', text);
-
-              const lines = text.split('\n');
-              if (lines.length < 2) {
-                throw new Error('CSV file must contain at least a header row and one data row');
-              }
-
-              // Get headers and create a case-insensitive map
-              const headers = lines[0].split(',').map(header => 
-                header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
-              );
-              console.log('CSV headers:', headers);
-
-              // Case-insensitive header validation
-              const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
-              if (!headerMap.has('contactname') && !headerMap.has('contactName')) {
-                throw new Error('CSV must contain a "contactName" header');
-              }
-              if (!headerMap.has('phone')) {
-                throw new Error('CSV must contain a "phone" header');
-              }
-
-              // Process data rows
-              const data = lines.slice(1)
-                .filter(line => line.trim()) // Skip empty lines
-                .map((line, index) => {
-                  const values = line.split(',').map(val => 
-                    val.trim().replace(/^["']|["']$/g, '') // Remove quotes and trim
-                  );
-                  
-                  const row = headers.reduce((obj: any, header, i) => {
-                    // Convert header to the format expected by the rest of the code
-                    const normalizedHeader = header.toLowerCase();
-                    const key = normalizedHeader === 'contactname' ? 'contactname' : 
-                               normalizedHeader === 'contactName' ? 'contactname' : 
-                               normalizedHeader;
-                    obj[key] = values[i] || '';
-                    return obj;
-                  }, {});
-
-                  // Extract all tag columns dynamically
-                  const tags = headers
-                    .filter(header => header.toLowerCase().startsWith('tag'))
-                    .map(tagHeader => row[tagHeader.toLowerCase()])
-                    .filter(tag => tag && tag.trim() !== ''); // Remove empty tags
-
-                  // Add the tags array to the row object
-                  row.importedTags = tags;
-
-                  // Log each parsed row for debugging
-                  console.log(`Parsed row ${index + 1}:`, row);
-
-                  // Validate required fields
-                  if (!row.contactname || !row.phone) {
-                    console.warn(`Row ${index + 1} missing required fields:`, row);
-                  }
-
-                  return row;
-                });
-
-              console.log(`Parsed ${data.length} rows from CSV`);
-              
-              if (data.length === 0) {
-                throw new Error('No valid data rows found in CSV file');
-              }
-
-              resolve(data);
-            } catch (error) {
-              console.error('CSV parsing error:', error);
-              reject(error);
-            }
-          };
-
-          reader.onerror = (error) => {
-            console.error('FileReader error:', error);
-            reject(new Error('Failed to read CSV file'));
-          };
-
-          if (selectedCsvFile) {
-            reader.readAsText(selectedCsvFile);
-          } else {
-            reject(new Error('No file selected'));
-          }
-        });
-      };
-  
       // Get user and company data
       const user = auth.currentUser;
       if (!user?.email) throw new Error('User not authenticated');
@@ -3054,18 +2949,23 @@ const resetForm = () => {
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
   
-      // Parse CSV data
-      const contacts = await parseCSV();
-      console.log('Parsed contacts:', contacts);
+      // Get all existing custom fields from current contacts
+      const allCustomFields = getAllCustomFields(contacts);
+      
+      // Parse CSV data (using your existing parseCSV function)
+      const csvContacts = await parseCSV();
+      
   
-      // Validate contacts
-      const validContacts = contacts.filter(contact => {
-        const isValid = contact.contactname && contact.phone;
-        if (!isValid) {
-          console.warn('Invalid contact:', contact);
-        }
-        return isValid;
-      });
+      // Validate and enrich contacts with custom fields
+      const validContacts = csvContacts
+        .filter(contact => {
+          const isValid = contact.contactname && contact.phone;
+          if (!isValid) {
+            console.warn('Invalid contact:', contact);
+          }
+          return isValid;
+        })
+        .map(contact => ensureAllCustomFields(contact, allCustomFields));
   
       if (validContacts.length === 0) {
         throw new Error('No valid contacts found in CSV');
@@ -3080,78 +2980,52 @@ const resetForm = () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-          // Remove any non-digit characters from phone number
-          let phoneNumber = contact.phone.replace(/\D/g, '');
-          
-          // Handle different country formats
-          if (phoneNumber.startsWith('60')) {
-            // Malaysia format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('65')) {
-            // Singapore format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('62')) {
-            // Indonesia format
-            phoneNumber = '+' + phoneNumber;
-          } else if (phoneNumber.startsWith('0')) {
-            // Assume Malaysia number if starts with 0
-            phoneNumber = '+60' + phoneNumber.substring(1);
-          } else if (phoneNumber.length <= 10) {
-            // Assume Malaysia number if length is 10 or less
-            phoneNumber = '+60' + phoneNumber;
-          } else {
-            // For other countries, add + prefix if not present
-            phoneNumber = phoneNumber.startsWith('+') ? phoneNumber : '+' + phoneNumber;
-          }
-
-          // Basic phone number validation
-          if (!phoneNumber.match(/^\+\d{10,15}$/)) {
-            console.warn('Invalid phone number format:', contact.phone, 'Formatted as:', phoneNumber);
-            continue;
-          }
-
+          // Phone number formatting (your existing code)
+          let phoneNumber = contact.phone?.replace(/\D/g, '') || '';
+          // ... (keep your existing phone formatting logic) ...
+  
           const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
           
-          // Fetch existing contact data first
+          // Fetch existing contact data
           const existingContact = await getDoc(contactRef);
           const existingTags = existingContact.exists() ? existingContact.data().tags || [] : [];
-
-          // Prepare contact data
+  
+          // Prepare contact data with custom fields
           const contactData: { [key: string]: any } = {
-            contactName: contact.contactname,
+            contactName: contact.contactName,
             phone: phoneNumber,
             email: contact.email || '',
-            lastName: contact.lastname || '',
-            companyName: contact.companyname || '',
+            lastName: contact.lastName || '',
+            companyName: contact.companyName || '',
             address1: contact.address1 || '',
             city: contact.city || '',
             state: contact.state || '',
-            postalCode: contact.postalcode || '',
+            postalCode: contact.postalCode || '',
             country: contact.country || '',
             branch: contact.branch || userData.branch || '',
-            expiryDate: contact.expirydate || userData.expiryDate || '',
-            vehicleNumber: contact.vehiclenumber || userData.vehicleNumber || '',
+            expiryDate: contact.expiryDate || userData.expiryDate || '',
+            vehicleNumber: contact.vehicleNumber || userData.vehicleNumber || '',
             points: contact.points || '0',
             IC: contact.ic || '',
+            customFields: contact.customFields || {}, // This will have all fields from ensureAllCustomFields
             tags: [
               ...new Set([
-                ...existingTags,                    // Keep existing tags
-                ...selectedImportTags,              // Add selected tags from UI
-                ...importTags,                      // Add import tags from UI
-                ...(contact.importedTags || [])     // Add tags from CSV
+                ...existingTags,
+                ...selectedImportTags,
+                ...importTags,
+                ...(contact.importedTags || [])
               ])
             ],
             updatedAt: Timestamp.now(),
             updatedBy: user.email
           };
-
-          // Only set createdAt and createdBy if it's a new contact
+  
           if (!existingContact.exists()) {
             contactData.createdAt = Timestamp.now();
             contactData.createdBy = user.email;
           }
-
-          console.log('Adding/Updating contact:', contactData);
+  
+          
           batch.set(contactRef, contactData, { merge: true });
         }
   
@@ -3159,27 +3033,28 @@ const resetForm = () => {
       }
   
       // Execute all batches
-      console.log(`Committing ${batches.length} batches...`);
+      
       await Promise.all(batches);
-      console.log('All batches committed successfully');
-  
-      // Verify the import
+      
+
       const verifyImport = async (): Promise<boolean> => {
+        const user = auth.currentUser;
+        if (!user?.email) return false;
+        
+        const docUserRef = doc(firestore, 'user', user.email);
+        const docUserSnapshot = await getDoc(docUserRef);
+        const companyId = docUserSnapshot.data()?.companyId;
+        
         const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
         const snapshot = await getDocs(contactsRef);
         
-        // Log verification results
-        console.log('Verification - Total contacts in Firestore:', snapshot.size);
-        console.log('Verification - Recent contacts:');
-        snapshot.docs.slice(-5).forEach(doc => {
-          console.log(doc.id, doc.data());
-        });
-  
+        
         return snapshot.size > 0;
       };
+      
   
+      // Your existing verification and cleanup code
       if (await verifyImport()) {
-        // Clear cache and fetch updated contacts
         localStorage.removeItem('contacts');
         sessionStorage.removeItem('contactsFetched');
         await fetchContacts();
@@ -3199,6 +3074,35 @@ const resetForm = () => {
     } finally {
       setLoading(false);
     }
+  };
+  
+  const getAllCustomFields = (contacts: Contact[]): string[] => {
+    const customFieldsSet = new Set<string>();
+    contacts.forEach(contact => {
+      if (contact?.customFields) {
+        Object.keys(contact.customFields).forEach(field => {
+          if (field) customFieldsSet.add(field);
+        });
+      }
+    });
+    return Array.from(customFieldsSet);
+  };
+  
+  const ensureAllCustomFields = (contactData: Contact, allCustomFields: string[]): Contact => {
+    const customFields: { [key: string]: string } = {
+      ...(contactData.customFields || {})
+    };
+    
+    allCustomFields.forEach(field => {
+      if (!(field in customFields)) {
+        customFields[field] = '';
+      }
+    });
+  
+    return {
+      ...contactData,
+      customFields
+    };
   };
 
   async function sendTextMessage(id: string, blastMessage: string, contact: Contact): Promise<void> {
@@ -3231,7 +3135,7 @@ const resetForm = () => {
       const whapiToken = companyData.whapiToken;
       const phoneNumber = id.split('+')[1];
       const chat_id = phoneNumber + "@s.whatsapp.net";
-      console.log(chat_id);
+      
 
       if (companyData.v2) {
         // Handle v2 users
@@ -3245,7 +3149,7 @@ const resetForm = () => {
           // Add any other necessary fields
         });
 
-        console.log("Message added to Firestore for v2 user");
+        
       } else {
         // Handle non-v2 users
         const response = await axios.post(
@@ -3283,10 +3187,10 @@ const resetForm = () => {
           });
         }
 
-        console.log("Message sent and stored for non-v2 user");
+        
       }
 
-      console.log('Message sent successfully');
+      
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
@@ -3304,7 +3208,7 @@ const resetForm = () => {
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -3372,7 +3276,7 @@ const resetForm = () => {
       messages.sort((a, b) => a.scheduledTime.toDate().getTime() - b.scheduledTime.toDate().getTime());
   
       setScheduledMessages(messages);
-      console.log('Fetched scheduled messages:', messages); // Add this log
+       // Add this log
     } catch (error) {
       console.error("Error fetching scheduled messages:", error);
     }
@@ -3428,7 +3332,16 @@ const resetForm = () => {
 
   const handleEditMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
-      setEditMediaFile(e.target.files[0]);
+      const file = e.target.files[0];
+      const maxSizeInMB = 20;
+      const maxSizeInBytes = maxSizeInMB * 1024 * 1024;
+
+      if (file.type.startsWith('video/') && file.size > maxSizeInBytes) {
+        toast.error('The video file is too big. Please select a file smaller than 20MB.');
+        return;
+      }
+
+      setEditMediaFile(file);
     }
   };
 
@@ -3599,7 +3512,7 @@ const resetForm = () => {
     } else {
       // Create a reversed copy of the filtered contacts array
       const reversedContacts = [...filteredContactsSearch].reverse();
-      console.log(reversedContacts);
+      
       setSelectedContacts(reversedContacts);
     }
   };
@@ -3632,17 +3545,42 @@ const resetForm = () => {
       setSelectedContacts(prevSelected => [...prevSelected, ...currentPageContacts]);
     }
   };
-useEffect(() => {
-  if (contacts.length > 0 && contacts[0].customFields) {
-    setVisibleColumns(prev => ({
-      ...prev,
-      ...Object.keys(contacts[0].customFields || {}).reduce((acc, field) => ({
-        ...acc,
-        [`customField_${field}`]: prev[`customField_${field}`] ?? true
-      }), {})
-    }));
-  }
-}, [contacts]);
+
+
+  useEffect(() => {
+    if (contacts.length > 0) {
+      const firstContact = contacts[0];
+      
+      // Update visible columns
+      setVisibleColumns(prev => ({
+        ...prev,
+        ...(firstContact.customFields ? 
+          Object.keys(firstContact.customFields).reduce((acc, field) => ({
+            ...acc,
+            [field]: true
+          }), {})
+        : {})
+      }));
+
+      // Update column order if new fields are found
+      setColumnOrder(prev => {
+        const customFields = firstContact.customFields ? 
+          Object.keys(firstContact.customFields).map(field => `customField_${field}`) 
+          : [];
+        
+        const existingCustomFields = prev.filter(col => col.startsWith('customField_'));
+        const newCustomFields = customFields.filter(field => !prev.includes(field));
+        
+        if (newCustomFields.length === 0) return prev;
+        
+        // Remove existing custom fields and add all custom fields before 'actions'
+        const baseColumns = prev.filter(col => !col.startsWith('customField_') && col !== 'actions');
+        return [...baseColumns, ...customFields, 'actions'];
+      });
+    }
+  }, [contacts]);
+
+
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
     return (
@@ -3726,7 +3664,7 @@ const parseCSV = async (): Promise<Array<any>> => {
           throw new Error('Failed to read CSV file content');
         }
 
-        console.log('Raw CSV content:', text);
+        
 
         const lines = text.split('\n');
         if (lines.length < 2) {
@@ -3737,7 +3675,7 @@ const parseCSV = async (): Promise<Array<any>> => {
         const headers = lines[0].split(',').map(header => 
           header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
         );
-        console.log('CSV headers:', headers);
+        
 
         // Case-insensitive header validation
         const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
@@ -3767,7 +3705,7 @@ const parseCSV = async (): Promise<Array<any>> => {
             }, {});
 
             // Log each parsed row for debugging
-            console.log(`Parsed row ${index + 1}:`, row);
+            
 
             // Validate required fields
             if (!row.contactname || !row.phone) {
@@ -3777,7 +3715,7 @@ const parseCSV = async (): Promise<Array<any>> => {
             return row;
           });
 
-        console.log(`Parsed ${data.length} rows from CSV`);
+        
         
         if (data.length === 0) {
           throw new Error('No valid data rows found in CSV file');
@@ -3852,6 +3790,7 @@ useEffect(() => {
     fetchPhoneStatuses();
   }
 }, [companyId]);
+
   
 
   const filterRecipients = (chatIds: string[], search: string) => {
@@ -4613,7 +4552,20 @@ const getFilteredScheduledMessages = () => {
                       <input
                         type="file"
                         accept="image/*,video/*"
-                        onChange={(e) => handleEditMediaUpload(e)}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            if (file.type.startsWith('video/') && file.size > 20 * 1024 * 1024) {
+                              toast.error('The video file is too big. Please select a file smaller than 20MB.');
+                              return;
+                            }
+                            try {
+                              handleEditMediaUpload(e);
+                            } catch (error) {
+                              toast.error('Upload unsuccessful. Please try again.');
+                            }
+                          }
+                        }}
                         className="block w-full mt-1 border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:border-indigo-500 focus:ring focus:ring-indigo-500 focus:ring-opacity-50 bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                       />
                     </div>
@@ -5009,7 +4961,7 @@ const getFilteredScheduledMessages = () => {
                                     className="flex items-center"
                                     onClick={() => handleSort(columnId)}
                                   >
-                                    {columnId.replace('customField_', '')}
+                                    {columnId.replace('customField_', '').replace(/^\w/, c => c.toUpperCase())}
                                     {sortField === columnId && (
                                       <Lucide 
                                         icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 

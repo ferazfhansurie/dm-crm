@@ -160,14 +160,14 @@ const OldFollowUpsPage: React.FC = () => {
         try {
             const user = auth.currentUser;
             if (!user) {
-                console.log('No authenticated user');
+                
                 return;
             }
 
             const docUserRef = doc(firestore, 'user', user.email!);
             const docUserSnapshot = await getDoc(docUserRef);
             if (!docUserSnapshot.exists()) {
-                console.log('No such document for user!');
+                
                 return;
             }
             const userData = docUserSnapshot.data();
@@ -176,7 +176,7 @@ const OldFollowUpsPage: React.FC = () => {
             const companyRef = doc(firestore, 'companies', companyId);
             const companySnapshot = await getDoc(companyRef);
             if (!companySnapshot.exists()) {
-                console.log('No such document for company!');
+                
                 return;
             }
             const companyData = companySnapshot.data();

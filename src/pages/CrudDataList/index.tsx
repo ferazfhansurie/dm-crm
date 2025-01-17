@@ -2941,32 +2941,52 @@ const resetForm = () => {
       // Get user and company data
       const user = auth.currentUser;
       if (!user?.email) throw new Error('User not authenticated');
-  
+
       const docUserRef = doc(firestore, 'user', user.email);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) throw new Error('User document not found');
-  
+
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-  
+
       // Get all existing custom fields from current contacts
       const allCustomFields = getAllCustomFields(contacts);
       
-      // Parse CSV data (using your existing parseCSV function)
+      // Parse CSV data
       const csvContacts = await parseCSV();
       
   
-      // Validate and enrich contacts with custom fields
-      const validContacts = csvContacts
-        .filter(contact => {
-          const isValid = contact.contactname && contact.phone;
-          if (!isValid) {
-            console.warn('Invalid contact:', contact);
-          }
-          return isValid;
-        })
-        .map(contact => ensureAllCustomFields(contact, allCustomFields));
-  
+      // Validate and prepare contacts for import
+      const validContacts = csvContacts.map(contact => {
+        // First create the basic contact object
+        const baseContact = {
+          contactName: contact.contactName,
+          phone: contact.phone,
+          email: contact.email || '',
+          lastName: contact.lastName || '',
+          companyName: contact.companyName || '',
+          address1: contact.address1 || '',
+          city: contact.city || '',
+          state: contact.state || '',
+          postalCode: contact.postalCode || '',
+          country: contact.country || '',
+          branch: contact.branch || userData.branch || '',
+          expiryDate: contact.expiryDate || userData.expiryDate || '',
+          vehicleNumber: contact.vehicleNumber || '',
+          points: contact.points || '0',
+          IC: contact.IC || '',
+          customFields: {},
+          tags: [],
+          updatedAt: Timestamp.now(),
+          updatedBy: user.email,
+          createdAt: Timestamp.now(),
+          createdBy: user.email
+        };
+
+        // Ensure all custom fields are present
+        return ensureAllCustomFields(baseContact, allCustomFields);
+      });
+
       if (validContacts.length === 0) {
         throw new Error('No valid contacts found in CSV');
       }
@@ -2980,94 +3000,26 @@ const resetForm = () => {
         const batchContacts = validContacts.slice(i, i + batchSize);
   
         for (const contact of batchContacts) {
-          // Phone number formatting (your existing code)
-          let phoneNumber = contact.phone?.replace(/\D/g, '') || '';
-          // ... (keep your existing phone formatting logic) ...
-  
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, phoneNumber);
-          
-          // Fetch existing contact data
-          const existingContact = await getDoc(contactRef);
-          const existingTags = existingContact.exists() ? existingContact.data().tags || [] : [];
-  
-          // Prepare contact data with custom fields
-          const contactData: { [key: string]: any } = {
-            contactName: contact.contactName,
-            phone: phoneNumber,
-            email: contact.email || '',
-            lastName: contact.lastName || '',
-            companyName: contact.companyName || '',
-            address1: contact.address1 || '',
-            city: contact.city || '',
-            state: contact.state || '',
-            postalCode: contact.postalCode || '',
-            country: contact.country || '',
-            branch: contact.branch || userData.branch || '',
-            expiryDate: contact.expiryDate || userData.expiryDate || '',
-            vehicleNumber: contact.vehicleNumber || userData.vehicleNumber || '',
-            points: contact.points || '0',
-            IC: contact.ic || '',
-            customFields: contact.customFields || {}, // This will have all fields from ensureAllCustomFields
-            tags: [
-              ...new Set([
-                ...existingTags,
-                ...selectedImportTags,
-                ...importTags,
-                ...(contact.importedTags || [])
-              ])
-            ],
-            updatedAt: Timestamp.now(),
-            updatedBy: user.email
-          };
-  
-          if (!existingContact.exists()) {
-            contactData.createdAt = Timestamp.now();
-            contactData.createdBy = user.email;
-          }
-  
-          
-          batch.set(contactRef, contactData, { merge: true });
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.phone);
+          batch.set(contactRef, contact, { merge: true });
         }
   
         batches.push(batch.commit());
       }
   
-      // Execute all batches
-      
+       // Execute all batches
       await Promise.all(batches);
-      
 
-      const verifyImport = async (): Promise<boolean> => {
-        const user = auth.currentUser;
-        if (!user?.email) return false;
-        
-        const docUserRef = doc(firestore, 'user', user.email);
-        const docUserSnapshot = await getDoc(docUserRef);
-        const companyId = docUserSnapshot.data()?.companyId;
-        
-        const contactsRef = collection(firestore, `companies/${companyId}/contacts`);
-        const snapshot = await getDocs(contactsRef);
-        
-        
-        return snapshot.size > 0;
-      };
+      // Verify import and update UI
+      toast.success(`Successfully imported ${validContacts.length} contacts!`);
+      setShowCsvImportModal(false);
+      setSelectedCsvFile(null);
+      setSelectedImportTags([]);
+      setImportTags([]);
       
-  
-      // Your existing verification and cleanup code
-      if (await verifyImport()) {
-        localStorage.removeItem('contacts');
-        sessionStorage.removeItem('contactsFetched');
-        await fetchContacts();
-  
-        toast.success(`Successfully imported ${validContacts.length} contacts!`);
-        setShowCsvImportModal(false);
-        setSelectedCsvFile(null);
-        setSelectedImportTags([]);
-        setImportTags([]);
-      } else {
-        throw new Error('Failed to verify contact import');
-      }
-  
+      // Refresh contacts list
+      await fetchContacts();
+
     } catch (error) {
       console.error('CSV Import Error:', error);
       toast.error(error instanceof Error ? error.message : "Failed to import contacts");
@@ -3087,18 +3039,19 @@ const resetForm = () => {
     });
     return Array.from(customFieldsSet);
   };
-  
-  const ensureAllCustomFields = (contactData: Contact, allCustomFields: string[]): Contact => {
+
+  const ensureAllCustomFields = (contactData: any, allCustomFields: string[]): any => {
     const customFields: { [key: string]: string } = {
       ...(contactData.customFields || {})
     };
     
+    // Add any missing custom fields with empty string values
     allCustomFields.forEach(field => {
       if (!(field in customFields)) {
         customFields[field] = '';
       }
     });
-  
+
     return {
       ...contactData,
       customFields
@@ -3653,143 +3606,160 @@ const resetForm = () => {
     saveAs(blob, 'sample_contacts.csv');
   };
 
-// Update parseCSV in handleCsvImport to match headers
-const parseCSV = async (): Promise<Array<any>> => {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const text = event.target?.result as string;
-        if (!text) {
-          throw new Error('Failed to read CSV file content');
+  const parseCSV = async (): Promise<Array<any>> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        try {
+          const text = event.target?.result as string;
+          if (!text) {
+            throw new Error('Failed to read CSV file content');
+          }
+
+          const lines = text.split('\n');
+          if (lines.length < 2) {
+            throw new Error('CSV file must contain at least a header row and one data row');
+          }
+
+          // Define field mappings from CSV headers to contact properties
+          const fieldMappings: { [key: string]: string } = {
+            'contactname': 'contactName',
+            'lastname': 'lastName',
+            'companyname': 'companyName',
+            'postalcode': 'postalCode',
+            'expirydate': 'expiryDate',
+            'vehiclenumber': 'vehicleNumber',
+            'ic': 'IC',
+          };
+
+          // Get headers and normalize them
+          const headers = lines[0].split(',').map(header => 
+            header.trim().toLowerCase().replace(/['"]/g, '')
+          );
+
+          // Process data rows
+          const data = lines.slice(1)
+            .filter(line => line.trim())
+            .map((line, index) => {
+              const values = line.split(',').map(val => 
+                val.trim().replace(/^["']|["']$/g, '')
+              );
+              
+              const row: { [key: string]: string } = {};
+              
+              headers.forEach((header, i) => {
+                // Map the header to the correct property name
+                const propertyName = fieldMappings[header] || header;
+                const value = values[i] || '';
+                row[propertyName] = value;
+              });
+
+              // Validate required fields
+              if (!row.contactName || !row.phone) {
+                return null;
+              }
+
+              // Format phone number
+              // Remove all non-numeric characters including any existing '+' prefix
+              let phoneNumber = row.phone.replace(/\D/g, '');
+              
+              // Handle different phone number formats
+              if (phoneNumber.startsWith('0')) {
+                // Remove leading 0 if present
+                phoneNumber = phoneNumber.substring(1);
+              }
+
+              // Check if country code is already present
+              if (!phoneNumber.match(/^[1-9]\d{1,3}/)) {
+                // If no country code is present, default to Malaysia (60)
+                phoneNumber = '60' + phoneNumber;
+              }
+
+              // Validate phone number length (minimum 8 digits after country code)
+              if (phoneNumber.length < 10) { // country code (2-3 digits) + phone number (8+ digits)
+                console.warn(`Invalid phone number length for contact: ${row.contactName}`);
+                return null;
+              }
+
+              // Add '+' prefix to the formatted phone number
+              row.phone = '+' + phoneNumber;
+              return row;
+            })
+            .filter((row): row is NonNullable<typeof row> => row !== null);
+
+          if (data.length === 0) {
+            throw new Error('No valid data rows found in CSV file');
+          }
+
+          resolve(data);
+        } catch (error) {
+          console.error('CSV parsing error:', error);
+          reject(error);
         }
+      };
 
-        
+      reader.onerror = (error) => {
+        console.error('FileReader error:', error);
+        reject(new Error('Failed to read CSV file'));
+      };
 
-        const lines = text.split('\n');
-        if (lines.length < 2) {
-          throw new Error('CSV file must contain at least a header row and one data row');
-        }
-
-        // Get headers and create a case-insensitive map
-        const headers = lines[0].split(',').map(header => 
-          header.trim().replace(/['"]/g, '') // Remove quotes and trim whitespace
-        );
-        
-
-        // Case-insensitive header validation
-        const headerMap = new Map(headers.map(h => [h.toLowerCase(), h]));
-        if (!headerMap.has('contactname') && !headerMap.has('contactName')) {
-          throw new Error('CSV must contain a "contactName" header');
-        }
-        if (!headerMap.has('phone')) {
-          throw new Error('CSV must contain a "phone" header');
-        }
-
-        // Process data rows
-        const data = lines.slice(1)
-          .filter(line => line.trim()) // Skip empty lines
-          .map((line, index) => {
-            const values = line.split(',').map(val => 
-              val.trim().replace(/^["']|["']$/g, '') // Remove quotes and trim
-            );
-            
-            const row = headers.reduce((obj: any, header, i) => {
-              // Convert header to the format expected by the rest of the code
-              const normalizedHeader = header.toLowerCase();
-              const key = normalizedHeader === 'contactname' ? 'contactname' : 
-                         normalizedHeader === 'contactName' ? 'contactname' : 
-                         normalizedHeader;
-              obj[key] = values[i] || '';
-              return obj;
-            }, {});
-
-            // Log each parsed row for debugging
-            
-
-            // Validate required fields
-            if (!row.contactname || !row.phone) {
-              console.warn(`Row ${index + 1} missing required fields:`, row);
-            }
-
-            return row;
-          });
-
-        
-        
-        if (data.length === 0) {
-          throw new Error('No valid data rows found in CSV file');
-        }
-
-        resolve(data);
-      } catch (error) {
-        console.error('CSV parsing error:', error);
-        reject(error);
+      if (selectedCsvFile) {
+        reader.readAsText(selectedCsvFile);
+      } else {
+        reject(new Error('No file selected'));
       }
-    };
-
-    reader.onerror = (error) => {
-      console.error('FileReader error:', error);
-      reject(new Error('Failed to read CSV file'));
-    };
-
-    if (selectedCsvFile) {
-      reader.readAsText(selectedCsvFile);
-    } else {
-      reject(new Error('No file selected'));
-    }
-  });
-};
-
-// Add these to your existing state declarations
-const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
-
-// Add this helper function
-const getPhoneName = (phoneIndex: number) => {
-  if (companyId === '0123') {
-    return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru' : 'ShipGuru';
-  }
-  return `Phone ${phoneIndex + 1}`;
-};
-
-useEffect(() => {
-  const fetchPhoneStatuses = async () => {
-    try {
-      const docRef = doc(firestore, 'companies', companyId);
-      const docSnapshot = await getDoc(docRef);
-      
-      if (!docSnapshot.exists()) {
-        throw new Error("Company document does not exist");
-      }
-
-      const companyData = docSnapshot.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      
-      const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
-        headers: companyId === '0123' 
-          ? {
-              'ngrok-skip-browser-warning': 'true',
-              'Accept': 'application/json',
-              'Content-Type': 'application/json'
-            }
-          : {}
-      });
-
-      if (botStatusResponse.status === 200) {
-        const qrCodesData = Array.isArray(botStatusResponse.data) 
-          ? botStatusResponse.data 
-          : [];
-        setQrCodes(qrCodesData);
-      }
-    } catch (error) {
-      console.error('Error fetching phone statuses:', error);
-    }
+    });
   };
 
-  if (companyId) {
-    fetchPhoneStatuses();
-  }
-}, [companyId]);
+  // Add these to your existing state declarations
+  const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
+
+  // Add this helper function
+  const getPhoneName = (phoneIndex: number) => {
+    if (companyId === '0123') {
+      return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru' : 'ShipGuru';
+    }
+    return `Phone ${phoneIndex + 1}`;
+  };
+
+  useEffect(() => {
+    const fetchPhoneStatuses = async () => {
+      try {
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
+        
+        if (!docSnapshot.exists()) {
+          throw new Error("Company document does not exist");
+        }
+
+        const companyData = docSnapshot.data();
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        
+        const botStatusResponse = await axios.get(`${baseUrl}/api/bot-status/${companyId}`, {
+          headers: companyId === '0123' 
+            ? {
+                'ngrok-skip-browser-warning': 'true',
+                'Accept': 'application/json',
+                'Content-Type': 'application/json'
+              }
+            : {}
+        });
+
+        if (botStatusResponse.status === 200) {
+          const qrCodesData = Array.isArray(botStatusResponse.data) 
+            ? botStatusResponse.data 
+            : [];
+          setQrCodes(qrCodesData);
+        }
+      } catch (error) {
+        console.error('Error fetching phone statuses:', error);
+      }
+    };
+
+    if (companyId) {
+      fetchPhoneStatuses();
+    }
+  }, [companyId]);
 
   
 
@@ -4358,82 +4328,82 @@ const getFilteredScheduledMessages = () => {
                               </span>
                             </div>
                             <div className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md">
-{/* First Message */}
-<p className="line-clamp-2">
-  {message.message ? message.message : 'No message content'}
-</p>
+                            {/* First Message */}
+                            <p className="line-clamp-2">
+                              {message.message ? message.message : 'No message content'}
+                            </p>
 
-{/* Additional Messages */}
-{message.messages && message.messages.length > 0 && message.messages.some(msg => msg.message !== message.message) && (
-  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-    {message.messages.map((msg: any, index: number) => {
-      // Only show messages that are different from the first message
-      if (msg.message !== message.message) {
-        return (
-          <div key={index} className="mt-2">
-            <p className="line-clamp-2">
-              Message {index + 2}: {msg.text}
-            </p>
-            {message.messageDelays && message.messageDelays[index] > 0 && (
-              <span className="text-xs text-gray-500 dark:text-gray-400">
-                Delay: {message.messageDelays[index]} seconds
-              </span>
-            )}
-          </div>
-        );
-      }
-      return null;
-    })}
-  </div>
-)}
+                            {/* Additional Messages */}
+                            {message.messages && message.messages.length > 0 && message.messages.some(msg => msg.message !== message.message) && (
+                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                {message.messages.map((msg: any, index: number) => {
+                                  // Only show messages that are different from the first message
+                                  if (msg.message !== message.message) {
+                                    return (
+                                      <div key={index} className="mt-2">
+                                        <p className="line-clamp-2">
+                                          Message {index + 2}: {msg.text}
+                                        </p>
+                                        {message.messageDelays && message.messageDelays[index] > 0 && (
+                                          <span className="text-xs text-gray-500 dark:text-gray-400">
+                                            Delay: {message.messageDelays[index]} seconds
+                                          </span>
+                                        )}
+                                      </div>
+                                    );
+                                  }
+                                  return null;
+                                })}
+                              </div>
+                            )}
 
-  {/* Message Settings */}
-  <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
-    <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
-      {/* Batch Settings */}
-      <div>
-        <span className="font-semibold">Batch Size:</span> {message.batchQuantity}
-      </div>
-      
-      {/* Delay Settings */}
-      <div>
-        <span className="font-semibold">Delay:</span> {message.minDelay}-{message.maxDelay}s
-      </div>
+                              {/* Message Settings */}
+                              <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-700">
+                                <div className="grid grid-cols-2 gap-2 text-xs text-gray-500 dark:text-gray-400">
+                                  {/* Batch Settings */}
+                                  <div>
+                                    <span className="font-semibold">Batch Size:</span> {message.batchQuantity}
+                                  </div>
+                                  
+                                  {/* Delay Settings */}
+                                  <div>
+                                    <span className="font-semibold">Delay:</span> {message.minDelay}-{message.maxDelay}s
+                                  </div>
 
-      {/* Repeat Settings */}
-      {message.repeatInterval > 0 && (
-        <div>
-          <span className="font-semibold">Repeat:</span> Every {message.repeatInterval} {message.repeatUnit}
-        </div>
-      )}
+                                  {/* Repeat Settings */}
+                                  {message.repeatInterval > 0 && (
+                                    <div>
+                                      <span className="font-semibold">Repeat:</span> Every {message.repeatInterval} {message.repeatUnit}
+                                    </div>
+                                  )}
 
-      {/* Sleep Settings */}
-      {message.activateSleep && (
-        <>
-          <div>
-            <span className="font-semibold">Sleep After:</span> {message.sleepAfterMessages} messages
-          </div>
-          <div>
-            <span className="font-semibold">Sleep Duration:</span> {message.sleepDuration} minutes
-          </div>
-        </>
-      )}
+                                  {/* Sleep Settings */}
+                                  {message.activateSleep && (
+                                    <>
+                                      <div>
+                                        <span className="font-semibold">Sleep After:</span> {message.sleepAfterMessages} messages
+                                      </div>
+                                      <div>
+                                        <span className="font-semibold">Sleep Duration:</span> {message.sleepDuration} minutes
+                                      </div>
+                                    </>
+                                  )}
 
-      {/* Active Hours */}
-      <div className="col-span-2">
-        <span className="font-semibold">Active Hours:</span> {message.activeHours?.start} - {message.activeHours?.end}
-      </div>
+                                  {/* Active Hours */}
+                                  <div className="col-span-2">
+                                    <span className="font-semibold">Active Hours:</span> {message.activeHours?.start} - {message.activeHours?.end}
+                                  </div>
 
-      {/* Infinite Loop */}
-      {message.infiniteLoop && (
-        <div className="col-span-2 text-indigo-600 dark:text-indigo-400 flex items-center">
-          <Lucide icon="RefreshCw" className="w-4 h-4 mr-1" />
-          Messages will loop indefinitely
-        </div>
-      )}
-    </div>
-  </div>
-</div>
+                                  {/* Infinite Loop */}
+                                  {message.infiniteLoop && (
+                                    <div className="col-span-2 text-indigo-600 dark:text-indigo-400 flex items-center">
+                                      <Lucide icon="RefreshCw" className="w-4 h-4 mr-1" />
+                                      Messages will loop indefinitely
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
                             <div className="flex items-center text-xs text-gray-600 dark:text-gray-400">
                               <Lucide icon="Users" className="w-4 h-4 mr-1" />
                               <div className="ml-5 max-h-20 overflow-y-auto">
@@ -4738,10 +4708,10 @@ const getFilteredScheduledMessages = () => {
   <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
     <Dialog.Panel className="w-full max-w-sm p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
       <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-        Show/Hide Columns
+        Manage Columns
       </Dialog.Title>
       
-     <div className="space-y-3">
+      <div className="space-y-3">
         {Object.entries(visibleColumns).map(([column, isVisible]) => {
           // Check if this is a custom field
           const isCustomField = column.startsWith('customField_');
@@ -4749,24 +4719,32 @@ const getFilteredScheduledMessages = () => {
             column.replace('customField_', '') : 
             column;
 
+          // Don't allow deletion of essential columns
+          const isEssentialColumn = ['checkbox', 'contact', 'phone', 'actions'].includes(column);
+
           return (
-            <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-              <input
-                type="checkbox"
-                checked={isVisible}
-                onChange={() => setVisibleColumns(prev => ({
-                  ...prev,
-                  [column]: !prev[column]
-                }))}
-                className="mr-2 rounded border-gray-300"
-                id={`column-${column}`}
-              />
-              <label 
-                htmlFor={`column-${column}`}
-                className="text-sm capitalize text-gray-700 dark:text-gray-300 cursor-pointer flex-grow"
-              >
+            <div key={column} className="flex items-center justify-between px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+              <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
                 {isCustomField ? `${displayName} (Custom)` : displayName}
-              </label>
+              </span>
+              {!isEssentialColumn && (
+                <button
+                  onClick={() => {
+                    setVisibleColumns(prev => {
+                      const newColumns = { ...prev };
+                      delete newColumns[column];
+                      return newColumns;
+                    });
+                  }}
+                  className="ml-2 p-1 text-red-500 hover:text-red-700 focus:outline-none"
+                  title="Delete column"
+                >
+                  <Lucide icon="Trash2" className="w-4 h-4" />
+                </button>
+              )}
+              {isEssentialColumn && (
+                <span className="text-xs text-gray-500 italic">Required</span>
+              )}
             </div>
           );
         })}
@@ -4781,14 +4759,24 @@ const getFilteredScheduledMessages = () => {
         </button>
         <button
           onClick={() => {
-            setVisibleColumns(Object.keys(visibleColumns).reduce((acc, key) => ({
-              ...acc,
-              [key]: true
-            }), {}));
+            // Show confirmation dialog before resetting
+            if (window.confirm('This will restore all default columns. Are you sure?')) {
+              // Reset to default columns
+              setVisibleColumns({
+                checkbox: true,
+                contact: true,
+                phone: true,
+                tags: true,
+                points: true,
+                notes: true,
+                actions: true,
+                // Add any other default columns you want to include
+              });
+            }
           }}
           className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
         >
-          Show All
+          Reset to Default
         </button>
       </div>
     </Dialog.Panel>

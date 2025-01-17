@@ -304,10 +304,7 @@ function Main() {
   };
 
   const saveUser = async () => {
-    if (!validateForm()) {
-      // Don't return here, let the validation errors show in the form
-      return;
-    }
+    if (!validateForm()) return;
 
     try {
       setIsLoading(true);
@@ -365,6 +362,12 @@ function Main() {
           return phoneNumber && !phoneNumber.startsWith('+') ? "+6" + phoneNumber : phoneNumber;
         };
 
+        // Get company data to know how many phones are configured
+        const companyDocRef = doc(firestore, 'companies', companyId);
+        const companyDocSnap = await getDoc(companyDocRef);
+        const companyData = companyDocSnap.data();
+        const phoneCount = companyData?.phoneCount || 0;
+
         const userDataToSend = {
           name: userData.name,
           phoneNumber: formatPhoneNumber(userData.phoneNumber),
@@ -377,19 +380,25 @@ function Main() {
           notes: userData.notes || null,
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
-          phone: userData.phone || -1,
-          // Convert weightage values to numbers
+          
+          // First, set the base phone and weightage fields
+          phone: 1, // Set default phone to 1 for the first phone
+          weightage: Number(userData.weightage) || 0, // Use weightage1 for the first phone
+          
+          // Then include additional phone and weightage fields
           ...(Object.keys(phoneNames).reduce((acc, index) => {
-            const phoneField = index === '0' ? 'phone' : `phone${parseInt(index) + 1}` as keyof typeof userData;
-            const weightageField = index === '0' ? 'weightage' : `weightage${parseInt(index) + 1}` as keyof typeof userData;
-            if (userData[phoneField] !== undefined) {
-              acc[phoneField] = userData[phoneField];
-              acc[weightageField] = Number(userData[weightageField]) || 0; // Convert to number
+            const phoneIndex = parseInt(index);
+            if (phoneIndex > 1) { // Only handle phone2 and above here
+              const phoneField = `phone${phoneIndex}`;
+              const weightageField = `weightage${phoneIndex}`;
+              
+              acc[phoneField] = phoneIndex;
+              acc[weightageField] = Number(userData[weightageField as keyof typeof userData]) || 0;
             }
             return acc;
           }, {} as Record<string, any>)),
+          
           imageUrl: imageUrl || "",
-          weightage: Number(userData.weightage) || 0, // Convert main weightage to number
         };
 
         if (contactId) {

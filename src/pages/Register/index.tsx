@@ -35,6 +35,14 @@ function Main() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
+
+  const [employeeId, setEmployeeId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [quotaLeads, setQuotaLeads] = useState(0);
+  const [invoiceNumber, setInvoiceNumber] = useState<string | null>(null);
+  const [weightage, setWeightage] = useState(0);
+
+  
   const [registerResult, setRegisterResult] = useState<string | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<'blaster' | 'enterprise' | null>(null);
   const [verificationCode, setVerificationCode] = useState("");
@@ -195,6 +203,12 @@ function Main() {
         plan: selectedPlan,
         trialStartDate: trialStartDate,
         trialEndDate: trialEndDate,
+
+        employeeId: employeeId || null,
+        notes: notes || null,
+        quotaLeads: quotaLeads || 0,
+        invoiceNumber: invoiceNumber || null,
+        weightage: weightage || 0,
       });
 
       // Save user data under the new company's employee collection
@@ -204,7 +218,11 @@ function Main() {
         role: "1",
         phoneNumber: formatPhoneNumber(phoneNumber),
 
-
+        employeeId: employeeId || null,
+        notes: notes || null,
+        quotaLeads: quotaLeads || 0,
+        invoiceNumber: invoiceNumber || null,
+        weightage: weightage || 0,
       });
    
       if (!user) {

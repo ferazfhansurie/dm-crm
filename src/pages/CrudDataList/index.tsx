@@ -2928,105 +2928,6 @@ const resetForm = () => {
   };
 
   const [importTags, setImportTags] = useState<string[]>([]);
-
-  const handleCsvImport = async () => {
-    if (!selectedCsvFile) {
-      toast.error("Please select a CSV file to import.");
-      return;
-    }
-  
-    try {
-      setLoading(true);
-  
-      // Get user and company data
-      const user = auth.currentUser;
-      if (!user?.email) throw new Error('User not authenticated');
-
-      const docUserRef = doc(firestore, 'user', user.email);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) throw new Error('User document not found');
-
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
-
-      // Get all existing custom fields from current contacts
-      const allCustomFields = getAllCustomFields(contacts);
-      
-      // Parse CSV data
-      const csvContacts = await parseCSV();
-      
-  
-      // Validate and prepare contacts for import
-      const validContacts = csvContacts.map(contact => {
-        // First create the basic contact object
-        const baseContact = {
-          contactName: contact.contactName,
-          phone: contact.phone,
-          email: contact.email || '',
-          lastName: contact.lastName || '',
-          companyName: contact.companyName || '',
-          address1: contact.address1 || '',
-          city: contact.city || '',
-          state: contact.state || '',
-          postalCode: contact.postalCode || '',
-          country: contact.country || '',
-          branch: contact.branch || userData.branch || '',
-          expiryDate: contact.expiryDate || userData.expiryDate || '',
-          vehicleNumber: contact.vehicleNumber || '',
-          points: contact.points || '0',
-          IC: contact.IC || '',
-          customFields: {},
-          tags: [],
-          updatedAt: Timestamp.now(),
-          updatedBy: user.email,
-          createdAt: Timestamp.now(),
-          createdBy: user.email
-        };
-
-        // Ensure all custom fields are present
-        return ensureAllCustomFields(baseContact, allCustomFields);
-      });
-
-      if (validContacts.length === 0) {
-        throw new Error('No valid contacts found in CSV');
-      }
-  
-      // Create contacts in batches of 500 (Firestore limit)
-      const batchSize = 500;
-      const batches = [];
-      
-      for (let i = 0; i < validContacts.length; i += batchSize) {
-        const batch = writeBatch(firestore);
-        const batchContacts = validContacts.slice(i, i + batchSize);
-  
-        for (const contact of batchContacts) {
-          const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.phone);
-          batch.set(contactRef, contact, { merge: true });
-        }
-  
-        batches.push(batch.commit());
-      }
-  
-       // Execute all batches
-      await Promise.all(batches);
-
-      // Verify import and update UI
-      toast.success(`Successfully imported ${validContacts.length} contacts!`);
-      setShowCsvImportModal(false);
-      setSelectedCsvFile(null);
-      setSelectedImportTags([]);
-      setImportTags([]);
-      
-      // Refresh contacts list
-      await fetchContacts();
-
-    } catch (error) {
-      console.error('CSV Import Error:', error);
-      toast.error(error instanceof Error ? error.message : "Failed to import contacts");
-    } finally {
-      setLoading(false);
-    }
-  };
   
   const getAllCustomFields = (contacts: Contact[]): string[] => {
     const customFieldsSet = new Set<string>();
@@ -3606,6 +3507,21 @@ const resetForm = () => {
     saveAs(blob, 'sample_contacts.csv');
   };
 
+  const cleanPhoneNumber = (phone: string): string | null => {
+    if (!phone || phone === '#ERROR!') return null;
+    
+    // Remove all non-numeric characters except '+'
+    let cleaned = phone.replace(/[^0-9+]/g, '');
+    
+    // If already starts with +, validate length and return
+    if (cleaned.startsWith('+')) {
+      return cleaned.length >= 10 ? cleaned : null;
+    }
+    
+    // Add + prefix if missing
+    return cleaned.length >= 10 ? `+${cleaned}` : null;
+  };
+  
   const parseCSV = async (): Promise<Array<any>> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -3615,100 +3531,202 @@ const resetForm = () => {
           if (!text) {
             throw new Error('Failed to read CSV file content');
           }
-
-          const lines = text.split('\n');
-          if (lines.length < 2) {
-            throw new Error('CSV file must contain at least a header row and one data row');
-          }
-
-          // Define field mappings from CSV headers to contact properties
-          const fieldMappings: { [key: string]: string } = {
-            'contactname': 'contactName',
-            'lastname': 'lastName',
-            'companyname': 'companyName',
-            'postalcode': 'postalCode',
-            'expirydate': 'expiryDate',
-            'vehiclenumber': 'vehicleNumber',
-            'ic': 'IC',
-          };
-
-          // Get headers and normalize them
-          const headers = lines[0].split(',').map(header => 
-            header.trim().toLowerCase().replace(/['"]/g, '')
-          );
-
-          // Process data rows
-          const data = lines.slice(1)
-            .filter(line => line.trim())
-            .map((line, index) => {
-              const values = line.split(',').map(val => 
-                val.trim().replace(/^["']|["']$/g, '')
-              );
-              
-              const row: { [key: string]: string } = {};
-              
-              headers.forEach((header, i) => {
-                // Map the header to the correct property name
-                const propertyName = fieldMappings[header] || header;
-                const value = values[i] || '';
-                row[propertyName] = value;
+  
+          // Use Papa Parse for better CSV handling
+          Papa.parse(text, {
+            header: true,
+            skipEmptyLines: true,
+            complete: (results) => {
+              if (results.errors.length > 0) {
+                console.error('CSV parsing errors:', results.errors);
+                throw new Error('Error parsing CSV file');
+              }
+  
+              if (results.data.length === 0) {
+                throw new Error('No valid data rows found in CSV file');
+              }
+  
+              // Log for debugging
+              console.log('Parsed CSV data:', {
+                headers: results.meta.fields,
+                rowCount: results.data.length,
+                firstRow: results.data[0]
               });
-
-              // Validate required fields
-              if (!row.contactName || !row.phone) {
-                return null;
-              }
-
-              // Format phone number
-              // Remove all non-numeric characters including any existing '+' prefix
-              let phoneNumber = row.phone.replace(/\D/g, '');
-              
-              // Handle different phone number formats
-              if (phoneNumber.startsWith('0')) {
-                // Remove leading 0 if present
-                phoneNumber = phoneNumber.substring(1);
-              }
-
-              // Check if country code is already present
-              if (!phoneNumber.match(/^[1-9]\d{1,3}/)) {
-                // If no country code is present, default to Malaysia (60)
-                phoneNumber = '60' + phoneNumber;
-              }
-
-              // Validate phone number length (minimum 8 digits after country code)
-              if (phoneNumber.length < 10) { // country code (2-3 digits) + phone number (8+ digits)
-                console.warn(`Invalid phone number length for contact: ${row.contactName}`);
-                return null;
-              }
-
-              // Add '+' prefix to the formatted phone number
-              row.phone = '+' + phoneNumber;
-              return row;
-            })
-            .filter((row): row is NonNullable<typeof row> => row !== null);
-
-          if (data.length === 0) {
-            throw new Error('No valid data rows found in CSV file');
-          }
-
-          resolve(data);
+  
+              resolve(results.data);
+            },
+            error: (error: any) => {
+              console.error('Papa Parse error:', error);
+              reject(new Error('Failed to parse CSV file'));
+            }
+          });
         } catch (error) {
-          console.error('CSV parsing error:', error);
+          console.error('CSV parsing error details:', error);
           reject(error);
         }
       };
-
+  
       reader.onerror = (error) => {
         console.error('FileReader error:', error);
         reject(new Error('Failed to read CSV file'));
       };
-
+  
       if (selectedCsvFile) {
         reader.readAsText(selectedCsvFile);
       } else {
         reject(new Error('No file selected'));
       }
     });
+  };
+  
+  const handleCsvImport = async () => {
+    if (!selectedCsvFile) {
+      toast.error("Please select a CSV file to import.");
+      return;
+    }
+  
+    try {
+      setLoading(true);
+  
+      // Get user and company data
+      const user = auth.currentUser;
+      if (!user?.email) throw new Error('User not authenticated');
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('User document not found');
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Parse CSV data
+      const csvContacts = await parseCSV();
+  
+      // Define standard field mappings (case-insensitive)
+      const standardFields = {
+        'phone': ['phone', 'mobile', 'tel', 'telephone', 'contact number', 'phone number'],
+        'contactName': ['contactname', 'contact name', 'name', 'full name', 'customer name'],
+        'email': ['email', 'e-mail', 'mail'],
+        'lastName': ['lastname', 'last name', 'surname', 'family name'],
+        'companyName': ['companyname', 'company name', 'company', 'organization'],
+        'address1': ['address1', 'address', 'street address', 'location'],
+        'city': ['city', 'town'],
+        'state': ['state', 'province', 'region'],
+        'postalCode': ['postalcode', 'postal code', 'zip', 'zip code', 'postcode'],
+        'country': ['country', 'nation'],
+        'branch': ['branch', 'department', 'location'],
+        'expiryDate': ['expirydate', 'expiry date', 'expiration', 'expire date'],
+        'vehicleNumber': ['vehiclenumber', 'vehicle number', 'vehicle no', 'car number'],
+        'points': ['points', 'reward points'],
+        'IC': ['ic', 'identification', 'id number'],
+        'Notes': ['notes', 'note', 'comments', 'remarks'] // Added Notes field mapping
+      };
+  
+       // Validate and prepare contacts for import
+      const validContacts = csvContacts.map(contact => {
+        const baseContact: any = {
+          customFields: {},
+          tags: [],
+          updatedAt: Timestamp.now(),
+          updatedBy: user.email,
+          createdAt: Timestamp.now(),
+          createdBy: user.email
+        };
+
+        // Process each field in the CSV contact
+      Object.entries(contact).forEach(([header, value]) => {
+        const headerLower = header.toLowerCase().trim();
+        
+        // Try to match with standard fields
+        let matched = false;
+        for (const [fieldName, aliases] of Object.entries(standardFields)) {
+          // Convert both the header and aliases to lowercase for comparison
+          if (aliases.includes(headerLower) || headerLower === fieldName.toLowerCase()) {
+            if (fieldName === 'phone') {
+              const cleanedPhone = cleanPhoneNumber(value as string);
+              if (cleanedPhone) {
+                baseContact[fieldName] = cleanedPhone;
+              }
+            } else if (fieldName === 'Notes') {
+              // Ensure Notes field is properly capitalized
+              baseContact['Notes'] = value || '';
+            } else {
+              baseContact[fieldName] = value || '';
+            }
+            matched = true;
+            break;
+          }
+        }
+
+        // If no match found and value exists, add as custom field
+        if (!matched && value && !header.match(/^\d+$/)) {
+          baseContact.customFields[header] = value;
+        }
+      });
+
+      return baseContact;
+    });
+  
+      // Filter out contacts without valid phone numbers
+      const validContactsWithPhone = validContacts.filter(contact => contact.phone);
+  
+      if (validContactsWithPhone.length === 0) {
+        throw new Error('No valid contacts found in CSV. Please ensure phone numbers are present.');
+      }
+  
+      if (validContactsWithPhone.length < validContacts.length) {
+        toast.warning(`Skipped ${validContacts.length - validContactsWithPhone.length} contacts due to invalid phone numbers.`);
+      }
+  
+      // Create contacts in batches
+      const batchSize = 500;
+      const batches = [];
+      
+      for (let i = 0; i < validContactsWithPhone.length; i += batchSize) {
+        const batch = writeBatch(firestore);
+        const batchContacts = validContactsWithPhone.slice(i, i + batchSize);
+  
+        for (const contact of batchContacts) {
+          const contactRef = doc(firestore, `companies/${companyId}/contacts`, contact.phone);
+          batch.set(contactRef, contact, { merge: true });
+        }
+  
+        batches.push(batch.commit());
+      }
+  
+      await Promise.all(batches);
+  
+      // Update UI with new custom fields
+      const newCustomFields = new Set<string>();
+      validContactsWithPhone.forEach(contact => {
+        Object.keys(contact.customFields).forEach(field => newCustomFields.add(field));
+      });
+  
+      if (newCustomFields.size > 0) {
+        setVisibleColumns(prev => ({
+          ...prev,
+          ...Array.from(newCustomFields).reduce((acc, field) => ({
+            ...acc,
+            [field]: true
+          }), {})
+        }));
+      }
+  
+      // Success cleanup
+      toast.success(`Successfully imported ${validContactsWithPhone.length} contacts!`);
+      setShowCsvImportModal(false);
+      setSelectedCsvFile(null);
+      setSelectedImportTags([]);
+      setImportTags([]);
+      
+      await fetchContacts();
+  
+    } catch (error) {
+      console.error('CSV Import Error:', error);
+      toast.error(error instanceof Error ? error.message : "Failed to import contacts");
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Add these to your existing state declarations
@@ -3976,30 +3994,43 @@ const getFilteredScheduledMessages = () => {
                           </Tab.List>
                           <Tab.Panels className="mt-2 max-h-[300px] overflow-y-auto">
                             <Tab.Panel>
-                              {tagList.map((tag) => (
-                                <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>
-                                  <div 
-                                    className="flex items-center cursor-pointer"
-                                    onClick={() => handleTagFilterChange(tag.name)}
-                                  >
-                                    {tag.name}
+                              {tagList
+                                .sort((a, b) => {
+                                  // Check if either tag starts with a number
+                                  const aStartsWithNumber = /^\d/.test(a.name);
+                                  const bStartsWithNumber = /^\d/.test(b.name);
+                                  
+                                  // If one starts with number and other doesn't, number comes first
+                                  if (aStartsWithNumber && !bStartsWithNumber) return -1;
+                                  if (!aStartsWithNumber && bStartsWithNumber) return 1;
+                                  
+                                  // Otherwise sort alphabetically
+                                  return a.name.localeCompare(b.name);
+                                })
+                                .map((tag) => (
+                                  <div key={tag.id} className={`flex items-center justify-between m-2 p-2 text-sm w-full rounded-md ${selectedTagFilters.includes(tag.name) ? 'bg-primary dark:bg-primary text-white' : ''}`}>
+                                    <div 
+                                      className="flex items-center cursor-pointer"
+                                      onClick={() => handleTagFilterChange(tag.name)}
+                                    >
+                                      {tag.name}
+                                    </div>
+                                    <button
+                                      className={`px-2 py-1 text-xs rounded ${
+                                        excludedTags.includes(tag.name)
+                                          ? 'bg-red-500 text-white'
+                                          : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
+                                      }`}
+                                      onClick={() => 
+                                        excludedTags.includes(tag.name)
+                                          ? handleRemoveExcludedTag(tag.name)
+                                          : handleExcludeTag(tag.name)
+                                      }
+                                    >
+                                      {excludedTags.includes(tag.name) ? 'Excluded' : 'Exclude'}
+                                    </button>
                                   </div>
-                                  <button
-                                    className={`px-2 py-1 text-xs rounded ${
-                                      excludedTags.includes(tag.name)
-                                        ? 'bg-red-500 text-white'
-                                        : 'bg-gray-200 text-gray-700 dark:bg-gray-600 dark:text-gray-300'
-                                    }`}
-                                    onClick={() => 
-                                      excludedTags.includes(tag.name)
-                                        ? handleRemoveExcludedTag(tag.name)
-                                        : handleExcludeTag(tag.name)
-                                    }
-                                  >
-                                    {excludedTags.includes(tag.name) ? 'Excluded' : 'Exclude'}
-                                  </button>
-                                </div>
-                              ))}
+                                ))}
                             </Tab.Panel>
                             <Tab.Panel>
                               {employeeList.map((employee) => (
@@ -4723,28 +4754,43 @@ const getFilteredScheduledMessages = () => {
           const isEssentialColumn = ['checkbox', 'contact', 'phone', 'actions'].includes(column);
 
           return (
-            <div key={column} className="flex items-center justify-between px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-              <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
-                {isCustomField ? `${displayName} (Custom)` : displayName}
-              </span>
-              {!isEssentialColumn && (
-                <button
-                  onClick={() => {
-                    setVisibleColumns(prev => {
-                      const newColumns = { ...prev };
-                      delete newColumns[column];
-                      return newColumns;
-                    });
+            <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+              <label className="flex items-center text-left w-full">
+                <input
+                  type="checkbox"
+                  checked={isVisible}
+                  onChange={() => {
+                    setVisibleColumns(prev => ({
+                      ...prev,
+                      [column]: !isVisible
+                    }));
                   }}
-                  className="ml-2 p-1 text-red-500 hover:text-red-700 focus:outline-none"
-                  title="Delete column"
-                >
-                  <Lucide icon="Trash2" className="w-4 h-4" />
-                </button>
-              )}
-              {isEssentialColumn && (
-                <span className="text-xs text-gray-500 italic">Required</span>
-              )}
+                  className="mr-2 rounded-sm"
+                />
+                <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
+                  {isCustomField ? `${displayName} (Custom)` : displayName}
+                </span>
+              </label>
+              <div className="flex items-center ml-auto">
+                {!isEssentialColumn && (
+                  <button
+                    onClick={() => {
+                      setVisibleColumns(prev => {
+                        const newColumns = { ...prev };
+                        delete newColumns[column];
+                        return newColumns;
+                      });
+                    }}
+                    className="ml-2 p-1 text-red-500 hover:text-red-700 focus:outline-none"
+                    title="Delete column"
+                  >
+                    <Lucide icon="Trash2" className="w-4 h-4" />
+                  </button>
+                )}
+                {isEssentialColumn && (
+                  <span className="text-xs text-gray-500 italic">Required</span>
+                )}
+              </div>
             </div>
           );
         })}

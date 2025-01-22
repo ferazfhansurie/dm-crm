@@ -134,7 +134,7 @@ interface Message {
   };
   link_preview?: { link: string; title: string; description: string ,body:string,preview:string};
   sticker?: { link: string; emoji: string;mimetype:string;data:string };
-  location?: { latitude: number; longitude: number; name: string };
+  location?: { latitude: number; longitude: number; name: string; description:string };
   live_location?: { latitude: number; longitude: number; name: string };
   contact?: { name: string; phone: string };
   contact_list?: { contacts: { name: string; phone: string }[] };
@@ -155,6 +155,7 @@ interface Message {
   reactions?: { emoji: string; from_name: string }[];
   name?:string;
   isPrivateNote?: boolean;
+  call_log?: any;
 }
 interface Employee {
   id: string;
@@ -439,7 +440,7 @@ function Main() {
   const [filteredContacts, setFilteredContacts] = useState<Contact[]>([]);
   const baseMessageClass = "flex flex-col max-w-[auto] min-w-[auto] p-1 text-white";
   const myMessageClass = `${baseMessageClass} bg-primary self-end ml-auto text-left mb-1 mr-6 group`;
-  const otherMessageClass = `${baseMessageClass} bg-gray-700 self-start text-left mt-1 ml-2 group`;
+  const otherMessageClass = `${baseMessageClass} bg-white dark:bg-gray-800 self-start text-left mt-1 ml-2 group`;
   const myFirstMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4`;
   const myMiddleMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
   const myLastMessageClass = `${myMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
@@ -448,7 +449,7 @@ function Main() {
   const otherLastMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
   const [messageMode, setMessageMode] = useState('reply');
   const myMessageTextClass = "text-white"
-  const otherMessageTextClass = "text-white"
+  const otherMessageTextClass = "text-black dark:text-white"
   const [activeTags, setActiveTags] = useState<string[]>(['all']);
   const [tagList, setTagList] = useState<Tag[]>([]);
   const [userData, setUserData] = useState<UserData | null>(null);
@@ -766,7 +767,7 @@ function Main() {
 
 
   const onStop = (recordedBlob: { blob: Blob; blobURL: string }) => {
-    console.log('recordedBlob is: ', recordedBlob);
+    
     setAudioBlob(recordedBlob.blob);
   };
   
@@ -784,7 +785,7 @@ const handleVideoUpload = async (caption: string = '') => {
     // First upload the video file to get a URL
     const videoFile = new File([selectedVideo], `video_${Date.now()}.mp4`, { type: selectedVideo.type });
     const videoUrl = await uploadFile(videoFile);
-
+    
     // Get company ID and other necessary data
     const docUserRef = doc(firestore, 'user', userData.email);
     const docUserSnapshot = await getDoc(docUserRef);
@@ -792,8 +793,8 @@ const handleVideoUpload = async (caption: string = '') => {
       throw new Error('No such document for user!');
     }
     const userDataFromDb = docUserSnapshot.data();
-    const companyId = userDataFromDb.companyId;
 
+    const companyId = userDataFromDb.companyId;
     // Format chat ID
     const phoneNumber = selectedChatId.split('+')[1];
     const chat_id = phoneNumber + "@s.whatsapp.net";
@@ -802,9 +803,9 @@ const handleVideoUpload = async (caption: string = '') => {
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) return;
     const companyData = docSnapshot.data();
-    console.log(companyData)
+    
     const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-    console.log(baseUrl)
+    
 
     // Check the size of the video file
     const maxSizeInMB = 20;
@@ -815,7 +816,7 @@ const handleVideoUpload = async (caption: string = '') => {
       return;
     }
     // Call the video message API
-    const response = await axios.post(`${baseUrl}/api/v2/messages/video/${companyId}/${chat_id}`, {
+    const response = await axios.post(`${baseUrl}/api/v2/messages/video/${companyId}/${selectedChatId}`, {
       videoUrl,
       caption,
       phoneIndex: selectedContact.phoneIndex || 0,
@@ -829,7 +830,11 @@ const handleVideoUpload = async (caption: string = '') => {
       toast.success('Video sent successfully');
     }
   } catch (error) {
-    console.error('Error uploading video:', error);
+    if (axios.isAxiosError(error)) {
+      console.error('Error uploading video:', error.response?.data || error.message);
+    } else {
+      console.error('Unexpected error:', error);
+    }
     toast.error('Failed to send video message');
   }
 };
@@ -860,7 +865,7 @@ const sendVoiceMessage = async () => {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -868,7 +873,7 @@ const sendVoiceMessage = async () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -878,7 +883,7 @@ const sendVoiceMessage = async () => {
 
       // Upload the audio file using the provided uploadFile function
       const audioUrl = await uploadFile(audioFile);
-      console.log(audioUrl)
+      
       const requestBody = {
         audioUrl,
         caption: '',
@@ -892,7 +897,7 @@ const sendVoiceMessage = async () => {
       );
 
       if (response.data.success) {
-        console.log("Voice message sent successfully:", response.data.messageId);
+        
         toast.success("Voice message sent successfully");
       } else {
         console.error("Failed to send voice message");
@@ -919,7 +924,7 @@ const handleReaction = async (message: any, emoji: string) => {
     const docUserRef = doc(firestore, 'user', user?.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const dataUser = docUserSnapshot.data();
@@ -927,7 +932,7 @@ const handleReaction = async (message: any, emoji: string) => {
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const data2 = docSnapshot.data();
@@ -940,12 +945,7 @@ const handleReaction = async (message: any, emoji: string) => {
     // Use the full message ID from Firebase
     const messageId = message.id;
     
-    console.log('Reaction details:', {
-      emoji,
-      messageId,
-      companyId: userData.companyId,
-      phoneIndex: selectedContact?.phoneIndex
-    });
+   
     
     // Construct the endpoint with the full message ID
     const endpoint = `${baseUrl}/api/messages/react/${userData.companyId}/${messageId}`;
@@ -955,10 +955,7 @@ const handleReaction = async (message: any, emoji: string) => {
       phoneIndex: selectedContact?.phoneIndex || 0
     };
 
-    console.log('Sending reaction request:', {
-      endpoint,
-      payload
-    });
+    
 
     const response = await axios.post(endpoint, payload);
 
@@ -1223,11 +1220,11 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
   };
 
   // useEffect(() => {
-  //   console.log('Initial contacts:', initialContacts);
+  //   
   // }, []);
 
   const filterContactsByUserRole = useCallback((contacts: Contact[], userRole: string, userName: string) => {
-    console.log('Filtering contacts by user role', { userRole, userName, contactsCount: contacts.length });
+    
     switch (userRole) {
       case '1': // Admin
         return contacts; // Admin sees all contacts
@@ -1279,49 +1276,44 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
   }
 };
   const filterAndSetContacts = useCallback((contactsToFilter: Contact[]) => {
-    console.log('Filtering contacts', { 
-      contactsLength: contactsToFilter.length, 
-      userRole, 
-      userName: userData?.name,
-      activeTags,
-    });
+   
   
     // Apply role-based filtering first
     let filtered = filterContactsByUserRole(contactsToFilter, userRole, userData?.name || '');
-    console.log('After role-based filtering:', { filteredCount: filtered.length });
+    
   
     // Filter out group chats
     filtered = filtered.filter(contact => 
       contact.chat_id && !contact.chat_id.includes('@g.us')
     );
-    console.log('After filtering group chats:', { filteredCount: filtered.length });
+    
   
     // Apply tag-based filtering only if activeTags is not empty and doesn't include 'all'
     if (activeTags.length > 0 && !activeTags.includes('all')) {
       filtered = filtered.filter(contact => 
         contact.tags?.some(tag => activeTags.includes(tag))
       );
-      console.log('After tag-based filtering:', { filteredCount: filtered.length, activeTags });
+      
     }
   
     setFilteredContacts(filtered);
-    console.log('Final filtered contacts set:', { filteredCount: filtered.length });
+    
   }, [userRole, userData, activeTags, filterContactsByUserRole]);
 
   useEffect(() => {
     const fetchContacts = async () => {
       if (!userData?.companyId) {
-        console.log('No company ID available, skipping contact fetch');
+        
         return;
       }
   
-      console.log('Fetching contacts for company:', userData.companyId);
+      
       const contactsRef = collection(firestore, `companies/${userData.companyId}/contacts`);
       const q = query(contactsRef, orderBy("last_message.timestamp", "desc"));
   
       const unsubscribe = onSnapshot(q, (snapshot) => {
         const updatedContacts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
-        console.log('Fetched contacts:', updatedContacts.length);
+        
         setContacts(updatedContacts);
         filterAndSetContacts(updatedContacts);
       }, (error) => {
@@ -1336,7 +1328,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
 
   // useEffect(() => {
   //   if (initialContacts.length > 0) {
-  //     console.log('Initial contacts:', initialContacts.length);
+  //     
   //     setContacts(initialContacts);
   //     filterAndSetContacts(initialContacts);
   //     localStorage.setItem('contacts', LZString.compress(JSON.stringify(initialContacts)));
@@ -1440,7 +1432,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
     const querySnapshot = await getDocs(q);
     
     if (querySnapshot.empty) {
-      console.log(`No employee found with name ${employeeName}`);
+      
       return; 
     }
 
@@ -1449,8 +1441,8 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
     const temp = employeePhone.split('+')[1];
     const employeeId = temp+`@c.us`;
 
-    console.log(employeeId);
-    console.log(selectedChatId);
+    
+    
 
     // Send WhatsApp alert using the ngrok URL
     const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${employeeId}`, {
@@ -1467,7 +1459,7 @@ const sendWhatsAppAlert = async (employeeName: string, chatId: string) => {
       throw new Error(`Failed to send WhatsApp alert: ${response.statusText}`);
     }
 
-    console.log(`WhatsApp alert sent to ${employeeName}`);
+    
   } catch (error) {
     console.error('Error sending WhatsApp alert:', error);
   }
@@ -1516,7 +1508,7 @@ const closePDFModal = () => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -1528,7 +1520,7 @@ const closePDFModal = () => {
   
       for (const message of selectedMessages) {
         try {
-          console.log(`Attempting to delete message: ${message.id}`);
+          
           const response = await axios.delete(
             `${baseUrl}/api/v2/messages/${companyId}/${selectedChatId}/${message.id}`,
             {
@@ -1545,7 +1537,7 @@ const closePDFModal = () => {
           );
   
           if (response.data.success) {
-            console.log(`Successfully deleted message: ${message.id}`);
+            
             setMessages((prevMessages) => prevMessages.filter((msg) => msg.id !== message.id));
             successCount++;
           } else {
@@ -1839,7 +1831,7 @@ const showNotificationToast = (notification: Notification, index: number) => {
   });
 
   if (isDuplicate) {
-    console.log('Duplicate notification, not showing toast');
+    
     return;
   }
 
@@ -1905,12 +1897,12 @@ useEffect(() => {
     if (selectedChatId && auth.currentUser) {
    
       const phone = "+"+selectedChatId.split('@')[0];
-      console.log('listing to messages' + phone);
+      
       const userDocRef = doc(firestore, 'user', auth.currentUser.email!);
       const userDocSnapshot = await getDoc(userDocRef);
       
       if (!userDocSnapshot.exists()) {
-        console.log('No such user document!');
+        
         return;
       }
       
@@ -1921,12 +1913,12 @@ useEffect(() => {
       const companyDocSnapshot = await getDoc(companyDocRef);
       
       if (!companyDocSnapshot.exists()) {
-        console.log('No such company document!');
+        
         return;
       }
       
       const data = companyDocSnapshot.data();
-      console.log('Setting up message listener for company:', newCompanyId);
+      
 
       let prevMessagesCount = 0;
 
@@ -1937,7 +1929,7 @@ useEffect(() => {
           
           // Check if new messages have been added
           if (currentMessages.length > prevMessagesCount) {
-            console.log('New message(s) detected');
+           
             fetchMessagesBackground(selectedChatId, data.whapiToken);
           }
 
@@ -2029,7 +2021,7 @@ async function fetchConfigFromDatabase() {
       return;
     }
 
-    console.log('Company ID:', companyId);
+    
 
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
@@ -2039,7 +2031,7 @@ async function fetchConfigFromDatabase() {
     }
     const data = docSnapshot.data();
 
-    console.log('Company Data:', data);
+    
 
     if (!data) {
       console.error('Company data is missing');
@@ -2065,10 +2057,10 @@ async function fetchConfigFromDatabase() {
     if(data.phoneCount >=2){
       setMessageMode('phone1');
     }
-    console.log(messageMode);
+    
 
 
-    console.log('Tags:', data.tags);
+    
 
     setToken(data.whapiToken);
     user_name = dataUser.name;
@@ -2090,27 +2082,27 @@ async function fetchConfigFromDatabase() {
     });
 
     setEmployeeList(employeeListData);
-    console.log('Employee List:', employeeListData);
+    
     const employeeNames = employeeListData.map(employee => employee.name.trim().toLowerCase());
 
     // Check if the company is using v2
     if (data.v2) {
-      console.log('Company is using v2, fetching tags from Firebase');
+      
       // For v2, fetch tags from Firebase
       const tagsRef = collection(firestore, `companies/${companyId}/tags`);
       const tagsSnapshot = await getDocs(tagsRef);
       const tags = tagsSnapshot.docs.map(doc => ({ id: doc.id, name: doc.data().name }));
       const filteredTags = tags.filter((tag: Tag) => !employeeNames.includes(tag.name.toLowerCase()));
-      console.log('Fetched Tags:', filteredTags);
+      
       setTagList(filteredTags);
     } else {
-      console.log('Company is not using v2, fetching tags from GHL');
+      
       // For non-v2, fetch from GHL API
  
     }
 
-    console.log('User Role:', userRole);
-    console.log('User Name:', userData?.name);
+    
+    
   } catch (error) {
     console.error('Error fetching config:', error);
   }
@@ -2121,7 +2113,7 @@ async function fetchConfigFromDatabase() {
     try {
       const user = auth.currentUser;
       if (!user) {
-        console.log('No authenticated user');
+        
         return;
       }
   
@@ -2135,20 +2127,20 @@ async function fetchConfigFromDatabase() {
       });
   
       await batch.commit();
-      console.log(`Deleted notifications for chat: ${chatId}`);
+      
     } catch (error) {
       console.error('Error deleting notifications:', error);
     }
   };
 
   const selectChat = useCallback(async (chatId: string, contactId?: string, contactSelect?: Contact) => {
-    console.log('Attempting to select chat:', { chatId, userRole, userName: userData?.name });
-    setLoading(true);
+    setMessages([]);
+ 
     
     try {
       // Permission check
       if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
-        console.log('Permission denied for role 3 user');
+        
         toast.error("You don't have permission to view this chat.");
         return;
       }
@@ -2166,40 +2158,16 @@ async function fetchConfigFromDatabase() {
         return;
       }
   
-      // Try to get cached messages first
-      const cachedData = localStorage.getItem('messagesCache');
-      let shouldFetchFresh = true;
-  
-      if (cachedData) {
-        try {
-          const cache = JSON.parse(LZString.decompress(cachedData));
-          if (cache.expiry > Date.now() && cache.messages[chatId]) {
-            // Show cached messages immediately
-            setMessages(cache.messages[chatId]);
-            setLoading(false);
-            
-            // Only fetch fresh messages if cache is older than 5 minutes
-            shouldFetchFresh = (Date.now() - cache.timestamp) > (5 * 60 * 1000);
-          }
-        } catch (error) {
-          console.error('Error reading cache:', error);
-        }
-      }
-  
       // Update UI state immediately
       setSelectedContact(contact);
       setSelectedChatId(chatId);
       setIsChatActive(true);
-  
+
       // Run background tasks in parallel
       const backgroundTasks = [
         updateFirebaseUnreadCount(contact),
         deleteNotifications(chatId)
       ];
-  
-      // Only fetch fresh messages if needed
-       // Only fetch fresh messages if needed
-   
   
       await Promise.all(backgroundTasks);
   
@@ -2211,7 +2179,7 @@ async function fetchConfigFromDatabase() {
       console.error('Error in selectChat:', error);
       toast.error('An error occurred while loading the chat. Please try again.');
     } finally {
-      setLoading(false);
+      
     }
   }, [contacts, userRole, userData?.name, whapiToken]);
   const getTimestamp = (timestamp: any): number => {
@@ -2260,14 +2228,14 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
     const docUserRef = doc(firestore, 'user', userEmail);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('User document not found');
+      
       return;
     }
 
     const dataUser = docUserSnapshot.data();
     const companyId = dataUser?.companyId;
     if (!companyId) {
-      console.log('Company ID not found');
+      
       return;
     }
 
@@ -2315,12 +2283,6 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
 
     await Promise.all(updatePromises);
 
-    console.log('Before sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
-      id: c.chat_id,
-      unread: c.unreadCount,
-      timestamp: c.last_message?.timestamp,
-      pinned: c.pinned
-    })));
 
     allContacts.sort((a, b) => {
       // First priority: pinned status
@@ -2352,12 +2314,7 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
     });
 
     // Add debugging after sorting
-    console.log('After sorting - First 5 contacts:', allContacts.slice(0, 5).map(c => ({
-      id: c.chat_id,
-      unread: c.unreadCount,
-      timestamp: c.last_message?.timestamp,
-      pinned: c.pinned
-    })));
+
 
     // Before setting contacts, ensure all timestamps are in the correct format
     allContacts = allContacts.map(contact => {
@@ -2384,8 +2341,8 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
       };
     });
 
-    console.log('Active tag:', activeTags[0]);
-    console.log('Total contacts:', allContacts.length);
+    
+    
 
     // Set all contacts to state instead of just the first 200
     setContacts(allContacts);
@@ -2416,20 +2373,12 @@ useEffect(() => {
       if (docUserSnapshot.exists()) {
         const userData = docUserSnapshot.data();
         setUserRole(userData.role);
-        console.log('User role set:', userData.role);
+        
       }
     }
   };
   fetchUserRole();
 }, []);
-
-  useEffect(() => {
-    if (selectedChatId) {
-      console.log(selectedContact);
-      console.log(selectedChatId);
-      fetchMessages(selectedChatId, whapiToken!);
-    }
-  }, [selectedChatId]);
 
   useEffect(() => {
     const cleanupStorage = () => {
@@ -2475,7 +2424,7 @@ useEffect(() => {
 
   const storeMessagesInLocalStorage = (chatId: string, messages: any[]) => {
     try {
-      console.log(`Attempting to store ${messages.length} messages for chat ${chatId}`);
+      
       const storageKey = `messages_${chatId}`;
       
       // Limit messages to most recent 100
@@ -2506,7 +2455,7 @@ useEffect(() => {
         
       } catch (quotaError) {
         // If still getting quota error, clear old caches
-        console.log('Storage quota reached, clearing old caches');
+        
         clearOldCaches();
         
         // Try one more time with very limited messages
@@ -2567,30 +2516,23 @@ useEffect(() => {
 
   const getMessagesFromLocalStorage = (chatId: string): any[] | null => {
     try {
-      console.log(`Attempting to retrieve messages for chat ${chatId}`);
+      
       const storageKey = `messages_${chatId}`;
       const compressedMessages = localStorage.getItem(storageKey);
       const timestamp = localStorage.getItem(`${storageKey}_timestamp`);
       
       if (!compressedMessages || !timestamp) {
-        console.log('No cached messages found');
+        
         return null;
       }
       
       if (Date.now() - parseInt(timestamp) > 3600000) {
-        console.log('Cache expired:', {
-          storedAt: new Date(parseInt(timestamp)).toISOString(),
-          age: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
-        });
+     
         return null;
       }
       
       const messages = JSON.parse(LZString.decompress(compressedMessages));
-      console.log('Retrieved messages from cache:', {
-        chatId,
-        messageCount: messages.length,
-        cacheAge: Math.floor((Date.now() - parseInt(timestamp)) / 1000 / 60) + ' minutes'
-      });
+   
       
       return messages;
     } catch (error) {
@@ -2598,37 +2540,16 @@ useEffect(() => {
       return null;
     }
   };
-
+  useEffect(() => {
+    if (selectedChatId) {
+      console.log(selectedContact);
+      console.log(selectedChatId);
+      fetchMessages(selectedChatId, whapiToken!);
+    }
+  }, [selectedChatId]);
   async function fetchMessages(selectedChatId: string, whapiToken: string) {
     setLoading(true);
     setSelectedIcon('ws');
-
-    const loadCachedMessages = (chatId: string) => {
-      try {
-        const cachedData = localStorage.getItem('messagesCache');
-        if (!cachedData) return null;
-        
-        const messagesCache = JSON.parse(LZString.decompress(cachedData));
-        return messagesCache[chatId] || null;
-      } catch (error) {
-        console.error('Error loading cached messages:', error);
-        return null;
-      }
-    };
-
-    // Try to get messages from localStorage first
-    const cachedMessages = loadCachedMessages(selectedChatId);
-    
-    if (cachedMessages) {
-      console.log('Using cached messages');
-      setMessages(cachedMessages);
-      setLoading(false);
-      
-      // Fetch fresh messages in the background
-      fetchMessagesBackground(selectedChatId, whapiToken);
-      return;
-    }
-
     const auth = getAuth(app);
     const user = auth.currentUser;
     
@@ -2637,27 +2558,27 @@ useEffect(() => {
         const docUserSnapshot = await getDoc(docUserRef);
         
         if (!docUserSnapshot.exists()) {
-            console.log('No such document!');
+            
             return;
         }
         const dataUser = docUserSnapshot.data();
 
-        console.log('Fetching messages for user role:', dataUser.role);
+        
         
         const companyId = dataUser.companyId;
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-            console.log('No such document!');
+            
             return;
         }
         const data2 = docSnapshot.data();
         
         setToken(data2.whapiToken);
-        console.log('fetching messages');
+        
         let messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
-        console.log('messages');
-        console.log(messages);
+        
+        
         
         const formattedMessages: any[] = [];
         const reactionsMap: Record<string, any[]> = {};
@@ -2808,6 +2729,13 @@ useEffect(() => {
                     case 'product_items':
                         formattedMessage.product_items = message.product_items ? message.product_items : undefined;
                         break;
+                    case 'call_log':
+                        formattedMessage.call_log = {
+                            status: message.call_log?.status || 'missed',
+                            duration: message.call_log?.duration,
+                            timestamp: message.call_log?.timestamp || message.timestamp,
+                        };
+                        break;
                     case 'action':
                         formattedMessage.action = message.action ? message.action : undefined;
                         break;
@@ -2818,9 +2746,9 @@ useEffect(() => {
                         formattedMessage.reactions = message.reactions ? message.reactions : undefined;
                         break;
                     case 'privateNote':
-                        console.log('Private note data:', message);
+                        
                         formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
-                        console.log('Formatted private note text:', formattedMessage.text);
+                        
                         formattedMessage.from_me = true;
                         formattedMessage.from_name = message.from;
                         break;
@@ -2859,7 +2787,7 @@ useEffect(() => {
 
 async function fetchMessagesFromFirebase(companyId: string, chatId: string): Promise<any[]> {
   const number = '+' + chatId.split('@')[0];
-  console.log(number);
+  
   const messagesRef = collection(firestore, `companies/${companyId}/contacts/${number}/messages`);
   const messagesSnapshot = await getDocs(messagesRef);
   
@@ -2884,7 +2812,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const docUserSnapshot = await getDoc(docUserRef);
     
     if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const dataUser = docUserSnapshot.data();
@@ -2893,7 +2821,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const data2 = docSnapshot.data();
@@ -2902,8 +2830,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     
     let messages;
     messages = await fetchMessagesFromFirebase(companyId, selectedChatId);
-    console.log('messages');
-    console.log(messages);
+    
+    
     
     const formattedMessages: any[] = [];
     const reactionsMap: Record<string, any[]> = {};
@@ -3053,6 +2981,13 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
           case 'product_items':
             formattedMessage.product_items = message.product_items ? message.product_items : undefined;
             break;
+          case 'call_log':
+            formattedMessage.call_log = {
+              status: message.call_log?.status || 'missed',
+              duration: message.call_log?.duration,
+              timestamp: message.call_log?.timestamp || message.timestamp,
+            };
+            break;
           case 'action':
             formattedMessage.action = message.action ? message.action : undefined;
             break;
@@ -3063,9 +2998,9 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
             formattedMessage.reactions = message.reactions ? message.reactions : undefined;
             break;
             case 'privateNote':
-              console.log('Private note data:', message);
+              
               formattedMessage.text = typeof message.text === 'string' ? message.text : message.text?.body || '';
-              console.log('Formatted private note text:', formattedMessage.text);
+              
               formattedMessage.from_me = true;
               formattedMessage.from_name = message.from;
               break;
@@ -3142,7 +3077,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       const companyId = userData.companyId;
       
       const numericChatId = '+' + selectedChatId.split('').filter(char => /\d/.test(char)).join('');
-      console.log('Numeric Chat ID:', numericChatId);
+      
   
       const privateNoteRef = collection(firestore, 'companies', companyId, 'contacts', numericChatId, 'privateNotes');
       const currentTimestamp = new Date();
@@ -3153,11 +3088,11 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         type: 'privateNote'
       };
   
-      console.log('Adding private note:', newPrivateNote);
-      console.log('Private note ref:', privateNoteRef);
+      
+      
   
       const docRef = await addDoc(privateNoteRef, newPrivateNote);
-      console.log('Private note added with ID:', docRef.id);
+      
   
       const messageData = {
         chat_id: numericChatId,
@@ -3178,14 +3113,14 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       const messageDoc = doc(messagesRef, docRef.id);
       await setDoc(messageDoc, messageData);
   
-      console.log('Private note added to messages collection');
+      
   
       const mentions = detectMentions(newMessage);
-      console.log('Mentions:', mentions); 
+       
       for (const mention of mentions) {
         const employeeName = mention.slice(1);
-        console.log(employeeName);
-        console.log('Adding notification for:', employeeName);
+        
+        
         await addNotificationToUser(companyId, employeeName, {
           chat_id: selectedChatId,
           from: userData.name,
@@ -3237,27 +3172,27 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       from_name: userData?.name || '',
       timestamp: Math.floor(Date.now() / 1000)
     };
+   // Update UI immediately
+   setMessages(prevMessages => [
+    ...prevMessages, 
+    { 
+      ...tempMessage, 
+      createdAt: new Date(tempMessage.createdAt).getTime() 
+    } as unknown as Message
+  ]);
 
-    console.log('Current messages in localStorage:', getMessagesFromLocalStorage(selectedChatId));
+
   
     const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
-    console.log('Retrieved current messages from localStorage:', currentMessages.length, 'messages');
+    
     
     const updatedMessages = [...currentMessages, tempMessage];
-    console.log('Adding new message to localStorage. Total messages:', updatedMessages.length);
+    
     
     storeMessagesInLocalStorage(selectedChatId, updatedMessages);
-    console.log('Messages stored in localStorage successfully');
+    
 
-    // Update UI immediately
-    setMessages(prevMessages => [
-      ...prevMessages, 
-      { 
-        ...tempMessage, 
-        createdAt: new Date(tempMessage.createdAt).getTime() 
-      } as unknown as Message
-    ]);
-  
+ 
     try {
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
@@ -3283,23 +3218,28 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         return;
       }
   
-      // Send message to API
-      const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`, {
+     const url = `${baseUrl}/api/v2/messages/text/${companyId}/${selectedChatId}`;
+    const requestBody = {
+      message: messageText,
+      quotedMessageId: replyToMessage?.id || null,
+      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      userName: userData?.name || ''
+    };
+
+      const response = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: messageText,
-          quotedMessageId: replyToMessage?.id || null,
-          phoneIndex,
-          userName
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include', // Include credentials if needed
+        body: JSON.stringify(requestBody)
       });
-  
       if (!response.ok) throw new Error('Failed to send message');
   
       const now = new Date();
       const data = await response.json();
-      console.log('response:', data);
+      
   
       // Update contacts list
       setContacts(prevContacts => 
@@ -3364,31 +3304,25 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       fetchMessagesBackground(selectedChatId, data2.apiToken);
 
       // After successful API call
-      console.log('Message sent successfully to API');
+      
 
       // Verify local storage was updated
       const storedMessages = getMessagesFromLocalStorage(selectedChatId);
-      console.log('Current state of localStorage after API call:', {
-        messageCount: storedMessages?.length || 0,
-        lastMessage: storedMessages?.[storedMessages.length - 1]
-      });
+   
   
     } catch (error) {
       console.error('Error sending message:', error);
-      toast.error("Failed to send message");
+      //toast.error("Failed to send message");
       
       // Remove temporary message from local storage and UI if send failed
-      console.log('Message send failed, removing temporary message from localStorage');
+      
       const currentMessages = getMessagesFromLocalStorage(selectedChatId) || [];
       const filteredMessages = currentMessages.filter(msg => msg.id !== tempMessage.id);
       storeMessagesInLocalStorage(selectedChatId, filteredMessages);
       
       // Verify removal
       const updatedStoredMessages = getMessagesFromLocalStorage(selectedChatId);
-      console.log('LocalStorage state after removing failed message:', {
-        messageCount: updatedStoredMessages?.length || 0,
-        tempMessageStillExists: updatedStoredMessages?.some(msg => msg.id === tempMessage.id)
-      });
+   
 
       setMessages(prevMessages => prevMessages.filter(msg => msg.id !== tempMessage.id));
     }
@@ -3423,9 +3357,9 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   };
 
   const handleCreateNewChat = async () => {
-    console.log('Attempting to create new chat:', { userRole });
+    
     if (userRole === "3") {
-      console.log('Permission denied for role 3 user');
+      
       toast.error("You don't have permission to create new chats.");
       return;
     }
@@ -3435,7 +3369,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     try {
       const chatId = `${newContactNumber}@c.us`;
       const contactId = `+${newContactNumber}`; // This will be used as the document ID
-      console.log('contactId:', contactId);
+      
       const newContact: Contact = {
         id: contactId, // Ensure the id is set here
         chat_id: chatId,
@@ -3491,7 +3425,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     if (actionPerformedRef.current) return;
     actionPerformedRef.current = true;
   
-    console.log('Toggling stop bot label for contact:', contact.id);
+    
     if (userRole === "3") {
       toast.error("You don't have permission to control the bot.");
       return;
@@ -3500,14 +3434,14 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     try {
       const user = auth.currentUser;
       if (!user) {
-        console.log('No authenticated user');
+        
         return;
       }
   
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -3517,7 +3451,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         const docRef = doc(firestore, 'companies', companyId, 'contacts', contact.id);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          console.log('No such document for contact!');
+          
           return;
         }
   
@@ -3572,7 +3506,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   }, [contacts]);
 
   const handleBinaTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
-    console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
+
     const user = getAuth().currentUser;
     if (!user) {
       console.error("User not authenticated");
@@ -3582,7 +3516,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const docUserRef = doc(firestore, 'user', user?.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const dataUser = docUserSnapshot.data();
@@ -3590,7 +3524,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const data2 = docSnapshot.data();
@@ -3615,14 +3549,13 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         }
 
         const data = await response.json();
-        console.log('Response data:', data);
+        
     } catch (error) {
         console.error('Error:', error);
     }
 };
 
 const handleEdwardTag = async (requestType: string, phone: string, first_name: string, phoneIndex: number) => {
-  console.log('Request Payload:', JSON.stringify({ requestType, phone, first_name, phoneIndex }));
   const user = getAuth().currentUser;
   if (!user) {
     console.error("User not authenticated");
@@ -3632,7 +3565,7 @@ const handleEdwardTag = async (requestType: string, phone: string, first_name: s
   const docUserRef = doc(firestore, 'user', user?.email!);
   const docUserSnapshot = await getDoc(docUserRef);
   if (!docUserSnapshot.exists()) {
-    console.log('No such document!');
+    
     return;
   }
   const dataUser = docUserSnapshot.data();
@@ -3640,7 +3573,7 @@ const handleEdwardTag = async (requestType: string, phone: string, first_name: s
   const docRef = doc(firestore, 'companies', companyId);
   const docSnapshot = await getDoc(docRef);
   if (!docSnapshot.exists()) {
-    console.log('No such document!');
+    
     return;
   }
   const data2 = docSnapshot.data();
@@ -3664,15 +3597,15 @@ const handleEdwardTag = async (requestType: string, phone: string, first_name: s
       }
 
       const data = await response.json();
-      console.log('Response data:', data);
+      
   } catch (error) {
       console.error('Error:', error);
   }
 };
 
   const addTagBeforeQuote = (contact: Contact) => {
-    console.log('Adding tag before quote for contact:', contact.phone);
-    console.log('Adding tag before quote for contact:', contact.contactName);
+    
+    
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3681,8 +3614,6 @@ const handleEdwardTag = async (requestType: string, phone: string, first_name: s
   };
 
   const addTagBeforeQuoteEnglish = (contact: Contact) => {
-    console.log('Adding tag before quote (English) for contact:', contact.phone);
-    console.log('Adding tag before quote (English) for contact:', contact.contactName);
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3691,8 +3622,6 @@ const handleEdwardTag = async (requestType: string, phone: string, first_name: s
 };
 
 const addTagBeforeQuoteMalay = (contact: Contact) => {
-    console.log('Adding tag before quote (Malay) for contact:', contact.phone);
-    console.log('Adding tag before quote (Malay) for contact:', contact.contactName);
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3701,8 +3630,6 @@ const addTagBeforeQuoteMalay = (contact: Contact) => {
 };
 
 const addTagBeforeQuoteChinese = (contact: Contact) => {
-    console.log('Adding tag before quote (Chinese) for contact:', contact.phone);
-    console.log('Adding tag before quote (Chinese) for contact:', contact.contactName);
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3711,8 +3638,8 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
 };
   
   const addTagAfterQuote = (contact: Contact) => {
-    console.log('Adding tag after quote for contact:', contact.phone);
-    console.log('Adding tag after quote for contact:', contact.contactName);
+    
+    
     if (contact.phone && contact.contactName) {
       handleBinaTag('addAfterQuote', contact.phone, contact.contactName, contact.phoneIndex ?? 0);
     } else {
@@ -3721,8 +3648,7 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
   };
   
   const addTagAfterQuoteEnglish = (contact: Contact) => {
-    console.log('Adding tag after quote (English) for contact:', contact.phone);
-    console.log('Adding tag after quote (English) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3731,8 +3657,7 @@ const addTagBeforeQuoteChinese = (contact: Contact) => {
 };
 
 const addTagAfterQuoteChinese = (contact: Contact) => {
-    console.log('Adding tag after quote (Chinese) for contact:', contact.phone);
-    console.log('Adding tag after quote (Chinese) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3741,8 +3666,7 @@ const addTagAfterQuoteChinese = (contact: Contact) => {
 };
 
 const addTagAfterQuoteMalay = (contact: Contact) => {
-    console.log('Adding tag after quote (Malay) for contact:', contact.phone);
-    console.log('Adding tag after quote (Malay) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3751,8 +3675,7 @@ const addTagAfterQuoteMalay = (contact: Contact) => {
 };
 
 const removeTagBeforeQuote = (contact: Contact) => {
-    console.log('Removing tag before quote for contact:', contact.phone);
-    console.log('Removing tag before quote for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3761,8 +3684,7 @@ const removeTagBeforeQuote = (contact: Contact) => {
 };
 
 const removeTagAfterQuote = (contact: Contact) => {
-    console.log('Removing tag after quote for contact:', contact.phone);
-    console.log('Removing tag after quote for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3771,8 +3693,8 @@ const removeTagAfterQuote = (contact: Contact) => {
 };
 
 const removeTag5Days = (contact: Contact) => {
-    console.log('Removing tag 5 days for contact:', contact.phone);
-    console.log('Removing tag 5 days for contact:', contact.contactName);
+    
+    
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3781,8 +3703,7 @@ const removeTag5Days = (contact: Contact) => {
 };
 
 const removeTagPause = (contact: Contact) => {
-    console.log('Removing tag pause for contact:', contact.phone);
-    console.log('Removing tag pause for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3791,8 +3712,8 @@ const removeTagPause = (contact: Contact) => {
 };
 
 const removeTagEdward = (contact: Contact) => {
-  console.log('Removing tag Edward for contact:', contact.phone);
-  console.log('Removing tag Edward for contact:', contact.contactName);
+  
+  
   if (!contact.phone || !contact.contactName) {
     console.error('Phone or firstname is null or undefined');
     return;
@@ -3801,8 +3722,7 @@ const removeTagEdward = (contact: Contact) => {
 };
 
 const fiveDaysFollowUpEnglish = (contact: Contact) => {
-    console.log('5 Days Follow Up (English) for contact:', contact.phone);
-    console.log('5 Days Follow Up (English) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3811,8 +3731,7 @@ const fiveDaysFollowUpEnglish = (contact: Contact) => {
 };
 
 const fiveDaysFollowUpChinese = (contact: Contact) => {
-    console.log('5 Days Follow Up (Chinese) for contact:', contact.phone);
-    console.log('5 Days Follow Up (Chinese) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3821,8 +3740,7 @@ const fiveDaysFollowUpChinese = (contact: Contact) => {
 };
 
 const fiveDaysFollowUpMalay = (contact: Contact) => {
-    console.log('5 Days Follow Up (Malay) for contact:', contact.phone);
-    console.log('5 Days Follow Up (Malay) for contact:', contact.contactName);
+
     if (!contact.phone || !contact.contactName) {
       console.error('Phone or firstname is null or undefined');
       return;
@@ -3831,8 +3749,7 @@ const fiveDaysFollowUpMalay = (contact: Contact) => {
 };
 
 const pauseFiveDaysFollowUp = (contact: Contact) => {
-  console.log('Pausing 5 Days Follow Up for contact:', contact.phone);
-  console.log('Pausing 5 Days Follow Up for contact:', contact.contactName);
+
   if (!contact.phone || !contact.contactName) {
     console.error('Phone or firstname is null or undefined');
     return;
@@ -3961,7 +3878,7 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('Company document not found');
+      
       return;
     }
     const data2 = docSnapshot.data();
@@ -4075,7 +3992,7 @@ const addNotificationToUser = async (companyId: string, employeeName: string, no
     const querySnapshot = await getDocs(q);
 
     if (querySnapshot.empty) {
-      console.log('No matching user found for:', employeeName);
+      
       return;
     }
 
@@ -4084,7 +4001,7 @@ const addNotificationToUser = async (companyId: string, employeeName: string, no
       const userRef = doc.ref;
       const notificationsRef = collection(userRef, 'notifications');
       await addDoc(notificationsRef, notificationData);
-      console.log(`Notification added for user: ${employeeName}`);
+      
     });
   } catch (error) {
     console.error('Error adding notification: ', error);
@@ -4108,7 +4025,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
 
     const userData = docUserSnapshot.data();
     const companyId = userData.companyId;
-    console.log('Company ID:', companyId); // New log
+     // New log
 
     if (!companyId || typeof companyId !== 'string') {
       console.error('Invalid companyId:', companyId);
@@ -4120,7 +4037,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     const notificationSnapshot = await getDoc(notificationRef);
     
     if (notificationSnapshot.exists()) {
-      console.log('Notification already sent for this assignment');
+      
       return;
     }
 
@@ -4138,7 +4055,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     const adminSnapshot = await getDocs(adminQuery);
     const adminUsers = adminSnapshot.docs.map(doc => doc.data());
 
-    console.log(`Found ${adminUsers.length} admin users for notifications`);
+    
 
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
@@ -4147,16 +4064,16 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       return;
     }
     const companyData = docSnapshot.data();
-    console.log('Company Data:', companyData); // New log
-    console.log('User Phone:', userData.phone);
-    console.log('WhatsApp API Token:', companyData.whapiToken); // New log
-    console.log('Using API v2:', companyData.v2); // New log
+     // New log
+    
+     // New log
+     // New log
 
     // Function to send WhatsApp message
     const sendWhatsAppMessage = async (phoneNumber: string, message: string) => {
       const chatId = `${phoneNumber.replace(/[^\d]/g, '')}@c.us`;
-      console.log('Employee Phone Number:', phoneNumber); // New log
-      console.log('Formatted Chat ID:', chatId); // New log
+       // New log
+       // New log
       const user = getAuth().currentUser;
       if (!user) {
         console.error("User not authenticated");
@@ -4166,7 +4083,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -4174,7 +4091,7 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -4196,8 +4113,8 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
         url = `${baseUrl}/api/messages/text/${chatId}/${companyData.whapiToken}`;
         requestBody = { message };
       }
-      console.log('API URL:', url); // New log
-      console.log('Request Body:', requestBody); // New log
+       // New log
+       // New log
 
       const response = await fetch(url, {
         method: 'POST',
@@ -4241,10 +4158,10 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     toast.success("Assignment notifications sent successfully!");
   } catch (error) {
     console.error('Error sending assignment notifications:', error);
-    console.log('Assigned Employee Name:', assignedEmployeeName);
-    console.log('Contact:', contact);
-    console.log('Employee List:', employeeList);
-    console.log('Company ID:', companyId);
+    
+    
+    
+    
   }
 };
 
@@ -4272,7 +4189,7 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
     const docUserRef = doc(firestore, 'user', user?.email!);
     const docUserSnapshot = await getDoc(docUserRef);
     if (!docUserSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const dataUser = docUserSnapshot.data();
@@ -4280,17 +4197,12 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      console.log('No such document!');
+      
       return;
     }
     const data2 = docSnapshot.data();
     const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-    console.log('Sending WhatsApp message:', {
-      url: `${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`,
-      phoneIndex: userPhoneIndex, // Using adjusted phone index
-      userName,
-      chatId
-    });
+
 
     const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
       method: 'POST',
@@ -4380,13 +4292,7 @@ useEffect(() => {
 }, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
-  console.log('Filtering contacts', { 
-    contactsLength: contacts.length, 
-    userRole, 
-    userName: userData?.name,
-    activeTags,
-    searchQuery
-  });
+
 
   let filtered = contacts;
 
@@ -4433,7 +4339,7 @@ useEffect(() => {
     setCurrentPage(0); // Reset to first page when searching
   }
 
-  console.log('Filtered contacts updated:', filtered);
+  
 }, [contacts, searchQuery, activeTags, currentUserName, employeeList, userRole, userData]);
 
 // Update the pagination logic
@@ -4469,7 +4375,7 @@ const sortContacts = (contacts: Contact[]) => {
   if (userPhoneIndex === -1) {
     userPhoneIndex = 0;
   }
-  console.log("userPhoneIndex", userPhoneIndex);
+  
   
   // Filter by user's selected phone first
   if (userPhoneIndex !== -1) {
@@ -4529,7 +4435,7 @@ const sortContacts = (contacts: Contact[]) => {
   const filterTagContact = (tag: string) => {
     setActiveTags([tag.toLowerCase()]);
     setSearchQuery('');
-    console.log('active1:' + activeTags[0]);
+    
 
   };
 
@@ -4622,75 +4528,31 @@ const sortContacts = (contacts: Contact[]) => {
     }
   };
 
+  const loadMoreSearchResults = (page: number) => {
+    handleGlobalMessageSearch(searchQuery, page);
+  };
 
-  const handleSearchChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Update the search handler to use debouncing more effectively
+  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const query = e.target.value;
     setSearchQuery(query);
-    setIsGlobalSearchActive(true);
-    setGlobalSearchLoading(true);
-  
-    try {
-      if (!query.trim()) {
-        setGlobalSearchResults([]);
-        setGlobalSearchLoading(false);
-        return;
-      }
-  
-      // Get current user and company data
-      const user = auth.currentUser;
-      if (!user) {
-        toast.error("User not authenticated");
-        return;
-      }
-  
-      const docUserRef = doc(firestore, 'user', user.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        toast.error("User document not found");
-        return;
-      }
-  
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
-      const companyRef = doc(firestore, 'companies', companyId);
-      const companySnapshot = await getDoc(companyRef);
-      if (!companySnapshot.exists()) return;
-      const companyData = companySnapshot.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-  
-      const limit = Math.max(1, Math.floor(50)); // Will always be 50 in this case
-      const page = Math.max(1, Math.floor(globalSearchPage));
-
-      const response = await axios.get(
-        `${baseUrl}/api/search-messages/${companyId}?query=${encodeURIComponent(query)}&page=${page}&limit=${limit}`,
-        {
-          timeout: 30000,
-          headers: {
-            'Authorization': `Bearer ${await user.getIdToken()}`
-          }
-        }
-      );
-  
-      // Update state with results
-      setGlobalSearchResults(response.data.results);
-      setTotalGlobalSearchPages(response.data.totalPages);
-      setGlobalSearchPage(response.data.page);
-  
-    } catch (error) {
-      console.error('Error searching messages:', error);
-      toast.error("Failed to search messages");
-      setGlobalSearchResults([]);
-    } finally {
-      setGlobalSearchLoading(false);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
     }
-  };
-  
-  // Function to load more search results when paginating
-  const loadMoreSearchResults = async (page: number) => {
-    setGlobalSearchPage(page);
-    // Re-trigger search with new page
-    const event = { target: { value: searchQuery } } as React.ChangeEvent<HTMLInputElement>;
-    handleSearchChange(event);
+    
+    if (!query.trim()) {
+      setGlobalSearchResults([]);
+      setIsGlobalSearchActive(false);
+      setGlobalSearchLoading(false);
+      return;
+    }
+    
+    setGlobalSearchLoading(true);
+    searchTimeoutRef.current = setTimeout(() => {
+      handleGlobalMessageSearch(query);
+    }, 750); // Increased debounce time to reduce API calls
   };
 
 
@@ -4729,19 +4591,13 @@ const sortContacts = (contacts: Contact[]) => {
   const totalPages = Math.ceil(filteredContactsSearch.length / contactsPerPage);
   
   useEffect(() => {
-    console.log('Filtering contacts - Start', { 
-      contactsLength: contacts.length, 
-      activeTags,
-      searchQuery,
-      userRole,
-      userData
-    });
+
   
     const tag = activeTags[0]?.toLowerCase() || 'all';
     let filteredContacts = filterContactsByUserRole(contacts, userRole, userData?.name || '');
     setMessageMode('reply');
   
-    console.log('After filterContactsByUserRole:', filteredContacts.length);
+    
   
     // First, filter contacts based on the employee's assigned phone
     if (userData?.phone !== undefined && userData.phone !== -1) {
@@ -4752,7 +4608,7 @@ const sortContacts = (contacts: Contact[]) => {
           ? contact.phoneIndexes.includes(userPhoneIndex)
           : contact.phoneIndex === userPhoneIndex
       );
-      console.log('After phone filter:', filteredContacts.length);
+      
     }
   
     // Filtering logic
@@ -4765,7 +4621,7 @@ const sortContacts = (contacts: Contact[]) => {
         filteredContacts = filteredContacts.filter(contact => 
           contact.phoneIndex === phoneIndex
         );
-        console.log('After phone name filter:', filteredContacts.length);
+        
       }
     } else {
       // Existing filtering logic for other tags
@@ -4833,11 +4689,11 @@ const sortContacts = (contacts: Contact[]) => {
             !contact.tags?.includes('snooze')
           );
       }
-      console.log('After tag filter:', filteredContacts.length);
+      
     }
   
     filteredContacts = sortContacts(filteredContacts);
-    console.log("MESSAGE MODE", messageMode);
+    
   
     if (searchQuery) {
       filteredContacts = filteredContacts.filter((contact) => {
@@ -4849,10 +4705,10 @@ const sortContacts = (contacts: Contact[]) => {
               phone.includes(searchQuery.toLowerCase()) || 
               tags.includes(searchQuery.toLowerCase());
       });
-      console.log('After search filter:', filteredContacts.length);
+      
     }
   
-    console.log('Final filtered contacts:', filteredContacts.length);
+    
     setFilteredContacts(filteredContacts);
   
   }, [contacts, searchQuery, activeTags, showAllContacts, showUnreadContacts, showMineContacts, showUnassignedContacts, showSnoozedContacts, showGroupContacts, currentUserName, employeeList, userData, userRole]);
@@ -5049,7 +4905,7 @@ const sortContacts = (contacts: Contact[]) => {
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        console.log('No such document!');
+        
         return;
       }
       const data2 = docSnapshot.data();
@@ -5105,7 +4961,7 @@ const sortContacts = (contacts: Contact[]) => {
                 throw new Error(`Failed to forward text message: ${response.status} ${errorText}`);
               }
             }
-            console.log('Message forwarded successfully');
+            
           } catch (error) {
             console.error('Error forwarding message:', error);
             toast.error(`Failed to forward a message: ${error instanceof Error ? error.message : 'Unknown error'}`);
@@ -5181,7 +5037,7 @@ const sortContacts = (contacts: Contact[]) => {
   useEffect(() => {
     const handleKeyDown = (event: { key: string; }) => {
       if (event.key === "Escape") {
-        console.log('escape');
+        
         setSelectedContact(null);
     setSelectedChatId(null);
       }
@@ -5220,7 +5076,7 @@ const sortContacts = (contacts: Contact[]) => {
   
   const sendImageMessage = async (chatId: string, imageUrl: string, caption?: string) => {
     try {
-      console.log(`Sending image message. ChatId: ${chatId}`);
+      
       
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
@@ -5235,7 +5091,7 @@ const sortContacts = (contacts: Contact[]) => {
       // Use selectedContact's phoneIndex
       if (!selectedContact) throw new Error('No contact selected');
       const phoneIndex = selectedContact.phoneIndex ?? 0;
-      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
       
       const userName = userData.name || userData.email || '';
   
@@ -5247,7 +5103,7 @@ const sortContacts = (contacts: Contact[]) => {
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
-        console.log(`Attempting to send image via API. PhoneIndex: ${phoneIndex}`);
+        
         response = await fetch(`${baseUrl}/api/v2/messages/image/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
@@ -5268,17 +5124,17 @@ const sortContacts = (contacts: Contact[]) => {
       }
   
       const data = await response.json();
-      console.log('Image message sent successfully:', data);
+      
       fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending image message:', error);
-      toast.error(`Failed to send image: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    //  toast.error(`Failed to send image: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   };
   const sendDocumentMessage = async (chatId: string, documentUrl: string, mimeType: string, fileName: string, caption?: string) => {
     try {
-      console.log(`Sending document message. ChatId: ${chatId}`);
+      
       
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
@@ -5293,7 +5149,7 @@ const sortContacts = (contacts: Contact[]) => {
       // Use selectedContact's phoneIndex
       if (!selectedContact) throw new Error('No contact selected');
       const phoneIndex = selectedContact.phoneIndex ?? 0;
-      console.log(`Using contact's phoneIndex: ${phoneIndex}`);
+      
       
       const userName = userData.name || userData.email || '';
   
@@ -5305,7 +5161,7 @@ const sortContacts = (contacts: Contact[]) => {
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       let response;
       try {
-        console.log(`Attempting to send document via API. PhoneIndex: ${phoneIndex}`);
+        
         response = await fetch(`${baseUrl}/api/v2/messages/document/${companyId}/${chatId}`, {
           method: 'POST',
           headers: {
@@ -5327,11 +5183,11 @@ const sortContacts = (contacts: Contact[]) => {
       }
   
       const data = await response.json();
-      console.log('Document message sent successfully:', data);
+      
       fetchMessages(chatId, companyData.ghl_accessToken);
     } catch (error) {
       console.error('Error sending document message:', error);
-      toast.error(`Failed to send document: ${error instanceof Error ? error.message : 'Unknown error'}`);
+     // toast.error(`Failed to send document: ${error instanceof Error ? error.message : 'Unknown error'}`);
       throw error;
     }
   };
@@ -5389,7 +5245,7 @@ const sortContacts = (contacts: Contact[]) => {
         )
       );
   
-      console.log(`Chat ${chatId} ${newPinnedStatus ? 'pinned' : 'unpinned'}`);
+      
       toast.success(`Conversation ${newPinnedStatus ? 'pinned' : 'unpinned'}`);
     } catch (error) {
       console.error('Error toggling chat pin state:', error);
@@ -5406,14 +5262,14 @@ const sortContacts = (contacts: Contact[]) => {
     try {
       const user = auth.currentUser;
       if (!user) {
-        console.log('No authenticated user!');
+        
         return;
       }
   
       const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -5512,7 +5368,7 @@ interface Template {
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -5568,7 +5424,7 @@ interface Template {
             throw new Error(`Follow-up API error: ${response.statusText}`);
           }
   
-          console.log('Follow-up template removed successfully');
+          
           toast.success('Follow-up sequence stopped');
         } catch (error) {
           console.error('Error stopping follow-up sequence:', error);
@@ -5598,14 +5454,14 @@ interface Template {
           toast.success(`Contact unassigned from ${tagName}. Quota leads updated from ${currentQuotaLeads} to ${currentQuotaLeads + 1}.`);
         } else {
           console.error(`Employee document for ${tagName} does not exist.`);
-          console.log('Current employeeList:', employeeList);
+          
           
           // List all documents in the employee collection
           const employeeCollectionRef = collection(firestore, 'companies', companyId, 'employee');
           const employeeSnapshot = await getDocs(employeeCollectionRef);
-          console.log('All employee documents:');
+          
           employeeSnapshot.forEach(doc => {
-            console.log(doc.id, '=>', doc.data());
+          
           });
         }
       }
@@ -5710,7 +5566,7 @@ interface Template {
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const chatId = editingMessage.id.split('_')[1];
-      console.log('editing this chat id', chatId);
+      
       const response = await axios.put(
         `${baseUrl}/api/v2/messages/${companyId}/${chatId}/${editingMessage.id}`,
         { newMessage: editedMessageText,
@@ -5750,7 +5606,7 @@ interface Template {
       }
     } catch (error) {
       console.error('Error sending document:', error);
-      toast.error('Failed to send document. Please try again.');
+      //toast.error('Failed to send document. Please try again.');
     } finally {
       setLoading(false);
       setDocumentModalOpen(false);
@@ -5763,16 +5619,16 @@ interface Template {
       const blob = await response.blob();
   
       // Check the blob content
-      console.log('Blob type:', blob.type);
-      console.log('Blob size:', blob.size);
+      
+      
   
       const storageRef = ref(getStorage(), `${Date.now()}_${blob.type.split('/')[1]}`);
       const uploadResult = await uploadBytes(storageRef, blob);
   
-      console.log('Upload result:', uploadResult);
+      
   
       const publicUrl = await getDownloadURL(storageRef);
-      console.log('Public URL:', publicUrl);
+      
       return publicUrl;
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -5781,8 +5637,8 @@ interface Template {
   };
   
   const sendImage = async (imageUrl: string | null, caption: string) => {
-    console.log('Image URL:', imageUrl);
-    console.log('Caption:', caption);
+    
+    
     setLoading(true);
     try {
       if (imageUrl) {
@@ -5797,7 +5653,7 @@ interface Template {
       }
     } catch (error) {
       console.error('Error sending image:', error);
-      toast.error('Failed to send image. Please try again.');
+     // toast.error('Failed to send image. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -6079,11 +5935,11 @@ const toggleBot = async () => {
     }
   };
   const sendBlastMessage = async () => {
-    console.log('Starting sendBlastMessage function');
+    
 
     // Ensure selectedChatId is valid
     if (!selectedChatId) {
-      console.log('No chat selected');
+      
       toast.error("No chat selected!");
       return;
     }
@@ -6091,7 +5947,7 @@ const toggleBot = async () => {
     const scheduledTime = blastStartTime || new Date();
     const now = new Date();
     if (scheduledTime <= now) {
-      console.log('Selected time is in the past');
+      
       toast.error("Please select a future time for the blast message.");
       return;
     }
@@ -6100,28 +5956,28 @@ const toggleBot = async () => {
       let mediaUrl = '';
       let documentUrl = '';
       if (selectedMedia) {
-        console.log('Uploading media...');
+        
         mediaUrl = await uploadFile(selectedMedia);
-        console.log(`Media uploaded. URL: ${mediaUrl}`);
+        
       }
       if (selectedDocument) {
-        console.log('Uploading document...');
+        
         documentUrl = await uploadFile(selectedDocument);
-        console.log(`Document uploaded. URL: ${documentUrl}`);
+        
       }
 
       const user = auth.currentUser;
-      console.log(`Current user: ${user?.email}`);
+      
 
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
-      console.log(`Company ID: ${companyId}`);
+      
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) throw new Error('No company document found');
@@ -6169,12 +6025,11 @@ const toggleBot = async () => {
         sleepDuration: activateSleep ? sleepDuration : null,
       };
 
-      console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
 
       // Make API call to schedule the message
       const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
-      console.log(`Scheduled message added. Document ID: ${response.data.id}`);
+      
       toast.success(`Blast message scheduled successfully.`);
       toast.info(`Message will be sent at: ${scheduledTime.toLocaleString()} (local time)`);
 
@@ -6254,7 +6109,7 @@ const toggleBot = async () => {
       const phone = userData.phoneNumber.split('+')[1];
       const chatId = phone + "@s.whatsapp.net"; // The specific number you want to send the reminder to
       
-      console.log(chatId)
+      
       const reminderMessage = `*Reminder for contact:* ${selectedContact.contactName || selectedContact.firstName || selectedContact.phone}\n\n${text}`;
 
       const scheduledMessageData = {
@@ -6275,12 +6130,12 @@ const toggleBot = async () => {
         whapiToken: isV2 ? null : whapiToken,
       };
   
-      console.log('Sending scheduledMessageData:', JSON.stringify(scheduledMessageData, null, 2));
+  
   
       // Make API call to schedule the message
       const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
 
-      console.log(`Reminder scheduled. Document ID: ${response.data.id}`);
+      
 
       toast.success('Reminder set successfully');
       setIsReminderModalOpen(false);
@@ -6292,20 +6147,42 @@ const toggleBot = async () => {
       toast.error("An error occurred while setting the reminder. Please try again.");
     }
   };
+
+  const formatDuration = (seconds: number): string => {
+    if (!seconds) return '0s';
+    
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const remainingSeconds = seconds % 60;
+  
+    const parts = [];
+    
+    if (hours > 0) {
+      parts.push(`${hours}h`);
+    }
+    if (minutes > 0) {
+      parts.push(`${minutes}m`);
+    }
+    if (remainingSeconds > 0 || parts.length === 0) {
+      parts.push(`${remainingSeconds}s`);
+    }
+  
+    return parts.join(' ');
+  };
   
   const handleGenerateAIResponse = async () => {
     if (messages.length === 0) return;
   
     try {
       setIsGeneratingResponse(true);
-  console.log(messages);
+  
       // Prepare the context from recent messages
         // Prepare the context from all messages in reverse order
  // Prepare the context from the last 20 messages in reverse order
  const context = messages.slice(0, 10).reverse().map(msg => 
   `${msg.from_me ? "Me" : "User"}: ${msg.text?.body || ""}`
 ).join("\n");
-console.log(context);
+
 
 const prompt = `
 Your goal is to act like you are Me, and generate a response to the last message in the conversation, if the last message is from "Me", continue or add to that message appropriately, maintaining the same language and style. Note that "Me" indicates messages I sent, and "User" indicates messages from the person I'm talking to.
@@ -6315,7 +6192,7 @@ ${context}
 
 :`;
 
-console.log(prompt);
+
   
       // Use the sendMessageToAssistant function
       const aiResponse = await sendMessageToAssistant(prompt);
@@ -6446,11 +6323,7 @@ console.log(prompt);
         assignedContacts: doc.data().assignedContacts || 0
       }));
   
-      console.log('Current employee status:', employeeList.map(emp => ({
-        name: emp.name,
-        currentQuota: emp.quotaLeads,
-        currentAssigned: emp.assignedContacts
-      })));
+ 
   
       // Count assignments
       contactsSnapshot.forEach((doc) => {
@@ -6460,16 +6333,13 @@ console.log(prompt);
             const employee = employeeList.find(emp => emp.name.toLowerCase() === tag.toLowerCase());
             if (employee) {
               employeeAssignments[employee.id] = (employeeAssignments[employee.id] || 0) + 1;
-              console.log(`Found assignment for ${employee.name}: Current count = ${employeeAssignments[employee.id]}`);
+              
             }
           });
         }
       });
   
-      console.log('New assignment counts:', Object.entries(employeeAssignments).map(([id, count]) => ({
-        name: employeeList.find(emp => emp.id === id)?.name,
-        newAssignmentCount: count
-      })));
+
   
       // Update employee documents
       const employeeUpdates = employeeList.map(async (employee) => {
@@ -6480,18 +6350,10 @@ console.log(prompt);
         const assignedDiff = newAssignedCount - employee.assignedContacts;
         const newQuotaLeads = Math.max(0, employee.quotaLeads - (assignedDiff > 0 ? assignedDiff : 0));
         
-        console.log(`
-  === Update for ${employee.name} ===
-  Current assigned contacts: ${employee.assignedContacts}
-  New assigned contacts: ${newAssignedCount}
-  Difference: ${assignedDiff}
-  Current quota leads: ${employee.quotaLeads}
-  New quota leads: ${newQuotaLeads}
-  Quota decreased by: ${employee.quotaLeads - newQuotaLeads}
-        `);
+
   
         if (assignedDiff > 0) {
-          console.log(`⚠️ ${employee.name}'s quota will decrease because they were assigned ${assignedDiff} new contact(s)`);
+
         }
   
         await updateDoc(employeeDocRef, {
@@ -6502,15 +6364,11 @@ console.log(prompt);
         // Verify the update
         const updatedDoc = await getDoc(employeeDocRef);
         const updatedData = updatedDoc.data();
-        console.log(`
-  ✅ Update confirmed for ${employee.name}:
-  Final assigned contacts: ${updatedData?.assignedContacts}
-  Final quota leads: ${updatedData?.quotaLeads}
-        `);
+ 
       });
   
       await Promise.all(employeeUpdates);
-      console.log('🎉 Employee assigned contacts and quota leads update completed');
+      
       
     } catch (error) {
       console.error('❌ Error updating employee assigned contacts and quota leads:', error);
@@ -6545,7 +6403,7 @@ console.log(prompt);
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        console.log('No such document for user!');
+        
         return;
       }
       const userData = docUserSnapshot.data();
@@ -6609,7 +6467,7 @@ console.log(prompt);
   return (
     <div className="flex flex-col md:flex-row overflow-y-auto bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" style={{ height: '100vh' }}>
       <audio ref={audioRef} src={noti} />
-        <div className={`flex flex-col w-full md:min-w-[35%] md:max-w-[35%] bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 ${selectedChatId ? 'hidden md:flex' : 'flex'}`}>
+        <div className={`flex flex-col w-full md:min-w-[30%] md:max-w-[30%] bg-gray-100 dark:bg-gray-900 border-r border-gray-300 dark:border-gray-700 ${selectedChatId ? 'hidden md:flex' : 'flex'}`}>
         <div className="flex items-center justify-between pl-4 pr-4 pt-6 pb-2 sticky top-0 z-10 bg-gray-100 dark:bg-gray-900">
           <div>
             <div className="text-start text-2xl font-semibold capitalize text-gray-800 dark:text-gray-200">
@@ -7530,7 +7388,7 @@ console.log(prompt);
                 forcePage={currentPage}
               />
         </div>
-      <div className="flex flex-col w-full sm:w-3/4 bg-slate-300 dark:bg-gray-900 relative flext-1 overflow-hidden">
+      <div className="flex flex-col w-full sm:w-3/4  dark:bg-gray-900 relative flext-1 overflow-hidden">
   {selectedChatId ? (
     <>
       <div className="flex items-center justify-between p-3 border-b border-gray-300 dark:border-gray-700 bg-gray-100 dark:bg-gray-900">
@@ -7763,23 +7621,22 @@ console.log(prompt);
       <div className="flex-1 overflow-y-auto p-2" 
         style={{
           paddingBottom: "150px",
-          backgroundColor: selectedContact ? 'transparent' : 'bg-slate-400 dark:bg-gray-800',
+          backgroundColor: selectedContact ? 'transparent' : 'bg-white dark:bg-gray-800',
           backgroundSize: 'cover',
           backgroundRepeat: 'no-repeat',
         }}
         ref={messageListRef}>
-        {/* {isLoading2 && (
-          <div className="fixed top-0 left-0 right-0 bottom-0 flex justify-center items-center bg-opacity-50">
-            <div className="items-center absolute top-1/2 left-2/2 transform -translate-x-1/3 -translate-y-1/2 bg-white dark:bg-gray-800 p-4 rounded-md shadow-lg">
+                {isLoading2 && (
+          <div className="fixed top-0 left-0 right-10 bottom-0 flex justify-center items-center bg-opacity-50">
+            <div className="items-center absolute top-1/2 left-1/2 transform translate-x-[200%] -translate-y-1/2 p-4">
               <div role="status">
                 <div className="flex flex-col items-center justify-end col-span-6 sm:col-span-3 xl:col-span-2">
-                  <LoadingIcon icon="three-dots" className="w-20 h-20 p-4 text-gray-800 dark:text-gray-200" />
-                  <div className="mt-2 text-xs text-center text-gray-800 dark:text-gray-200">Fetching Conversation...</div>
+                  <LoadingIcon icon="spinning-circles" className="w-20 h-20 p-4 text-blue-500 dark:text-blue-400" />
                 </div>
               </div>
             </div>
           </div>
-        )} */}
+        )}
         {selectedChatId && (
           <>
             {messages
@@ -7796,7 +7653,7 @@ console.log(prompt);
               .slice()
               .reverse()
               .map((message, index, array) => {
-                console.log('message:', message.id, 'phoneIndex:', message.phoneIndex, 'userData.phone:', userData?.phone, );
+                //
                 const previousMessage = messages[index - 1];
                 const showDateHeader =
                   index === 0 ||
@@ -7823,6 +7680,7 @@ console.log(prompt);
                   }
 
   return (
+    
                   <React.Fragment key={message.id}>
                     {showDateHeader && (
                       <div className="flex justify-center my-4">
@@ -7831,14 +7689,36 @@ console.log(prompt);
                         </div>
                       </div>
                     )}
-
+                      <div className="flex items-center gap-2 relative">
+    {/* Author Circle for Group Chats */}
+    {message.chat_id?.includes('@g.us') && (
+      <div 
+        style={{ 
+          width: '25px',
+          height: '25px',
+          borderRadius: '50%',
+          backgroundColor: getAuthorColor(message.author?.split('@')[0] || message.phoneIndex?.toString() || ''),
+          boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+          flexShrink: 0,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          alignSelf: 'flex-start', // This will align it to the top
+          marginTop: '4px' // Add some spacing from the top if needed
+        }}
+      >
+        <span className="text-xs text-white font-medium">
+          {(message.author?.split('@')[0]?.charAt(0) || '').toUpperCase()}
+        </span>
+      </div>
+    )}
                     <div
                       data-message-id={message.id}
-                      className={`p-2 mr-6 ${
+                      className={`p-2 mr-6 mb-5${
                         message.type === 'privateNote'
                           ? "bg-yellow-600 text-black rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl self-end ml-auto text-left mb-1 group"
                           : messageClass
-                      }`}
+                      }relative`}
                       style={{
                         maxWidth: message.type === 'document' ? '90%' : '70%',
                         width: `${
@@ -7855,6 +7735,7 @@ console.log(prompt);
                       onMouseEnter={() => setHoveredMessageId(message.id)}
                       onMouseLeave={() => setHoveredMessageId(null)}
                     >
+
                       {/* {hoveredMessageId === message.id && (
                         <button
                           onClick={(e) => {
@@ -7959,7 +7840,7 @@ console.log(prompt);
                           <div className="text-sm text-gray-300 dark:text-gray-300 mb-1 capitalize font-medium">{message.userName}</div>
                         )}
                         <div 
-                          className={`whitespace-pre-wrap break-words overflow-hidden ${
+                          className={`whitespace-pre-wrap break-words overflow-hidden text-[15px] ${
                             message.from_me ? myMessageTextClass : otherMessageTextClass
                           }`} 
                           style={{ wordBreak: 'break-word', overflowWrap: 'break-word' }}
@@ -7989,28 +7870,28 @@ console.log(prompt);
                             )}
                         </div>
                       )}
-{message.type === 'order' && message.order && (
-  <div className="p-0 message-content">
-    <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
-      <img
-        src={`data:image/jpeg;base64,${message.order.thumbnail}`}
-        alt="Order"
-        className="w-12 h-12 rounded-lg object-cover"
-        onError={(e) => {
-          console.error("Error loading order image:", e.currentTarget.src);
-          e.currentTarget.src = logoImage;
-        }}
-      />
-      <div className="text-white">
-        <div className="flex items-center">
-          <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
-          <span className="text-sm">{message.order.itemCount} item</span>
-        </div>
-        <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
-      </div>
-    </div>
-  </div>
-)}
+                      {message.type === 'order' && message.order && (
+                        <div className="p-0 message-content">
+                          <div className="flex items-center space-x-3 bg-emerald-800 rounded-lg p-2">
+                            <img
+                              src={`data:image/jpeg;base64,${message.order.thumbnail}`}
+                              alt="Order"
+                              className="w-12 h-12 rounded-lg object-cover"
+                              onError={(e) => {
+                                console.error("Error loading order image:", e.currentTarget.src);
+                                e.currentTarget.src = logoImage;
+                              }}
+                            />
+                            <div className="text-white">
+                              <div className="flex items-center">
+                                <Lucide icon="ShoppingCart" className="w-4 h-4 mr-1" />
+                                <span className="text-sm">{message.order.itemCount} item</span>
+                              </div>
+                              <p className="text-sm opacity-90">MYR {(message.order.totalAmount1000 / 1000).toFixed(2)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       {message.type === 'video' && message.video && (
                         <div className="video-content p-0 message-content image-message">
                           <video
@@ -8033,34 +7914,34 @@ console.log(prompt);
                           <div className="caption text-gray-800 dark:text-gray-200">{message.gif.caption}</div>
                         </div>
                       )}
-             {(message.type === 'audio' || message.type === 'ptt') && (message.audio || message.ptt) && (
-              <div className="audio-content p-0 message-content image-message">
-                <audio 
-                  controls 
-                  className="rounded-lg message-image cursor-pointer"
-                  src={(() => {
-                    const audioData = message.audio?.data || message.ptt?.data;
-                    const mimeType = message.audio?.mimetype || message.ptt?.mimetype;
-                    if (audioData && mimeType) {
-                      const byteCharacters = atob(audioData);
-                      const byteNumbers = new Array(byteCharacters.length);
-                      for (let i = 0; i < byteCharacters.length; i++) {
-                        byteNumbers[i] = byteCharacters.charCodeAt(i);
-                      }
-                      const byteArray = new Uint8Array(byteNumbers);
-                      const blob = new Blob([byteArray], { type: mimeType });
-                      return URL.createObjectURL(blob);
-                    }
-                    return '';
-                  })()}
-                />
-                {(message.audio?.caption || message.ptt?.caption) && (
-                  <div className="caption text-gray-800 dark:text-gray-200 mt-2">
-                    {message.audio?.caption || message.ptt?.caption}
-                  </div>
-                )}
-              </div>
-            )}
+                      {(message.type === 'audio' || message.type === 'ptt') && (message.audio || message.ptt) && (
+                        <div className="audio-content p-0 message-content image-message">
+                          <audio 
+                            controls 
+                            className="rounded-lg message-image cursor-pointer"
+                            src={(() => {
+                              const audioData = message.audio?.data || message.ptt?.data;
+                              const mimeType = message.audio?.mimetype || message.ptt?.mimetype;
+                              if (audioData && mimeType) {
+                                const byteCharacters = atob(audioData);
+                                const byteNumbers = new Array(byteCharacters.length);
+                                for (let i = 0; i < byteCharacters.length; i++) {
+                                  byteNumbers[i] = byteCharacters.charCodeAt(i);
+                                }
+                                const byteArray = new Uint8Array(byteNumbers);
+                                const blob = new Blob([byteArray], { type: mimeType });
+                                return URL.createObjectURL(blob);
+                              }
+                              return '';
+                            })()}
+                          />
+                          {(message.audio?.caption || message.ptt?.caption) && (
+                            <div className="caption text-gray-800 dark:text-gray-200 mt-2">
+                              {message.audio?.caption || message.ptt?.caption}
+                            </div>
+                          )}
+                        </div>
+                      )}
                       {message.type === 'voice' && message.voice && (
                         <div className="voice-content p-0 message-content image-message w-auto h-auto">
                           <audio controls src={message.voice.link} className="rounded-lg message-image cursor-pointer" />
@@ -8141,7 +8022,17 @@ console.log(prompt);
                       )}
                       {message.type === 'location' && message.location && (
                         <div className="location-content p-0 message-content image-message">
-                          <div className="text-sm text-gray-800 dark:text-gray-200">Location: {message.location.latitude}, {message.location.longitude}</div>
+                          <button
+                            className="text-white bg-blue-500 hover:bg-blue-600 rounded-md px-3 py-1"
+                            onClick={() => window.open(`https://www.google.com/maps?q=${message.location?.latitude},${message.location?.longitude}`, '_blank')}
+                          >
+                            Open Location in Google Maps
+                          </button>
+                          {message.location?.description && (
+                            <div className="text-xs text-white mt-1">
+                              {message.location.description}
+                            </div>
+                          )}
                         </div>
                       )}
                       {message.type === 'poll' && message.poll && (
@@ -8164,7 +8055,31 @@ console.log(prompt);
                           )}
                         </div>
                       )}
-
+                      {message.type === 'call_log' && (
+                        <div className="call-logs-content p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                            <div className="flex items-center space-x-2 mb-2">
+                                {message.call_log?.status === 'missed' ? (
+                                    <Lucide icon="PhoneMissed" className="w-5 h-5 text-red-500" />
+                                ) : message.call_log?.status === 'outgoing' ? (
+                                    <Lucide icon="PhoneOutgoing" className="w-5 h-5 text-green-500" />
+                                ) : (
+                                    <Lucide icon="PhoneIncoming" className="w-5 h-5 text-blue-500" />
+                                )}
+                                <span className="font-medium text-gray-800 dark:text-gray-200 capitalize">
+                                    {message.call_log?.status || 'Missed'} Call
+                                </span>
+                            </div>
+                            
+                            <div className="text-sm text-gray-600 dark:text-gray-400">
+                                {message.call_log?.duration ? (
+                                    <span>Duration: {formatDuration(message.call_log.duration)}</span>
+                                ) : (
+                                    <span>Call not answered</span>
+                                )}
+                            </div>
+                        </div>
+                      )}
+                      
                       {showReactionPicker && reactionMessage?.id === message.id && (
                         <ReactionPicker
                           onSelect={(emoji) => handleReaction(message, emoji)}
@@ -8189,14 +8104,14 @@ console.log(prompt);
                           <div className="flex items-center mr-2">
                             {(hoveredMessageId === message.id || selectedMessages.includes(message)) && (
                               <>
-                                <button className="ml-2 text-white hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
+                                <button className="ml-2 text-black hover:text-blue-600 dark:text-white dark:hover:text-blue-300 transition-colors duration-200 mr-2" onClick={() => setReplyToMessage(message)}><Lucide icon="MessageCircleReply" className="w-6 h-6" /></button>
                                 <button 
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setReactionMessage(message);
                                     setShowReactionPicker(true);
                                   }}
-                                  className="mr-2 p-1 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300"
+                                  className="mr-2 p-1 text-black hover:text-blue-500 dark:text-white dark:hover:text-blue-300"
                                 ><Lucide icon="Heart" className="w-6 h-6" /></button>
                                 {showReactionPicker && reactionMessage?.id === message.id && (
                                   <ReactionPicker
@@ -8212,14 +8127,16 @@ console.log(prompt);
                             )}
                             {message.name && <span className="ml-2 text-gray-400 dark:text-gray-600">{message.name}</span>}
                             {message.phoneIndex !== undefined && (
-                            <div className="text-xs text-white-500 dark:text-gray-400 px-2 py-1">
-                              {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
-                            </div>
+                                 <div className={`text-xs px-2 py-1 ${
+                                  message.from_me ? 'text-white' : 'text-white-500 dark:text-gray-400'
+                                }`}>
+                                  {phoneNames[message.phoneIndex] || `Phone ${message.phoneIndex + 1}`}
+                                </div>
                           )}
                             {formatTimestamp(message.createdAt || message.dateAdded)}
                           
                           </div>
-                          
+                          </div>
                         </div>
                       </div>
                     </div>
@@ -8257,6 +8174,7 @@ console.log(prompt);
                 )}
                 {replyToMessage.type === 'poll' && <div className="text-gray-800 dark:text-gray-200">Poll: {replyToMessage.poll?.title}</div>}
                 {replyToMessage.type === 'hsm' && <div className="text-gray-800 dark:text-gray-200">HSM: {replyToMessage.hsm?.title}</div>}
+                {replyToMessage.type === 'call_log' && <div className="text-gray-800 dark:text-gray-200">Call Logs: {replyToMessage.call_log?.title}</div>}
               </div>
             </div>
             <button onClick={() => setReplyToMessage(null)}>
@@ -8458,7 +8376,7 @@ console.log(prompt);
               const lastAtSymbolIndex = e.target.value.lastIndexOf('@');
               if (lastAtSymbolIndex !== -1 && lastAtSymbolIndex === e.target.value.length - 1) {
                 setIsPrivateNotesMentionOpen(true);
-                console.log('Private note mention open');
+                
               } else {
                 setIsPrivateNotesMentionOpen(false);
               }
@@ -8632,7 +8550,7 @@ console.log(prompt);
                           if (reply.image) {
                             const imageFile = new File([reply.image], "image.png", { type: "image/png" });
                             const imageUrl = URL.createObjectURL(imageFile);
-                            console.log("reply image:", JSON.stringify(reply, null, 2));
+                    
                             setPastedImageUrl(reply.image);
                             setDocumentCaption(reply.text);
                             setImageModalOpen2(true);
@@ -8902,7 +8820,7 @@ console.log(prompt);
                           const docUserRef = doc(firestore, 'user', user?.email!);
                           getDoc(docUserRef).then((docUserSnapshot) => {
                             if (!docUserSnapshot.exists()) {
-                              console.log('No such document for user!');
+                              
                               return;
                             }
                             const userData = docUserSnapshot.data();
@@ -8962,7 +8880,7 @@ console.log(prompt);
                     const docUserRef = doc(firestore, 'user', user?.email!);
                     const docUserSnapshot = await getDoc(docUserRef);
                     if (!docUserSnapshot.exists()) {
-                      console.log('No such document for user!');
+                      
                       return;
                     }
                     const userData = docUserSnapshot.data();
@@ -9176,58 +9094,57 @@ console.log(prompt);
         }}
         initialCaption={documentCaption} 
       />
-      {videoModalOpen && selectedVideo && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
-            <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
-            {selectedVideo.size > 20 * 1024 * 1024 ? (
-              <>
-                {setVideoModalOpen(false)}
-                {toast.error('The video file is too big. Please select a file smaller than 20MB.')}
-              </>
-            ) : (
-              <>
-                <video
-                  src={URL.createObjectURL(selectedVideo)}
-                  controls
-                  className="w-full mb-4 rounded"
-                  style={{ maxHeight: '400px' }}
-                />
-                <textarea
-                  value={videoCaption}
-                  onChange={(e) => setVideoCaption(e.target.value)}
-                  placeholder="Add a caption..."
-                  className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
-                />
-                <div className="flex justify-end space-x-2">
-                  <button
-                    onClick={() => {
-                      setVideoModalOpen(false);
-                      setSelectedVideo(null);
-                      setVideoCaption('');
-                    }}
-                    className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={() => handleVideoUpload(videoCaption)}
-                    className="px-4 py-2 bg-primary text-white rounded"
-                  >
-                    Send
-                  </button>
-                </div>
-              </>
-            )}
-            <button
-              onClick={() => setVideoModalOpen(false)}
-              className="absolute top-2 right-2 text-gray-800 dark:text-gray-200"
-            >
-              &times;
-            </button>
-          </div>
+     {videoModalOpen && selectedVideo && (() => {
+  if (selectedVideo.size > 20 * 1024 * 1024) {
+    setVideoModalOpen(false);
+    toast.error('The video file is too big. Please select a file smaller than 20MB.');
+    return null; // Return null to render nothing
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-2xl w-full">
+        <h2 className="text-xl font-bold mb-4 text-gray-800 dark:text-gray-200">Send Video</h2>
+        <video
+          src={URL.createObjectURL(selectedVideo)}
+          controls
+          className="w-full mb-4 rounded"
+          style={{ maxHeight: '400px' }}
+        />
+        <textarea
+          value={videoCaption}
+          onChange={(e) => setVideoCaption(e.target.value)}
+          placeholder="Add a caption..."
+          className="w-full p-2 mb-4 border rounded bg-white dark:bg-gray-700 text-gray-800 dark:text-gray-200"
+        />
+        <div className="flex justify-end space-x-2">
+          <button
+            onClick={() => {
+              setVideoModalOpen(false);
+              setSelectedVideo(null);
+              setVideoCaption('');
+            }}
+            className="px-4 py-2 bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => handleVideoUpload(videoCaption)}
+            className="px-4 py-2 bg-primary text-white rounded"
+          >
+            Send
+          </button>
         </div>
-      )}
+        <button
+          onClick={() => setVideoModalOpen(false)}
+          className="absolute top-2 right-2 text-gray-800 dark:text-gray-200"
+        >
+          &times;
+        </button>
+      </div>
+    </div>
+  );
+})()}
       <ToastContainer
         position="top-right"
         autoClose={5000}

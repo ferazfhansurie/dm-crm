@@ -56,7 +56,8 @@ interface Appointment {
   details?: string;
 }
 interface CalendarConfig {
-  calendarId: string;
+  calendarId: string;  // Keep original calendarId for backwards compatibility
+  additionalCalendarIds: string[];  // Add new field for additional calendars
   startHour: number;
   endHour: number;
   slotDuration: number;
@@ -200,6 +201,7 @@ function Main() {
   }
   const [config, setConfig] = useState<CalendarConfig>({
     calendarId: '',
+    additionalCalendarIds: [],
     startHour: 11,
     endHour: 21,
     slotDuration: 30,
@@ -1765,6 +1767,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         } else {
           const defaultConfig: CalendarConfig = {
             calendarId: '',
+            additionalCalendarIds: [],
             startHour: 11,
             endHour: 21,
             slotDuration: 30,
@@ -1820,7 +1823,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           <h2 className="text-lg font-medium mb-4 dark:text-white">Calendar Settings</h2>
           <div className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Google Calendar ID</label>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Primary Google Calendar ID</label>
               <input
                 type="text"
                 className="block w-full mt-1 border-gray-300 rounded-md shadow-sm"
@@ -1828,17 +1831,50 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
                 onChange={(e) => setConfig({ ...config, calendarId: e.target.value })}
                 placeholder="example@group.calendar.google.com"
               />
-              <p className="mt-1 text-sm text-gray-500">
-                Enter your Google Calendar ID or leave empty to disable integration.
-                <br />
-                Example format: xxx@group.calendar.google.com
-              </p>
-              {config.calendarId && !validateCalendarId(config.calendarId) && (
-                <p className="mt-1 text-sm text-red-500">
-                  Invalid calendar ID format
-                </p>
-              )}
             </div>
+
+            {/* Additional Calendar IDs */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Additional Calendar IDs</label>
+              {(config.additionalCalendarIds || []).map((calendarId, index) => (
+                <div key={index} className="flex items-center mt-2 gap-2">
+                  <input
+                    type="text"
+                    className="flex-1 block w-full mt-1 border-gray-300 rounded-md shadow-sm"
+                    value={calendarId}
+                    onChange={(e) => {
+                      const newCalendarIds = [...(config.additionalCalendarIds || [])];
+                      newCalendarIds[index] = e.target.value;
+                      setConfig({ ...config, additionalCalendarIds: newCalendarIds });
+                    }}
+                    placeholder="example@group.calendar.google.com"
+                  />
+                  <button
+                    onClick={() => {
+                      const newCalendarIds = (config.additionalCalendarIds || []).filter((_, i) => i !== index);
+                      setConfig({ ...config, additionalCalendarIds: newCalendarIds });
+                    }}
+                    className="p-2 text-red-600 hover:text-red-800"
+                  >
+                    <Lucide icon="X" className="w-5 h-5" />
+                  </button>
+                </div>
+              ))}
+              
+              <button
+                onClick={() => {
+                  setConfig({
+                    ...config,
+                    additionalCalendarIds: [...(config.additionalCalendarIds || []), '']
+                  });
+                }}
+                className="mt-2 px-3 py-1 text-sm text-primary border border-primary rounded hover:bg-primary hover:text-white"
+              >
+                <Lucide icon="Plus" className="w-4 h-4 inline-block mr-1" />
+                Add Calendar
+              </button>
+            </div>
+
             <div>
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">Start Hour (24h)</label>
               <input
@@ -2007,8 +2043,8 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       return true;
     }
     
-    // More permissive regex for Google Calendar IDs
-    const regex = /^[\w.-]+@[\w.-]+\.(calendar\.google\.com|gmail\.com)$/;
+    // More permissive regex that includes holiday calendar format
+    const regex = /^[\w.-]+[#]?[\w.-]*@[\w.-]+\.(calendar\.google\.com|gmail\.com)$/;
     const isValid = regex.test(calendarId.trim());
     debugLog('Calendar ID validation result', isValid);
     return isValid;
@@ -2016,36 +2052,60 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
 
   // Update the Google Calendar connection test
   const testGoogleCalendarConnection = async (calendarId: string) => {
-    debugLog('Testing calendar connection', calendarId);
+    console.log('Testing connection for calendar:', calendarId);
     try {
+      if (!validateCalendarId(calendarId)) {
+        console.log('Invalid calendar ID format');
+        return {
+          success: false,
+          error: 'Invalid calendar ID format'
+        };
+      }
+
       const encodedCalendarId = encodeURIComponent(calendarId.trim());
       const apiKey = import.meta.env.VITE_GOOGLE_CALENDAR_API_KEY;
       
-      if (!apiKey) {
-        debugLog('Missing Google Calendar API key');
-        return false;
-      }
+      const url = `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events?key=${apiKey}&maxResults=1`;
+      console.log('Making request to:', url);
 
-      const response = await fetch(
-        `https://www.googleapis.com/calendar/v3/calendars/${encodedCalendarId}/events?key=${apiKey}&maxResults=1`
-      );
+      const response = await fetch(url);
+      console.log('Response status:', response.status);
       
-      debugLog('Calendar API response status', response.status);
+      const errorData = await response.json();
+      console.log('Full error response:', errorData);
       
       if (!response.ok) {
-        const errorData = await response.json();
-        debugLog('Calendar API error', errorData);
-        return false;
+        if (errorData.error?.status === 'PERMISSION_DENIED') {
+          return {
+            success: false,
+            error: 'Calendar access denied. Please make sure the calendar is public or shared properly.'
+          };
+        } else if (errorData.error?.status === 'NOT_FOUND') {
+          return {
+            success: false,
+            error: 'Calendar not found. Please check the calendar ID.'
+          };
+        }
+        
+        return {
+          success: false,
+          error: `API Error: ${errorData.error?.message || 'Unknown error'}`
+        };
       }
       
-      return true;
+      return {
+        success: true
+      };
     } catch (error) {
-      debugLog('Calendar connection error', error);
-      return false;
+      console.error('Connection test error:', error);
+      return {
+        success: false,
+        error: 'Network error while testing calendar connection'
+      };
     }
   };
 
-  // Update the save function with better error handling
+  // Update the save function to use the new response format
   const handleSaveCalendarConfig = async () => {
     debugLog('Saving calendar config', config);
     
@@ -2054,24 +2114,17 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       calendarId: config.calendarId?.trim() || ''
     };
 
-    debugLog('Processed config', newConfig);
-
     // Skip validation for empty calendar ID
     if (newConfig.calendarId) {
-      if (!validateCalendarId(newConfig.calendarId)) {
-        alert('Invalid Calendar ID format. Please enter a valid Google Calendar ID or leave it empty to disable integration.');
-        return;
-      }
-
       try {
-        const isValid = await testGoogleCalendarConnection(newConfig.calendarId);
-        if (!isValid) {
-          alert('Unable to connect to the calendar. Please check the Calendar ID and your internet connection.');
+        const result = await testGoogleCalendarConnection(newConfig.calendarId);
+        if (!result.success) {
+          toast.error(result.error || 'Failed to connect to calendar');
           return;
         }
       } catch (error) {
         debugLog('Connection test error', error);
-        alert('Error testing calendar connection. Please try again.');
+        toast.error('Error testing calendar connection');
         return;
       }
     }
@@ -2087,6 +2140,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           calendarApi.removeAllEventSources();
           await calendarApi.refetchEvents();
           debugLog('Calendar refreshed successfully');
+          toast.success('Calendar settings updated successfully');
         } catch (error) {
           debugLog('Calendar refresh error', error);
         }
@@ -2095,7 +2149,7 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       setIsCalendarConfigOpen(false);
     } catch (error) {
       debugLog('Save config error', error);
-      alert('Error saving calendar configuration. Please try again.');
+      toast.error('Error saving calendar configuration');
     }
   };
 
@@ -2146,7 +2200,15 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
         className: 'gcal-event',
         color: '#a8d7e0',
         editable: false
-      }] : [])
+      }] : []),
+      ...(config.additionalCalendarIds || [])
+        .filter(id => id && id.trim() !== '' && validateCalendarId(id))
+        .map(calendarId => ({
+          googleCalendarId: calendarId,
+          className: 'gcal-event',
+          color: '#a8d7e0',  // You might want to assign different colors for different calendars
+          editable: false
+        }))
     ],
     eventContent: renderEventContent, // Add this to use your custom event rendering
     eventDidMount: (info: any) => {
@@ -2654,16 +2716,18 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
             {viewType === 'calendar' ? 'Slots View' : 'Calendar View'}
           </button>
         </div>
-             {/* Add new Appointment Requests button */}
-             <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
-          <button
-            className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
-            onClick={() => navigate('/appointment-requests')}
-          >
-            <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
-            Appointment Requests
-          </button>
-        </div>
+        {/* Add new Appointment Requests button */}
+        {companyId === '053' && (
+          <div className="w-full mb-4 sm:w-auto sm:mr-2 lg:mb-0 lg:mr-4">
+            <button
+              className="px-4 py-2 text-sm font-medium text-white bg-primary rounded-md hover:bg-blue-700 dark:bg-blue-600 dark:hover:bg-blue-700"
+              onClick={() => navigate('/appointment-requests')}
+            >
+              <Lucide icon="ClipboardList" className="w-4 h-4 mr-2 inline-block" />
+              Appointment Requests
+            </button>
+          </div>
+        )}
         {/* Employee selection dropdown */}
         <div className="w-full mb-4 sm:w-1/4 sm:mr-2 lg:w-auto lg:mb-0 lg:mr-4">
           {employees.length > 0 && (
@@ -2883,7 +2947,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           <div className="p-5 box intro-y">
             {viewType === 'calendar' ? (
               <CalendarErrorBoundary>
-                <FullCalendar {...calendarOptions} ref={calendarRef} />
+                <div className="calendar-container" style={{ height: 'calc(100vh - 200px)', overflowY: 'auto' }}>
+                  <FullCalendar {...calendarOptions} ref={calendarRef} />
+                </div>
               </CalendarErrorBoundary>
             ) : (
               <GridView />

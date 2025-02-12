@@ -237,6 +237,7 @@ function Main() {
   const [exportModalContent, setExportModalContent] = useState<React.ReactNode | null>(null);
   const [focusedMessageIndex, setFocusedMessageIndex] = useState<number>(0);
   const [cursorPosition, setCursorPosition] = useState<number>(0);
+  const [selectedScheduledMessages, setSelectedScheduledMessages] = useState<string[]>([]);
 
   const [newContact, setNewContact] = useState({
       contactName: '',
@@ -408,7 +409,66 @@ const handleSort = (field: string) => {
     setSortDirection('asc');
   }
 };
+const toggleScheduledMessageSelection = (messageId: string) => {
+  setSelectedScheduledMessages(prev => 
+    prev.includes(messageId) 
+      ? prev.filter(id => id !== messageId)
+      : [...prev, messageId]
+  );
+};
+const handleDeleteSelected = async () => {
+  if (selectedScheduledMessages.length === 0) {
+    toast.error('Please select messages to delete');
+    return;
+  }
 
+  try {
+    const user = auth.currentUser;
+    if (!user?.email) throw new Error('User not authenticated');
+
+    const docUserRef = doc(firestore, 'user', user.email);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) throw new Error('User document not found');
+
+    const userData = docUserSnapshot.data();
+    const companyId = userData.companyId;
+
+    // Delete all selected messages
+    await Promise.all(
+      selectedScheduledMessages.map(messageId => 
+        handleDeleteScheduledMessage(messageId)
+      )
+    );
+
+    setSelectedScheduledMessages([]); // Clear selection after deletion
+    toast.success(`Successfully deleted ${selectedScheduledMessages.length} messages`);
+  } catch (error) {
+    console.error('Error deleting selected messages:', error);
+    toast.error('Failed to delete some messages');
+  }
+};
+const handleSendSelectedNow = async () => {
+  if (selectedScheduledMessages.length === 0) {
+    toast.error('Please select messages to send');
+    return;
+  }
+
+  try {
+    const selectedMessages = scheduledMessages.filter(msg => 
+      selectedScheduledMessages.includes(msg.id!)
+    );
+
+    for (const message of selectedMessages) {
+      await handleSendNow(message);
+    }
+
+    setSelectedScheduledMessages([]); // Clear selection after sending
+    toast.success(`Successfully sent ${selectedMessages.length} messages`);
+  } catch (error) {
+    console.error('Error sending selected messages:', error);
+    toast.error('Failed to send some messages');
+  }
+};
 const getDisplayedContacts = () => {
   if (!sortField) return currentContacts;
 
@@ -3135,7 +3195,59 @@ const resetForm = () => {
       console.error("Error fetching scheduled messages:", error);
     }
   };
-
+  const handleSendNow = async (message: any) => {
+    try {
+      // Get user and company data
+      const user = auth.currentUser;
+      if (!user?.email) throw new Error('User not authenticated');
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('User document not found');
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Get company data for baseUrl
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('Company document not found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      // Send messages to all recipients
+      const sendPromises = message.chatIds.map(async (chatId: string) => {
+        const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: message.message || '',
+            phoneIndex: message.phoneIndex || userData.phone || 0,
+            userName: userData.name || userData.email || ''
+          }),
+        });
+  
+        if (!response.ok) {
+          throw new Error(`Failed to send message to ${chatId}`);
+        }
+      });
+  
+      // Wait for all messages to be sent
+      await Promise.all(sendPromises);
+  
+      // Delete the scheduled message
+      if (message.id) {
+        await deleteDoc(doc(firestore, `companies/${companyId}/scheduledMessages/${message.id}`));
+        // Update local state to remove the message
+        setScheduledMessages(prev => prev.filter(msg => msg.id !== message.id));
+      }
+  
+      toast.success('Messages sent successfully!');
+    } catch (error) {
+      console.error('Error sending messages:', error);
+      toast.error('Failed to send messages. Please try again.');
+    }
+  };
   const handleEditScheduledMessage = (message: ScheduledMessage) => {
     setCurrentScheduledMessage(message);
     setBlastMessage(message.message || ''); // Set the blast message to the current message text
@@ -3626,7 +3738,7 @@ const resetForm = () => {
       const validContacts = csvContacts.map(contact => {
         const baseContact: any = {
           customFields: {},
-          tags: [],
+          tags: [...selectedImportTags], // Add selected import tags here
           updatedAt: Timestamp.now(),
           updatedBy: user.email,
           createdAt: Timestamp.now(),
@@ -3636,6 +3748,16 @@ const resetForm = () => {
         // Process each field in the CSV contact
       Object.entries(contact).forEach(([header, value]) => {
         const headerLower = header.toLowerCase().trim();
+        
+                // Check if the header is a tag column (tag 1 through tag 10)
+                const tagMatch = headerLower.match(/^tag\s*(\d+)$/);
+                if (tagMatch && Number(tagMatch[1]) <= 10) {
+                  // If value exists and isn't empty, add it to tags array
+                  if (value && typeof value === 'string' && value.trim()) {
+                    baseContact.tags.push(value.trim());
+                  }
+                  return; // Skip further processing for tag columns
+                }
         
         // Try to match with standard fields
         let matched = false;
@@ -3663,6 +3785,9 @@ const resetForm = () => {
           baseContact.customFields[header] = value;
         }
       });
+
+      baseContact.tags = [...new Set(baseContact.tags)];
+
 
       return baseContact;
     });
@@ -4343,6 +4468,22 @@ const getFilteredScheduledMessages = () => {
                   >
                     <Lucide icon={showScheduledMessages ? "ChevronUp" : "ChevronDown"} className="w-6 h-6 ml-2 mb-1 text-gray-700 dark:text-gray-300" />
                   </button>
+                  {selectedScheduledMessages.length > 0 && (
+        <div className="mb-4 flex gap-2">
+          <button
+            onClick={handleSendSelectedNow}
+            className="text-sm bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
+          >
+            Send Selected ({selectedScheduledMessages.length})
+          </button>
+          <button
+            onClick={handleDeleteSelected}
+            className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
+          >
+            Delete Selected ({selectedScheduledMessages.length})
+          </button>
+        </div>
+      )}
                 </div>
                 {showScheduledMessages && (
                   getFilteredScheduledMessages().length > 0 ? (
@@ -4351,12 +4492,19 @@ const getFilteredScheduledMessages = () => {
                         <div key={message.id} className="z-10 bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden transition-all duration-300 hover:shadow-lg flex flex-col h-full">
                           <div className="z-10 p-4 flex-grow">
                             <div className="z-10 flex justify-between items-center mb-2">
+                              
                               <span className="text-sm font-medium text-indigo-600 dark:text-indigo-400">
                                 {message.status === 'scheduled' ? 'Scheduled' : message.status}
                               </span>
                               <span className="text-xs text-gray-500 dark:text-gray-400">
                                 {formatDate(message.scheduledTime.toDate())}
                               </span>
+                              <input
+                type="checkbox"
+                checked={selectedScheduledMessages.includes(message.id!)}
+                onChange={() => toggleScheduledMessageSelection(message.id!)}
+                className="w-4 h-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
                             </div>
                             <div className="text-gray-800 dark:text-gray-200 mb-2 font-medium text-md">
                             {/* First Message */}
@@ -4463,6 +4611,14 @@ const getFilteredScheduledMessages = () => {
                             )}
                           </div>
                           <div className="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 flex justify-end mt-auto">
+                            
+                          <button
+    onClick={() => handleSendNow(message)}
+    className="text-sm bg-green-600 hover:bg-green-700 text-white font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"
+    title="Send message immediately"
+  >
+    Send Now
+  </button>
                             <button
                               onClick={() => handleEditScheduledMessage(message)}
                               className="text-sm bg-white dark:bg-gray-600 hover:bg-gray-50 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-200 font-medium py-1 px-3 rounded-md shadow-sm transition-colors duration-200 mr-2"

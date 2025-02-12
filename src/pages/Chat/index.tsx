@@ -33,6 +33,8 @@ import 'react-datepicker/dist/react-datepicker.css';
 import ReactPaginate from 'react-paginate';
 import { getFileTypeFromMimeType } from '../../utils/fileUtils';
 import { Transition } from "@headlessui/react";
+import VirtualContactList from '../../components/VirtualContactList';
+import SearchModal from '@/components/SearchModal';
 
 interface Label {
   id: string;
@@ -41,7 +43,7 @@ interface Label {
   count: number;
 }
 
-interface Contact {
+export interface Contact {
   conversation_id?: string | null;
   additionalEmails?: string[] | null;
   address1?: string | null;
@@ -80,25 +82,8 @@ interface Contact {
   points?:number |null;
   phoneIndexes?:number[] |null;
 }
-interface GhlConfig {
-  ghl_id: string;
-  ghl_secret: string;
-  refresh_token: string;
-  ghl_accessToken: string;
-  ghl_location: string;
-  whapiToken: string;
-  v2?: boolean;
-}
-interface Chat {
-  id?: string;
-  name?: string;
-  last_message?: Message | null;
-  labels?: Label[];
-  contact_id?: string;
-  tags?: string[];
-}
 
-interface Message {
+export interface Message {
   chat_id: string;
   dateAdded?: number | 0;
   timestamp: number | 0;
@@ -129,8 +114,8 @@ interface Message {
     sha256: string;
     data?:string;
     caption?:string;
-  mimetype?: string;
-  fileSize?: number;
+    mimetype?: string;
+    fileSize?: number;
   };
   link_preview?: { link: string; title: string; description: string ,body:string,preview:string};
   sticker?: { link: string; emoji: string;mimetype:string;data:string };
@@ -157,6 +142,16 @@ interface Message {
   isPrivateNote?: boolean;
   call_log?: any;
 }
+
+interface Chat {
+  id?: string;
+  name?: string;
+  last_message?: Message | null;
+  labels?: Label[];
+  contact_id?: string;
+  tags?: string[];
+}
+
 interface Employee {
   id: string;
   name: string;
@@ -184,9 +179,22 @@ interface QuickReply {
   id: string;
   keyword: string;
   text: string;
-  type:string;
-  document?: string | null;
-  image?: string | null;
+  type: string;
+  category: string;
+  documents?: {
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+    lastModified: number;
+  }[] | null;
+  images?: string[] | null;
+}
+interface Category {
+  id: string;
+  name: string;
+  createdAt: any;
+  createdBy: string;
 }
 interface ImageModalProps {
   isOpen: boolean;
@@ -405,8 +413,16 @@ const app = initializeApp(firebaseConfig);
 const firestore = getFirestore(app);
 const auth = getAuth(app);
 
+interface ContactsState {
+  items: Contact[];
+  hasMore: boolean;
+  lastVisible: any;
+  isLoading: boolean;
+  currentPage: number;
+}
+
 function Main() {
-   // Initial state setup with localStorage
+  // Initial state setup with localStorage
   const { contacts: contextContacts, isLoading: contextLoading } = useContacts();
   const [contacts, setContacts] = useState<Contact[]>(() => {
     const storedContacts = localStorage.getItem('contacts');
@@ -447,6 +463,7 @@ function Main() {
   const otherFirstMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mt-4`;
   const otherMiddleMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
   const otherLastMessageClass = `${otherMessageClass} rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl mb-4`;
+  const privateNoteClass = `${baseMessageClass} bg-yellow-500 dark:bg-yellow-900 self-start text-left mt-1 ml-2 group rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl`;
   const [messageMode, setMessageMode] = useState('reply');
   const myMessageTextClass = "text-white"
   const otherMessageTextClass = "text-black dark:text-white"
@@ -538,6 +555,8 @@ function Main() {
   const [documentModalOpen, setDocumentModalOpen] = useState(false);
   const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
   const [selectedImage, setSelectedImage] = useState<File | null>(null);
+  const [selectedDocuments, setSelectedDocuments] = useState<File[]>([]);
+  const [selectedImages, setSelectedImages] = useState<File[]>([]);
   const [quickReplyFilter, setQuickReplyFilter] = useState('');
   const [phoneNames, setPhoneNames] = useState<Record<number, string>>({});
   const [userPhone, setUserPhone] = useState<number | null>(null);
@@ -581,7 +600,43 @@ function Main() {
   const [sleepDuration, setSleepDuration] = useState(5);
 
   const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [quickReplyCategory, setQuickReplyCategory] = useState<string>('all');
+  const [contactsState, setContactsState] = useState<ContactsState>({
+    items: [],
+    hasMore: true,
+    lastVisible: null,
+    isLoading: false,
+    currentPage: 1
+  });
+  const CONTACTS_PER_PAGE = 50;
 
+  const [isSearchModalOpen, setIsSearchModalOpen] = useState(false);
+
+  useEffect(() => {
+    const fetchCategories = async () => {
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+        
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+  
+        const categoriesRef = collection(firestore, `companies/${companyId}/categories`);
+        const categoriesSnapshot = await getDocs(categoriesRef);
+        const fetchedCategories = categoriesSnapshot.docs.map(doc => doc.data().name);
+        setCategories(['all', ...fetchedCategories]);
+      } catch (error) {
+        console.error('Error fetching categories:', error);
+      }
+    };
+  
+    fetchCategories();
+  }, []);
   useEffect(() => {
     const fetchPhoneStatuses = async () => {
       try {
@@ -624,54 +679,6 @@ function Main() {
     return () => clearInterval(intervalId);
 }, []);
 
-  useEffect(() => {
-    const checkTrialStatus = async () => {
-      try {
-        const auth = getAuth();
-        const user = auth.currentUser;
-        
-        if (!user?.email) {
-          return;
-        }
-  
-        const docUserRef = doc(firestore, 'user', user.email);
-        const docUserSnapshot = await getDoc(docUserRef);
-        
-        if (!docUserSnapshot.exists()) {
-          throw new Error("User document not found");
-        }
-  
-        const userData = docUserSnapshot.data();
-        const companyId = userData.companyId;
-  
-        const companyRef = doc(firestore, 'companies', companyId);
-        const companySnapshot = await getDoc(companyRef);
-  
-        if (!companySnapshot.exists()) {
-          throw new Error("Company document not found");
-        }
-  
-        const companyData = companySnapshot.data();
-        
-        if (companyData.trialEndDate) {
-          const trialEnd = companyData.trialEndDate.toDate();
-          const now = new Date();
-          
-          if (now > trialEnd) {
-            setTrialExpired(true);
-            toast.error("Your trial period has expired. Please contact support to continue using the service.");
-            await signOut(auth);
-            navigate('/login');
-          }
-        }
-      } catch (error) {
-        console.error("Error checking trial status:", error);
-        toast.error("Error checking subscription status");
-      }
-    };
-  
-    checkTrialStatus();
-  }, []); // Run once when component mounts
   useEffect(() => {
     if (contextContacts.length > 0) {
       setContacts(contextContacts as Contact[]);
@@ -1617,16 +1624,18 @@ const closePDFModal = () => {
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'all',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          category: doc.data().category || '',
+          documents: doc.data().documents || [],
+          images: doc.data().images || [],
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
           keyword: doc.data().keyword || '',
           text: doc.data().text || '',
           type: 'self',
-          document: doc.data().document || null,
-          image: doc.data().image || null,
+          category: doc.data().category || '',
+          documents: doc.data().documents || [],
+          images: doc.data().images || [],
         }))
       ];
   
@@ -1681,8 +1690,8 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
         type: newQuickReplyType,
         createdAt: serverTimestamp(),
         createdBy: user.email,
-        document: selectedDocument ? await uploadDocument(selectedDocument) : null, // URL stored
-        image: selectedImage ? await uploadImage(selectedImage) : null,
+        documents: selectedDocuments ? await Promise.all(selectedDocuments.map(uploadDocument)) : [],
+        images: selectedImages ? await Promise.all(selectedImages.map(uploadImage)) : [],
       };
   
       if (newQuickReplyType === 'self') {
@@ -1696,8 +1705,8 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
       }
   
       setNewQuickReply('');
-      setSelectedDocument(null);
-      setSelectedImage(null);
+      setSelectedDocuments([]);
+      setSelectedImages([]);
       setNewQuickReplyKeyword('');
       setNewQuickReplyType('all');
       fetchQuickReplies();
@@ -1767,23 +1776,50 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
     }
   };
 
-  const handleQRClick = (reply: QuickReply) => {
-    if (reply.image) {
-      setPastedImageUrl(reply.image);
-      setImageModalOpen2(true);
-    }
-  
-    if (reply.document) {
-      fetchFileFromURL(reply.document).then(file => {
-        if (file) {
-          setSelectedDocument(file);
-          setDocumentModalOpen(true);
+  const handleQRClick = async (reply: QuickReply) => {
+    try {
+      // Handle images one at a time
+      if (reply.images?.length) {
+        setPastedImageUrl(reply.images);
+        setDocumentCaption(reply.text || '');
+        setImageModalOpen2(true);
+      }
+
+      // Handle documents one at a time
+      if (reply.documents?.length) {
+        for (const doc of reply.documents) {
+          try {
+            const response = await fetch(doc.url);
+            const blob = await response.blob();
+            const documentFile = new File([blob], doc.name, {
+              type: doc.type,
+              lastModified: doc.lastModified
+            });
+            setSelectedDocument(documentFile);
+            setDocumentModalOpen(true);
+            await new Promise<void>(resolve => {
+              const interval = setInterval(() => {
+                if (!documentModalOpen) {
+                  clearInterval(interval);
+                  resolve();
+                }
+              }, 100);
+            });
+          } catch (error) {
+            console.error('Error handling document:', error);
+            toast.error(`Failed to process document: ${doc.name}`);
+          }
         }
-      });
+      }
+
+      if (reply.text) {
+        setNewMessage(reply.text);
+      }
+      setIsQuickRepliesOpen(false);
+    } catch (error) {
+      console.error('Error in handleQRClick:', error);
+      toast.error('Failed to process quick reply');
     }
-  
-    setNewMessage(reply.text);
-    setIsQuickRepliesOpen(false);
   };
 
 
@@ -2221,32 +2257,32 @@ const updateFirebaseUnreadCount = async (contact: Contact) => {
     await updateDoc(contactRef, { unreadCount: 0 });
   }
 };
-const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
-  try {
-    if (!userEmail) throw new Error("User email is not provided.");
-    
-    const docUserRef = doc(firestore, 'user', userEmail);
-    const docUserSnapshot = await getDoc(docUserRef);
-    if (!docUserSnapshot.exists()) {
+  const fetchContactsBackground = async (whapiToken: string, locationId: string, ghlToken: string, user_name: string, role: string, userEmail: string | null | undefined) => {
+    try {
+      if (!userEmail) throw new Error("User email is not provided.");
       
-      return;
-    }
-
-    const dataUser = docUserSnapshot.data();
-    const companyId = dataUser?.companyId;
-    if (!companyId) {
+      const docUserRef = doc(firestore, 'user', userEmail);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
       
-      return;
-    }
+        return;
+      }
 
-    // Pagination settings
+      const dataUser = docUserSnapshot.data();
+      const companyId = dataUser?.companyId;
+      if (!companyId) {
+      
+        return;
+      }
+
+      // Pagination settings
     const batchSize = 4000;
     let lastVisible: QueryDocumentSnapshot<DocumentData> | null = null;
     const phoneSet = new Set<string>();
     let allContacts: Contact[] = [];
 
     // Fetch contacts in batches
-    const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
+      const contactsCollectionRef = collection(firestore, `companies/${companyId}/contacts`);
     while (true) {
       let queryRef: Query<DocumentData> = lastVisible
         ? query(contactsCollectionRef, startAfter(lastVisible), limit(batchSize))
@@ -2266,14 +2302,14 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
       lastVisible = contactsSnapshot.docs[contactsSnapshot.docs.length - 1];
     }
 
-    // Fetch pinned chats
-    const pinnedChatsRef = collection(firestore, `user/${userEmail}/pinned`);
-    const pinnedChatsSnapshot = await getDocs(pinnedChatsRef);
-    const pinnedChats = pinnedChatsSnapshot.docs.map(doc => doc.data() as Contact);
+      // Fetch pinned chats
+      const pinnedChatsRef = collection(firestore, `user/${userEmail}/pinned`);
+      const pinnedChatsSnapshot = await getDocs(pinnedChatsRef);
+      const pinnedChats = pinnedChatsSnapshot.docs.map(doc => doc.data() as Contact);
 
     // Update pinned status in Firebase and local contacts
     const updatePromises = allContacts.map(async contact => {
-      const isPinned = pinnedChats.some(pinned => pinned.chat_id === contact.chat_id);
+        const isPinned = pinnedChats.some(pinned => pinned.chat_id === contact.chat_id);
       if (isPinned !== contact.pinned) {
         const contactDocRef = doc(contactsCollectionRef, contact.id!);
         await updateDoc(contactDocRef, { pinned: isPinned });
@@ -2286,9 +2322,9 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
 
     allContacts.sort((a, b) => {
       // First priority: pinned status
-      if (a.pinned && !b.pinned) return -1;
-      if (!a.pinned && b.pinned) return 1;
-      
+        if (a.pinned && !b.pinned) return -1;
+        if (!a.pinned && b.pinned) return 1;
+        
       // Second priority: unread messages
       if (a.unreadCount && !b.unreadCount) return -1;
       if (!a.unreadCount && b.unreadCount) return 1;
@@ -2310,8 +2346,8 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
       timestampB = timestampB || 0;
 
       // Sort descending (newest first)
-      return timestampB - timestampA;
-    });
+        return timestampB - timestampA;
+      });
 
     // Add debugging after sorting
 
@@ -2349,18 +2385,18 @@ const fetchContactsBackground = async (whapiToken: string, locationId: string, g
 
     // Store all contacts in localStorage
     localStorage.setItem('contacts', LZString.compress(JSON.stringify(allContacts)));
-    sessionStorage.setItem('contactsFetched', 'true');
-    
+      sessionStorage.setItem('contactsFetched', 'true');
+      
     // If you need to limit the displayed contacts, implement pagination in the UI component
     // For example, you could add a state variable for the current page:
     // const [currentPage, setCurrentPage] = useState(1);
     // const contactsPerPage = 200;
     // const displayedContacts = allContacts.slice((currentPage - 1) * contactsPerPage, currentPage * contactsPerPage);
     
-  } catch (error) {
-    console.error('Error fetching contacts:', error);
-  }
-};
+    } catch (error) {
+      console.error('Error fetching contacts:', error);
+    }
+  };
 
 
 
@@ -2551,17 +2587,17 @@ useEffect(() => {
     setLoading(true);
     setSelectedIcon('ws');
     const auth = getAuth(app);
-    const user = auth.currentUser;
-    
+      const user = auth.currentUser;
+
     try {
         const docUserRef = doc(firestore, 'user', user?.email!);
-        const docUserSnapshot = await getDoc(docUserRef);
-        
+      const docUserSnapshot = await getDoc(docUserRef);
+
         if (!docUserSnapshot.exists()) {
             
             return;
         }
-        const dataUser = docUserSnapshot.data();
+      const dataUser = docUserSnapshot.data();
 
         
         
@@ -3047,8 +3083,8 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
         timestamp: note.timestamp
       }))
     }));
-    
-  } catch (error) {
+
+    } catch (error) {
     console.error('Failed to fetch messages:', error);
   }
 }
@@ -3338,7 +3374,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       from_me: true,
       type: 'text',
       from_name: contact.last_message?.from_name || '',
-      phoneIndex: phoneIndex,
+      phoneIndex,
       // Add any other required fields with appropriate default values
     };
   
@@ -4065,7 +4101,6 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
     }
     const companyData = docSnapshot.data();
      // New log
-    
      // New log
      // New log
 
@@ -4140,11 +4175,13 @@ const sendAssignmentNotification = async (assignedEmployeeName: string, contact:
       await sendWhatsAppMessage(assignedEmployee.phoneNumber, employeeMessage);
     }
 
-    // Send notification to all admins
-    for (const admin of adminUsers) {
-      if (admin.phoneNumber) {
-        const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
-        await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+    // Send notification to all admins, except for companyId '042'
+    if (companyId !== '042') {
+      for (const admin of adminUsers) {
+        if (admin.phoneNumber) {
+          const adminMessage = `Admin notification: A new contact has been assigned to ${assignedEmployee.name}:\n\nName: ${contact.contactName || contact.firstName || 'N/A'}\nPhone: ${contact.phone}`;
+          await sendWhatsAppMessage(admin.phoneNumber, adminMessage);
+        }
       }
     }
 
@@ -4230,13 +4267,30 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
 
  
 const formatText = (text: string) => {
-  const parts = text.split(/(\*[^*]+\*|\*\*[^*]+\*\*)/g);
-  return parts.map((part: string, index: any) => {
- if (part.startsWith('*') && part.endsWith('*')) {
-      return <strong key={index}>{part.slice(1, -1)}</strong>;
-    } else {
-      return part;
+  // Split text into segments that need formatting and those that don't
+  const segments = text.split(/(\*[^*]+\*|~[^~]+~)/g);
+  
+  return segments.map((segment, index) => {
+    // Check if segment is bold (surrounded by *)
+    if (segment.startsWith('*') && segment.endsWith('*')) {
+      return (
+        <span key={index} className="font-bold">
+          {segment.slice(1, -1)}
+        </span>
+      );
     }
+    
+    // Check if segment is strikethrough (surrounded by ~)
+    if (segment.startsWith('~') && segment.endsWith('~')) {
+      return (
+        <span key={index} className="line-through">
+          {segment.slice(1, -1)}
+        </span>
+      );
+    }
+    
+    // Return regular text
+    return segment;
   });
 };
 const openEditMessage = (message: Message) => {
@@ -4276,7 +4330,7 @@ const handlePageChange = ({ selected }: { selected: number }) => {
 const [loadingMessage, setLoadingMessage] = useState<string | null>(null);
 const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
 
-useEffect(() => {
+  useEffect(() => {
   if (filteredContacts.length === 0) {
     setLoadingMessage("Fetching contacts...");
   } else {
@@ -4292,8 +4346,6 @@ useEffect(() => {
 }, [filteredContacts, paginatedContacts, activeTags]);
 
 useEffect(() => {
-
-
   let filtered = contacts;
 
   // Apply role-based filtering
@@ -4467,46 +4519,52 @@ const sortContacts = (contacts: Contact[]) => {
       const contactsRef = collection(firestore, 'companies', companyId, 'contacts');
       const contactsSnapshot = await getDocs(contactsRef);
 
-      let allResults: any[] = [];
-
-      // Search through each contact's messages
-      for (const contactDoc of contactsSnapshot.docs) {
+      // Get messages for each contact with a larger limit
+      const searchPromises = contactsSnapshot.docs.map(async (contactDoc) => {
         const messagesRef = collection(firestore, 'companies', companyId, 'contacts', contactDoc.id, 'messages');
         
-        // Simplified query that only uses orderBy
+        // Query messages with a larger limit and no text-only filter
         const messagesQuery = query(
           messagesRef,
           orderBy('timestamp', 'desc'),
-          limit(100)
+          limit(100) // Increased limit to get more messages
         );
 
         const messagesSnapshot = await getDocs(messagesQuery);
         
         // Filter messages client-side
-        const contactResults = messagesSnapshot.docs
+        return messagesSnapshot.docs
           .filter(doc => {
-            const data = doc.data() as { text?: { body?: string } };
-            const messageText = data.text?.body?.toLowerCase() || '';
-            return messageText.includes(searchQuery.toLowerCase());
+            const data = doc.data() as { text?: { body?: string }, type?: string };
+            // Only include messages with text content
+            if (data.type !== 'text' || !data.text?.body) return false;
+            
+            const messageText = data.text.body.toLowerCase();
+            const searchTerms = searchQuery.toLowerCase().split(' ');
+            
+            // Match all search terms (AND search)
+            return searchTerms.every(term => messageText.includes(term));
           })
           .map(doc => ({
-            ...(doc.data() as Record<string, any>),
+            ...(doc.data() as Message),
             id: doc.id,
             contactId: contactDoc.id
           }));
+      });
 
-        allResults = [...allResults, ...contactResults];
-      }
+      const searchResults = await Promise.all(searchPromises);
+      const allResults = searchResults.flat();
 
       // Format and sort results
       const formattedResults = allResults.map(result => ({
-        ...result,
+        id: result.id,
+        contactId: result.contactId,
         text: {
-          body: result.text?.body || result.message || result.content || '',
+          body: result.text?.body || '',
         },
-        timestamp: result.timestamp || result.created_at || Date.now(),
+        timestamp: result.timestamp || Date.now(),
         from_me: result.from_me || false,
-        chat_id: result.chat_id || result.chatId || '',
+        chat_id: result.chat_id || '',
         type: result.type || 'text'
       }));
 
@@ -4517,7 +4575,12 @@ const sortContacts = (contacts: Contact[]) => {
       });
 
       setGlobalSearchResults(sortedResults);
-      toast.success(`Found ${sortedResults.length} message${sortedResults.length === 1 ? '' : 's'}`);
+      
+      if (sortedResults.length > 0) {
+        toast.success(`Found ${sortedResults.length} message${sortedResults.length === 1 ? '' : 's'}`);
+      } else {
+        toast.info('No messages found');
+      }
 
     } catch (error) {
       console.error('Search failed:', error);
@@ -4562,7 +4625,7 @@ const sortContacts = (contacts: Contact[]) => {
     );
   };
   
-  // Modify the handleSearchChange2 function
+  // Modify the handleSearchChange function
   const handleSearchChange2 = (e: React.ChangeEvent<HTMLInputElement>) => {
     setSearchQuery2(e.target.value);
   };
@@ -5044,7 +5107,7 @@ const sortContacts = (contacts: Contact[]) => {
     };
   
     window.addEventListener("keydown", handleKeyDown);
-  
+
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
     };
@@ -5363,8 +5426,8 @@ interface Template {
 }
 
  const handleRemoveTag = async (contactId: string, tagName: string) => {
-    try {
-      const user = auth.currentUser;
+      try {
+        const user = auth.currentUser;
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
@@ -5553,13 +5616,13 @@ interface Template {
 
       const user = auth.currentUser;
       if (!user) throw new Error('No authenticated user');
-
-      const docUserRef = doc(firestore, 'user', user.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
+  
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) throw new Error('No such document for user');
-
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
+        
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) throw new Error('No company document found');
@@ -5591,7 +5654,7 @@ interface Template {
       } else {
         throw new Error(response.data.error || 'Failed to edit message');
       }
-    } catch (error) {
+      } catch (error) {
       console.error('Error editing message:', error);
       toast.error('Failed to edit message. Please try again.');
     }
@@ -5636,24 +5699,19 @@ interface Template {
     }
   };
   
-  const sendImage = async (imageUrl: string | null, caption: string) => {
-    
-    
+  const sendImage = async (imageUrl: string, caption: string) => {
     setLoading(true);
     try {
-      if (imageUrl) {
-        const response = await fetch(imageUrl);
-        const blob = await response.blob();
-        const file = new File([blob], 'image.jpg', { type: blob.type });
-        
-        const uploadedImageUrl = await uploadFile(file);
-        if (uploadedImageUrl) {
-          await sendImageMessage(selectedChatId!, uploadedImageUrl, caption);
-        }
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const file = new File([blob], 'image.jpg', { type: blob.type });
+      
+      const uploadedImageUrl = await uploadFile(file);
+      if (uploadedImageUrl) {
+        await sendImageMessage(selectedChatId!, uploadedImageUrl, caption);
       }
     } catch (error) {
       console.error('Error sending image:', error);
-     // toast.error('Failed to send image. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -5731,14 +5789,14 @@ interface Template {
 useEffect(() => {
   let isMounted = true;
   const fetchCompanyStopBot = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      const docUserRef = doc(firestore, 'user', user.email!);
-      const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) return;
-
+      try {
+        const user = auth.currentUser;
+        if (!user) return;
+  
+        const docUserRef = doc(firestore, 'user', user.email!);
+        const docUserSnapshot = await getDoc(docUserRef);
+        if (!docUserSnapshot.exists()) return;
+  
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       const currentPhoneIndex = userData.phone || 0;
@@ -5975,11 +6033,11 @@ const toggleBot = async () => {
         
         return;
       }
-      const userData = docUserSnapshot.data();
-      const companyId = userData.companyId;
-      
-      const docRef = doc(firestore, 'companies', companyId);
-      const docSnapshot = await getDoc(docRef);
+        const userData = docUserSnapshot.data();
+        const companyId = userData.companyId;
+  
+        const docRef = doc(firestore, 'companies', companyId);
+        const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) throw new Error('No company document found');
       const companyData = docSnapshot.data();
       const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
@@ -6103,7 +6161,7 @@ const toggleBot = async () => {
       }
 
       const companyData = companySnapshot.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+        const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
       const isV2 = companyData.v2 || false;
       const whapiToken = companyData.whapiToken || '';
       const phone = userData.phoneNumber.split('+')[1];
@@ -6200,7 +6258,7 @@ ${context}
       // Set the AI's response as the new message
       setNewMessage(aiResponse);
   
-    } catch (error) {
+      } catch (error) {
       console.error('Error generating AI response:', error);
       toast.error("Failed to generate AI response");
     } finally {
@@ -6462,7 +6520,7 @@ ${context}
     };
 
     fetchTotalContacts();
-  }, []);
+}, []);
 
   return (
     <div className="flex flex-col md:flex-row overflow-y-auto bg-gray-100 dark:bg-gray-900 text-gray-800 dark:text-gray-200" style={{ height: '100vh' }}>
@@ -6923,84 +6981,47 @@ ${context}
     <div className="flex justify-end space-x-2 w-full mr-2">
       
     {(
-      // Replace or update the existing search input section
       <div className="relative flex-grow">
-        <input
-          type="text"
-          className="flex-grow box w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-800"
-          placeholder="Search messages..."
-          value={searchQuery}
-          onChange={handleSearchChange}
+        <button
+          onClick={() => setIsSearchModalOpen(true)}
+          className="flex items-center w-full h-9 py-1 pl-10 pr-4 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 rounded-md hover:bg-gray-200 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-gray-800"
+        >
+          <Lucide
+            icon="Search"
+            className="absolute left-3 w-5 h-5"
+          />
+          <span className="ml-2">Search contacts...</span>
+        </button>
+
+        <SearchModal
+          isOpen={isSearchModalOpen}
+          onClose={() => setIsSearchModalOpen(false)}
+          searchQuery={searchQuery}
+          setSearchQuery={setSearchQuery}
+          onSelectResult={(type, id) => {
+            if (type === 'contact' || type === 'chat') {
+              const contact = contacts.find(c => type === 'contact' ? c.id === id : c.chat_id === id);
+              if (contact) {
+                selectChat(contact.chat_id!, contact.id!, contact);
+              }
+            } else if (type === 'message') {
+              const result = globalSearchResults.find(r => r.id === id);
+              if (result) {
+                const contact = contacts.find(c => c.id === result.contactId);
+                if (contact) {
+                  selectChat(contact.chat_id!, contact.id!, contact);
+                  scrollToMessage(result.id);
+                }
+              }
+            }
+            setIsSearchModalOpen(false);
+            setSearchQuery('');
+          }}
+          contacts={contacts}
+          // messages={messages}
+          // globalSearchLoading={globalSearchLoading}
+          // globalSearchResults={globalSearchResults}
         />
-        <Lucide
-          icon="Search"
-          className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400"
-        />
-        
-        {/* Global Search Results Dropdown */}
-        {isGlobalSearchActive && searchQuery && (
-          <div className="absolute z-50 w-full mt-1 bg-white dark:bg-gray-800 rounded-md shadow-lg max-h-96 overflow-y-auto">
-            {globalSearchLoading ? (
-              <div className="w-full p-4 text-center text-gray-500">
-                Searching...
-              </div>
-            ) : globalSearchResults.length > 0 ? (
-              <>
-                {globalSearchResults.map((result) => (
-                  <div
-                    key={result.id}
-                    className="p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer"
-                    onClick={async () => {
-                      // Find and select the contact
-                      const contact = contacts.find(c => c.id === result.contactId);
-                      if (contact) {
-                        await selectChat(contact.chat_id!, contact.id!, contact);
-                        setIsGlobalSearchActive(false);
-                        setSearchQuery('');
-                      }
-                      // Scroll to the message that was clicked on in the chat
-                      scrollToMessage(result.id);
-                    }}
-                  >
-                    <div className="flex-grow w-full justify-between items-start">
-                      <div className="flex-1 min-w-0">
-                        <div className="text-sm font-medium">
-                          {contacts.find(c => c.id === result.contactId)?.contactName || result.contactId}
-                        </div>
-                        <div className="text-sm text-gray-500 truncate">
-                          {result.text?.body ? (
-                            <span dangerouslySetInnerHTML={{ __html: result.text.body.replace(new RegExp(`(${searchQuery})`, 'gi'), '<mark>$1</mark>') }} />
-                          ) : (
-                            result.caption || 'Media message'
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
-                
-                {/* Pagination */}
-                {totalGlobalSearchPages > 1 && (
-                  <div className="pagination">
-                    {Array.from({ length: totalGlobalSearchPages }, (_, i) => i + 1).map(pageNum => (
-                      <button
-                        key={pageNum}
-                        onClick={() => loadMoreSearchResults(pageNum)}
-                        disabled={pageNum === globalSearchPage}
-                      >
-                        {pageNum}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </>
-            ) : (
-              <div className="p-4 text-center text-gray-500">
-                No messages found
-              </div>
-            )}
-          </div>
-        )}
       </div>
     )}
     {isAssistantAvailable && (
@@ -7646,7 +7667,7 @@ ${context}
               (userData?.company !== "Revotrend" || 
                 (userData?.phone === undefined || 
                 phoneCount === undefined || 
-                phoneCount === 0 ||
+                phoneCount === 0 || 
                 message.phoneIndex === undefined || 
                 message.phoneIndex === null || 
                 message.phoneIndex.toString() === userData?.phone.toString())))
@@ -7716,7 +7737,7 @@ ${context}
                       data-message-id={message.id}
                       className={`p-2 mr-6 mb-5${
                         message.type === 'privateNote'
-                          ? "bg-yellow-600 text-black rounded-tr-xl rounded-tl-xl rounded-br-xl rounded-bl-xl self-end ml-auto text-left mb-1 group"
+                          ? privateNoteClass
                           : messageClass
                       }relative`}
                       style={{
@@ -7820,7 +7841,7 @@ ${context}
                         </span>
                       )} */}
                       {message.type === 'privateNote' && (
-                        <div className="inline-block whitespace-pre-wrap break-words text-white">
+                        <div className="inline-block whitespace-pre-wrap break-words text-gray-800 dark:text-gray-200">
                           {(() => {
                             const text = typeof message.text === 'string' ? message.text : message.text?.body || 'No content';
                             const parts = text.split(/(@\w+)/g);
@@ -8074,7 +8095,7 @@ ${context}
                                 {message.call_log?.duration ? (
                                     <span>Duration: {formatDuration(message.call_log.duration)}</span>
                                 ) : (
-                                    <span>Call not answered</span>
+                                    <span>Call ended</span>
                                 )}
                             </div>
                         </div>
@@ -8120,7 +8141,7 @@ ${context}
                                   />
                                 )}
                                 {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5"><path d="M21.731 2.269a2.625 2.625 0 00-3.712 0l-1.157 1.157 3.712 3.712 1.157-1.157a2.625 2.625 0 000-3.712zM19.513 8.199l-3.712-3.712-12.15 12.15a5.25 5.25 0 00-1.32 2.214l-.8 2.685a.75.75 0 00.933.933l2.685-.8a5.25 5.25 0 002.214-1.32L19.513 8.2z" /></svg></button>
+                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><Lucide icon="Pencil" className="w-5 h-5" /></button>
                                 )}
                                 <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
@@ -8296,11 +8317,6 @@ ${context}
 </button>
             </Menu.Items>
           </Menu>
-          <button className="p-2 m-0 !box" onClick={handleQR}>
-            <span className="flex items-center justify-center w-5 h-5">
-              <Lucide icon='Zap' className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-            </span>
-          </button>
           <button className="p-2 m-0 !box ml-2" onClick={toggleRecordingPopup}>
         <span className="flex items-center justify-center w-5 h-5">
           <Lucide icon="Mic" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
@@ -8480,184 +8496,241 @@ ${context}
             }}
             disabled={userRole === "3"}
           />
-          {isQuickRepliesOpen && (
-            <div ref={quickRepliesRef} className="absolute bottom-full left-0 mb-2 w-full max-w-md bg-gray-100 dark:bg-gray-800 p-2 rounded-md shadow-lg mt-2 z-10">
-            <div className="flex justify-between mb-4">
-              <button
-                className={`px-4 py-2 rounded-lg ${
-                  activeQuickReplyTab === 'all'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveQuickReplyTab('all')}
-              >
-                All
-              </button>
-              <button
-                className={`px-4 py-2 rounded-lg ${
-                  activeQuickReplyTab === 'self'
-                    ? 'bg-primary text-white'
-                    : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
-                }`}
-                onClick={() => setActiveQuickReplyTab('self')}
-              >
-                Self
-              </button>
-            </div>
-            <div className="max-h-60 overflow-y-auto">
-              {quickReplies
-                .filter(reply => 
-                  activeQuickReplyTab === 'all' || reply.type === 'self'
-                )
-                .filter(reply => 
-                  reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
-                  reply.text.toLowerCase().includes(quickReplyFilter.toLowerCase())
-                )
-                .sort((a, b) => a.keyword.localeCompare(b.keyword))
-                .map(reply => (
-                  <div key={reply.id} className="flex items-center justify-between mb-2 dark:bg-gray-800">
-                    {editingReply?.id === reply.id ? (
-                      <>
-                        <input
-                          className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                          value={editingReply.keyword}
-                          onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
-                          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
-                        />
-                        <textarea
-                          className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                          value={editingReply.text}
-                          onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
-                          placeholder="Text"
-                          rows={1}
-                        />
-                        <button className="p-2 m-1 !box" onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self")}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Save" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                          </span>
-                        </button>
-                      </>
-                    ) : (
-                      <>
-                      <span className="px-2 py-1 bg-gray-200 dark:bg-gray-600 rounded-md text-gray-800 dark:text-gray-200 m-2">
+  {isQuickRepliesOpen && (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
+    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-[90%] max-w-4xl max-h-[90vh] overflow-hidden">
+      <div className="flex justify-between items-center mb-4">
+        <h3 className="text-lg font-semibold">Quick Replies</h3>
+        <button
+          onClick={() => setIsQuickRepliesOpen(false)}
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+        >
+          <Lucide icon="X" className="w-6 h-6" />
+        </button>
+      </div>
+
+      <div className="flex justify-between items-center mb-4">
+        <div className="flex space-x-4">
+          <button
+            className={`px-4 py-2 rounded-lg ${
+              activeQuickReplyTab === 'all'
+                ? 'bg-primary text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+            }`}
+            onClick={() => setActiveQuickReplyTab('all')}
+          >
+            All
+          </button>
+          <button
+            className={`px-4 py-2 rounded-lg ${
+              activeQuickReplyTab === 'self'
+                ? 'bg-primary text-white'
+                : 'bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200'
+            }`}
+            onClick={() => setActiveQuickReplyTab('self')}
+          >
+            Personal
+          </button>
+        </div>
+        <div className="flex space-x-4">
+          <select
+            value={quickReplyCategory}
+            onChange={(e) => setQuickReplyCategory(e.target.value)}
+            className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+          >
+            <option value="all">All Categories</option>
+            {categories
+              .filter(cat => cat !== 'all')
+              .map(category => (
+                <option key={category} value={category}>{category}</option>
+              ))}
+          </select>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search quick replies..."
+              value={quickReplyFilter}
+              onChange={(e) => setQuickReplyFilter(e.target.value)}
+              className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            />
+            <Lucide
+              icon="Search"
+              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
+        {quickReplies
+          .filter(reply => activeQuickReplyTab === 'all' || reply.type === 'self')
+          .filter(reply => quickReplyCategory === 'all' || reply.category === quickReplyCategory)
+          .filter(reply => 
+            reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
+            reply.text?.toLowerCase().includes(quickReplyFilter.toLowerCase())
+          )
+          .sort((a, b) => a.keyword.localeCompare(b.keyword))
+          .map(reply => (
+            <div 
+              key={reply.id} 
+              className="flex items-center justify-between mb-2 bg-white dark:bg-gray-700 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer transition-colors duration-200"
+              onClick={() => {
+                if (editingReply?.id !== reply.id) {
+                  if (reply.images?.length) {
+                    setPastedImageUrl(reply.images);
+                    setDocumentCaption(reply.text || '');
+                    setImageModalOpen2(true);
+                  }
+                  if (reply.documents?.length) {
+                    reply.documents.forEach((doc) => {
+                      fetch(doc.url)
+                        .then(response => response.blob())
+                        .then(blob => {
+                          const documentFile = new File([blob], doc.name, { 
+                            type: doc.type,
+                            lastModified: doc.lastModified 
+                          });
+                          setSelectedDocument(documentFile);
+                          setDocumentModalOpen(true);
+                          setDocumentCaption(reply.text || '');
+                        })
+                        .catch(error => {
+                          console.error('Error handling document:', error);
+                          toast.error('Failed to load document');
+                        });
+                    });
+                  }
+                  if (reply.text) {
+                    setNewMessage(reply.text);
+                  }
+                  setIsQuickRepliesOpen(false);
+                }
+              }}
+            >
+              {editingReply?.id === reply.id ? (
+                <div className="flex items-center w-full space-x-4">
+                  <input
+                    className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    value={editingReply.keyword}
+                    onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
+                    placeholder="Keyword"
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <select
+                    className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    value={editingReply.category || ""}
+                    onChange={(e) => setEditingReply({ ...editingReply, category: e.target.value })}
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <option value="">Select Category</option>
+                    {categories
+                      .filter((cat: string) => cat !== 'all')
+                      .map(category => (
+                        <option key={category} value={category}>
+                          {category}
+                        </option>
+                    ))}
+                  </select>
+                  <textarea
+                    className="flex-grow px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                    value={editingReply.text || ''}
+                    onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
+                    placeholder="Message text (optional)"
+                    rows={1}
+                    onClick={(e) => e.stopPropagation()}
+                  />
+                  <div className="flex space-x-2">
+                    <button 
+                      className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        updateQuickReply(reply.id, editingReply.keyword, editingReply.text || '', editingReply.type as "all" | "self");
+                      }}
+                    >
+                      <Lucide icon="Save" className="w-5 h-5" />
+                    </button>
+                    <button 
+                      className="p-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingReply(null);
+                      }}
+                    >
+                      <Lucide icon="X" className="w-5 h-5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="flex flex-col flex-grow">
+                    <div className="flex items-center space-x-2 mb-2">
+                      <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
                         {reply.keyword}
                       </span>
+                      {reply.category && (
+                        <span className="px-3 py-1 bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full text-sm">
+                          {reply.category}
+                        </span>
+                      )}
+                  
+                    </div>
+                    {reply.text && (
                       <span
-                        className="px-2 py-1 flex-grow text-lg cursor-pointer text-gray-800 dark:text-gray-200"
-                        onClick={() => {
-                          handleQRClick(reply);
-                          let message = reply.text;
-                          if (reply.image) {
-                            const imageFile = new File([reply.image], "image.png", { type: "image/png" });
-                            const imageUrl = URL.createObjectURL(imageFile);
-                    
-                            setPastedImageUrl(reply.image);
-                            setDocumentCaption(reply.text);
-                            setImageModalOpen2(true);
-                          }
-                          if (reply.document) {
-                            const documentFile = new File([reply.document], "document", { type: reply.document });
-                            setSelectedDocument(documentFile);
-                            setDocumentModalOpen(true);
-                            setDocumentCaption(reply.text);
-                          }
-                          setNewMessage(message);
-                          setIsQuickRepliesOpen(false);
-                        }}
+                        className="px-2 py-1 text-gray-800 dark:text-gray-200"
                         style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
                       >
                         {reply.text}
                       </span>
-                      {(typeof reply.document === 'string' && reply.document !== '') || (typeof reply.image === 'string' && reply.image !== '') ? (
-                        <>
-                          {typeof reply.document === 'string' && reply.document !== '' && (
-                            <a href={reply.document} target="_blank" className="p-2 m-1 !box">
-                              <span className="flex items-center justify-center w-5 h-5">
-                                <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                              </span>
-                            </a>
-                          )}
-                          {typeof reply.image === 'string' && reply.image !== '' && (
-                            <a href={reply.image} target="_blank" className="p-2 m-1 !box">
-                              <span className="flex items-center justify-center w-5 h-5">
-                                <Lucide icon="Image" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                              </span>
-                            </a>
-                          )}
-                        </>
-                      ) : null}
-                      <div>
-                        <button className="p-2 m-1 !box" onClick={() => setEditingReply(reply)}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Eye" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                          </span>
-                        </button>
-                        <button className="p-2 m-1 !box text-red-500 dark:text-red-400" onClick={() => deleteQuickReply(reply.id, reply.type as "all" | "self")}>
-                          <span className="flex items-center justify-center w-5 h-5">
-                            <Lucide icon="Trash" className="w-5 h-5" />
-                          </span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
+                    )}
+                    <div className="grid grid-cols-2 gap-2 mt-2">
+                      {reply.documents && reply.documents.length > 0 && reply.documents.map((doc, index) => (
+                        <div key={index} className="relative group">
+                          <a href={doc.url} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-600 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-500" onClick={(e) => e.stopPropagation()}>
+                            <Lucide icon="File" className="w-4 h-4" />
+                            <span className="text-sm truncate">{doc.name}</span>
+                          </a>
+                        </div>
+                      ))}
+                      {(reply.images?.length ?? 0) > 0 && (reply.images as string[]).map((img, index) => (
+                        <div key={index} className="relative group">
+                          <img 
+                            src={img} 
+                            alt={`Preview ${index + 1}`} 
+                            className="w-16 h-16 object-cover rounded-md hover:opacity-90 transition-opacity"
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="flex items-center space-x-2 ml-4">
+                    <button
+                      className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingReply(reply);
+                      }}
+                    >
+                      <Lucide icon="Pencil" className="w-5 h-5" />
+                    </button>
+                    <button
+                      className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        deleteQuickReply(reply.id, reply.type as "all" | "self");
+                      }}
+                    >
+                      <Lucide icon="Trash" className="w-5 h-5" />
+                    </button>
+                  </div>
+                </>
+              )}
             </div>
-            <div className="flex items-center mb-4">
-          {(newMessage === '/' || isQuickRepliesOpen) && !quickReplyFilter && (
-            <>
-              <input
-                className="flex-grow px-1 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200 mr-2"
-                placeholder="Add new keyword"
-                value={newQuickReplyKeyword}
-                onChange={(e) => setNewQuickReplyKeyword(e.target.value)}
-                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
-              />
-              <textarea
-                className="flex-grow px-2 py-1 border border-gray-300 dark:border-gray-700 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-                placeholder="Add new quick reply"
-                value={newQuickReply}
-                onChange={(e) => setNewQuickReply(e.target.value)}
-                rows={1}
-                style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word', fontFamily: 'Arial, sans-serif', fontSize: '14px' }}
-              />
-              <input
-                type="file"
-                className="hidden"
-                id="quickReplyFile"
-                onChange={(e) => setSelectedDocument(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyFile" className="p-2 m-1 !box cursor-pointer">
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="File" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
-                </span>
-              </label>  
-              {/* <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                id="quickReplyImage"
-                onChange={(e) => setSelectedImage(e.target.files ? e.target.files[0] : null)}
-              />
-              <label htmlFor="quickReplyImage" className="p-2 m-1 !box cursor-pointer">
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Image" className="w-5 h-5 text-gray-800 dark:text-gray-200" />  
-                </span>
-              </label>   */}
-            </>
-          )}
-          <div className="flex flex-col ml-2">
-            {!quickReplyFilter && (
-              <button className="p-2 m-1 !box" onClick={addQuickReply}>
-                <span className="flex items-center justify-center w-5 h-5">
-                  <Lucide icon="Plus" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
-                </span>
-              </button>
-            )}
-          </div>
-        </div>
+          ))}
       </div>
-    )}
+    </div>
+  </div>
+)}
         </div>
         {isEmojiPickerOpen && (
           <div className="absolute bottom-20 left-2 z-10">
@@ -9078,17 +9151,15 @@ ${context}
         imageUrl={pastedImageUrl} 
         onSend={async (urls, caption) => {
           if (Array.isArray(urls)) {
-            // Get the original files from the input
-            const fileInput = document.getElementById('imageUpload') as HTMLInputElement;
-            if (fileInput && fileInput.files) {
-              for (let i = 0; i < fileInput.files.length; i++) {
-                const file = fileInput.files[i];
-                const url = URL.createObjectURL(file);
-                await sendImage(url, caption);
-              }
+            // Handle multiple images
+            for (let i = 0; i < urls.length; i++) {
+              const isLastImage = i === urls.length - 1;
+              // Only send caption with the last image
+              await sendImage(urls[i], isLastImage ? caption : '');
             }
-          } else {
-            sendImage(urls, caption);
+          } else if (urls) {
+            // Handle single image
+            await sendImage(urls, caption);
           }
           setImageModalOpen2(false);
         }}
@@ -9226,7 +9297,7 @@ interface ImageModalProps2 {
   isOpen: boolean;
   onClose: () => void;
   imageUrl: string | string[] | null;
-  onSend: (url: string | string[], caption: string) => void;  // Update to handle array
+  onSend: (url: string | string[] | null, caption: string) => void;
   initialCaption?: string;
 }
 
@@ -9238,10 +9309,10 @@ const ImageModal2: React.FC<ImageModalProps2> = ({ isOpen, onClose, imageUrl, on
     setCaption(initialCaption || "" );
   }, [initialCaption]);
 
-
   const handleSendClick = () => {
+    if (!imageUrl) return;
+    onSend(imageUrl, caption || '');
     setCaption('');
-    onSend(imageUrl || '', caption || ''); // Provide empty string fallback for imageUrl and caption
     onClose(); // Close the modal after sending
   };
 

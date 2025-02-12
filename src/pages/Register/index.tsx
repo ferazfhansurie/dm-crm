@@ -198,12 +198,11 @@ function Main() {
         email: user.email!,
         role: "1",
         companyId: newCompanyId,
-        phone: formatPhoneNumber(phoneNumber),
+        phone: 0,
         phoneNumber: formatPhoneNumber(phoneNumber),
         plan: selectedPlan,
         trialStartDate: trialStartDate,
         trialEndDate: trialEndDate,
-
         employeeId: employeeId || null,
         notes: notes || null,
         quotaLeads: quotaLeads || 0,

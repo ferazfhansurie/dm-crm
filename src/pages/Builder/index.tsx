@@ -324,6 +324,8 @@ const Main: React.FC = () => {
     }
   };
 
+
+
   const sendMessageToAssistant = async (messageText: string) => {
     const newMessage: ChatMessage = {
       from_me: true,
@@ -331,7 +333,7 @@ const Main: React.FC = () => {
       text: messageText,
       createdAt: new Date().toISOString(),
     };
-
+  
     // Add loading message
     const loadingMessage: ChatMessage = {
       from_me: false,
@@ -340,9 +342,9 @@ const Main: React.FC = () => {
       createdAt: new Date().toISOString(),
       isLoading: true,
     };
-
+  
     setMessages(prevMessages => [loadingMessage, newMessage, ...prevMessages]);
-
+  
     try {
       const user = getAuth().currentUser;
       if (!user) {
@@ -350,62 +352,62 @@ const Main: React.FC = () => {
         setError("User not authenticated");
         return;
       }
-      const docUserRef = doc(firestore, 'user', user?.email!);
+  
+      const docUserRef = doc(firestore, 'user', user.email!);
       const docUserSnapshot = await getDoc(docUserRef);
-      if (!docUserSnapshot.exists()) {
-        
-        return;
-      }
+      if (!docUserSnapshot.exists()) return;
+  
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
-      if (!docSnapshot.exists()) {
-        
-        return;
-      }
+      if (!docSnapshot.exists()) return;
+  
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-
-      const realMessage = messageText + "\n\n" +'Current Instructions: ' + assistantInfo.instructions;
-
-      const res = await axios.get(`${baseUrl}/api/assistant-test/`, {
+  
+      const res = await axios({
+        method: 'post',
+        url: `${baseUrl}/api/prompt-engineer/`,
         params: {
-          message: realMessage,
-          email: user.email!,
-          assistantid: 'asst_zQ3klGmHLZFI9DmH0uofet0F',
+          message: messageText,
+          email: user.email!
         },
+        data: {
+          currentPrompt: assistantInfo.instructions || ''
+        }
       });
       
-      const fullResponse = res.data.answer;
-      const helpfulResponse = fullResponse.split('Formatted Prompt:')[0].replace('Helpful Response:', '').trim();
-      const formattedResponse = fullResponse
-        .split('Formatted Prompt:')[1]
-        .trim()
-        .replace(/```bash\n/, '')
-        .replace(/```$/, '')
-        .trim();
-      
+      if (!res.data.success) {
+        throw new Error(res.data.details || 'Failed to process prompt');
+      }
+  
+      const { analysis, updatedPrompt } = res.data.data;
+  
+      // Update assistant instructions with the new prompt
       setAssistantInfo(prevInfo => ({
         ...prevInfo,
-        instructions: formattedResponse
+        instructions: updatedPrompt
       }));
-
+  
+      // Create a formatted response that includes both analysis and prompt
+      const formattedResponse = `Analysis:\n${analysis}\n\nUpdated Prompt:\n${updatedPrompt}`;
+  
       const assistantResponse: ChatMessage = {
         from_me: false,
         type: 'text',
-        text: helpfulResponse,
+        text: formattedResponse,
         createdAt: new Date().toISOString(),
       };
-
+  
       // Remove loading message and add the real response
       setMessages(prevMessages => {
         const filteredMessages = prevMessages.filter(msg => !msg.isLoading);
         return [assistantResponse, ...filteredMessages];
       });
-
+  
       setThreadId(user.email!);
-
+  
     } catch (error) {
       console.error('Error:', error);
       setError("Failed to send message");
@@ -413,6 +415,8 @@ const Main: React.FC = () => {
       setMessages(prevMessages => prevMessages.filter(msg => !msg.isLoading));
     }
   };
+
+// ... existing code ...
 
   useEffect(() => {
     if (assistantId && apiKey) {

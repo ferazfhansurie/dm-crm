@@ -35,19 +35,20 @@ export const menuSlice = createSlice({
 });
 
 export const selectMenu = (layout: Themes["layout"]) => (state: RootState) => {
-  const { config: initialContacts, userRole } = useConfig();
-
+  // Get config from state instead of using hook
+  const config = state.config;
+  const userRole = config?.userRole;
 
   if (layout == "top-menu") {
     return topMenu;
   }
 
   if (layout == "simple-menu") {
-    if (initialContacts.name === "Infinity Pilates & Physiotherapy") {
+    if (config?.name === "Infinity Pilates & Physiotherapy") {
       return simpleMenu2;
-    } else if (initialContacts.name === "Tatapies") {
+    } else if (config?.name === "Tatapies") {
       return simpleMenu3;
-    }else if (initialContacts.name === "Juta") {
+    } else if (config?.name === "Juta") {
       return simpleMenuJuta;
     } else {
       switch (userRole) {

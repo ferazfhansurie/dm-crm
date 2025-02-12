@@ -111,7 +111,7 @@ function Main() {
     notes: "",
     quotaLeads: 0,
     invoiceNumber: null,
-    phone: -1,
+    phone: 0,
     imageUrl: "",
     weightage: 0,
   });
@@ -382,7 +382,7 @@ function Main() {
           invoiceNumber: userData.invoiceNumber || null,
           
           // First, set the base phone and weightage fields
-          phone: 1, // Set default phone to 1 for the first phone
+          phone: 0, // Set default phone to 0 for the first phone
           weightage: Number(userData.weightage) || 0, // Use weightage1 for the first phone
           
           // Then include additional phone and weightage fields

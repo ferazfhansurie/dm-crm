@@ -4,6 +4,8 @@ import { getFirestore, doc, getDoc } from "firebase/firestore";
 import { initializeApp } from "firebase/app";
 import { useNavigate } from "react-router-dom";
 import LZString from 'lz-string';
+import { useDispatch } from 'react-redux';
+import { setConfig } from './stores/configSlice';
 
 const firebaseConfig = {
   apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -31,10 +33,11 @@ interface ConfigContextProps {
 const ConfigContext = createContext<ConfigContextProps | undefined>(undefined);
 
 export const ConfigProvider = ({ children }: { children: ReactNode }) => {
-  const [config, setConfig] = useState<any>(null);
+  const [config, setLocalConfig] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [userRole, setUserRole] = useState<string | null>(null);
   const navigate = useNavigate();
+  const dispatch = useDispatch();
 
   useEffect(() => {
     // Clear the session flag when the page reloads
@@ -72,11 +75,9 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
 
         const dataUser = docUserSnapshot.data();
         const companyId = dataUser?.companyId;
-        const role = dataUser?.role; // Get the user role
+        const role = dataUser?.role;
         
-        
-        
-        setUserRole(role); // Set the user role
+        setUserRole(role);
 
         if (!companyId) {
           setIsLoading(false);
@@ -92,13 +93,17 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
 
         const data = docSnapshot.data();
 
-        // Store the configuration data
-        setConfig(data);
+        // Store the configuration data in local state and Redux
+        setLocalConfig(data);
+        dispatch(setConfig({ 
+          name: data.name,
+          userRole: role,
+          // Add other needed config properties
+        }));
+        
         localStorage.setItem('config', LZString.compress(JSON.stringify(data)));
-        sessionStorage.setItem('configFetched', 'true'); // Mark that config has been fetched in this session
+        sessionStorage.setItem('configFetched', 'true');
 
-        // You can navigate to a specific page if needed
-        // navigate('/somePage');  
       } catch (error) {
         console.error('Error fetching config:', error);
       } finally {
@@ -112,11 +117,10 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
       } else {
         const currentPath = window.location.pathname;
         if (currentPath === '/register') {
-          navigate('/register');  // Redirect to registration page if not authenticated and not already on the register or login page
-        }else{
-          navigate('/login'); 
+          navigate('/register');
+        } else {
+          navigate('/login');
         }
-       
         setIsLoading(false);
       }
     });

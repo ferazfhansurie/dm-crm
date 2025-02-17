@@ -81,6 +81,7 @@ export interface Contact {
   phoneIndex?:number |null;
   points?:number |null;
   phoneIndexes?:number[] |null;
+  notes?:string |null;
 }
 
 export interface Message {
@@ -6476,7 +6477,7 @@ ${context}
         'expiryDate', 'vehicleNumber', 'points', 'IC', 'assistantId', 'threadid',
         // Add the new fields:
         'nationality', 'highestEducation', 'programOfStudy', 
-        'intakePreference', 'englishProficiency', 'passport'
+        'intakePreference', 'englishProficiency', 'passport','notes'
       ];
 
       fieldsToUpdate.forEach(field => {
@@ -8317,6 +8318,12 @@ ${context}
 </button>
             </Menu.Items>
           </Menu>
+          <button className="p-2 m-0 !box" onClick={handleQR}>
+            <span className="flex items-center justify-center w-5 h-5">
+              <Lucide icon='Zap' className="w-5 h-5 text-gray-800 dark:text-gray-200" />
+            </span>
+          </button>
+
           <button className="p-2 m-0 !box ml-2" onClick={toggleRecordingPopup}>
         <span className="flex items-center justify-center w-5 h-5">
           <Lucide icon="Mic" className="w-5 h-5 text-gray-800 dark:text-gray-200" />
@@ -9083,6 +9090,41 @@ ${context}
                 <span className="text-gray-500 dark:text-gray-400">No tags assigned</span>
               )}
             </div>
+                
+          </div>
+          
+        </div>
+            {/* Add the new Notes section */}
+            <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden ">
+          <div className="bg-yellow-50 dark:bg-yellow-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Notes</h3>
+              {!isEditing && (
+                <button
+                  onClick={() => {
+                    setIsEditing(true);
+                    setEditedContact({ ...selectedContact });
+                  }}
+                  className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
+                >
+                  Edit Notes
+                </button>
+              )}
+            </div>
+          </div>
+          <div className="p-4">
+            {isEditing ? (
+              <textarea
+                value={editedContact?.notes || ''}
+                onChange={(e) => setEditedContact({ ...editedContact, notes: e.target.value } as Contact)}
+                className="w-full h-32 p-2 border rounded-md focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                placeholder="Add notes about this contact..."
+              />
+            ) : (
+              <div className="whitespace-pre-wrap text-gray-800 dark:text-gray-200">
+                {selectedContact.notes || 'No notes added yet.'}
+              </div>
+            )}
           </div>
         </div>
       </div>

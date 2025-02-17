@@ -128,6 +128,7 @@ const QuickRepliesPage: React.FC = () => {
           type: 'all',
           documents: doc.data().documents || null,
           images: doc.data().images || null,
+          category: doc.data().category || '',
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -136,6 +137,7 @@ const QuickRepliesPage: React.FC = () => {
           type: 'self',
           documents: doc.data().documents || null,
           images: doc.data().images || null,
+          category: doc.data().category || '',
         }))
       ];
 
@@ -457,15 +459,16 @@ const QuickRepliesPage: React.FC = () => {
   };
 
   const filteredQuickReplies = quickReplies
-  .filter(reply => activeTab === 'all' || reply.type === activeTab)
-  .filter(reply => 
-    selectedCategory === 'all' || reply.category === selectedCategory
-  )
-  .filter(reply => 
-    reply.keyword.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    reply.text.toLowerCase().includes(searchQuery.toLowerCase())
-  )
-  .sort((a, b) => a.keyword.localeCompare(b.keyword));
+    .filter(reply => activeTab === 'all' || reply.type === activeTab)
+    .filter(reply => {
+      if (selectedCategory === 'all') return true;
+      return reply.category === selectedCategory;
+    })
+    .filter(reply => 
+      reply.keyword.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      reply.text.toLowerCase().includes(searchQuery.toLowerCase())
+    )
+    .sort((a, b) => a.keyword.localeCompare(b.keyword));
 
   const handleTextFormat = (format: 'bold' | 'strikethrough') => {
     const textarea = document.querySelector('textarea') as HTMLTextAreaElement;

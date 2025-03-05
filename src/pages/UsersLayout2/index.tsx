@@ -706,6 +706,7 @@ const sendBlastMessage = async () => {
                   className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"
                 />
               </div>
+              <ThemeSwitcher />
               <div className="flex items-center px-4 py-2 rounded-lg bg-gray-100 dark:bg-gray-700">
                 <Lucide icon="User" className="w-4 h-4 mr-2 text-gray-500 dark:text-gray-400" />
                 <span className="text-sm font-medium text-gray-700 dark:text-gray-300">

@@ -1393,6 +1393,9 @@ const handleConfirmDeleteTag = async () => {
       userName = userData.name;
       setShowAddUserButton(userData.role === "1");
       setUserRole(userData.role); // Set the user's role
+      
+      // Set companyId state
+      setCompanyId(companyId);
 
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
@@ -1402,9 +1405,10 @@ const handleConfirmDeleteTag = async () => {
       }
       const companyData = docSnapshot.data();
       
+      // Fetch phone names data
+      await fetchPhoneIndex(companyId);
       
       setStopbot(companyData.stopbot || false);
-      
       
       const employeeRef = collection(firestore, `companies/${companyId}/employee`);
       const employeeSnapshot = await getDocs(employeeRef);
@@ -4232,6 +4236,9 @@ const resetForm = () => {
 
   // Add this helper function to get phone name
   const getPhoneName = (phoneIndex: number) => {
+    if (phoneNames[phoneIndex]) {
+      return phoneNames[phoneIndex];
+    }
     if (companyId === '0123') {
       return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru' : 'ShipGuru';
     }

@@ -11,6 +11,8 @@ import LoadingIcon from "@/components/Base/LoadingIcon";
 import { Tab } from '@headlessui/react'
 import { getStorage, ref, uploadBytes, getDownloadURL, listAll } from 'firebase/storage';
 import { Link } from "react-router-dom";
+import { Dialog, Transition } from '@headlessui/react'
+import { Fragment } from 'react'
 
 
 const firebaseConfig = {
@@ -63,6 +65,11 @@ interface AssistantConfig {
   name: string;
 }
 
+interface InstructionTemplate {
+  id: string;
+  name: string;
+  instructions: string;
+}
 
 const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assistantName, deleteThread, threadId }) => {
   const [newMessage, setNewMessage] = useState('');
@@ -177,6 +184,9 @@ const Main: React.FC = () => {
   const [uploading, setUploading] = useState(false);
   const [assistants, setAssistants] = useState<AssistantConfig[]>([]);
   const [selectedAssistant, setSelectedAssistant] = useState<string>('');
+  const [templates, setTemplates] = useState<InstructionTemplate[]>([]);
+  const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [isFullscreenModalOpen, setIsFullscreenModalOpen] = useState(false);
 
   useEffect(() => {
     fetchCompanyId();
@@ -210,6 +220,12 @@ const Main: React.FC = () => {
 
     return () => window.removeEventListener('resize', checkScreenWidth);
   }, []);
+
+  useEffect(() => {
+    if (companyId) {
+      fetchTemplates();
+    }
+  }, [companyId]);
 
   const fetchCompanyId = async () => {
     const user = getAuth().currentUser;
@@ -686,6 +702,189 @@ const Main: React.FC = () => {
     );
   };
 
+  const fetchTemplates = async () => {
+    if (!companyId) return;
+    
+    try {
+      const templatesCollectionRef = collection(firestore, 'companies', companyId, 'instructionTemplates');
+      const querySnapshot = await getDocs(templatesCollectionRef);
+      const templatesList = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      })) as InstructionTemplate[];
+      setTemplates(templatesList);
+    } catch (error) {
+      console.error('Error fetching templates:', error);
+      toast.error('Failed to fetch templates');
+    }
+  };
+
+  const saveTemplate = async () => {
+    if (!companyId || !assistantInfo.instructions.trim()) {
+      toast.error('Please provide instructions to save');
+      return;
+    }
+
+    try {
+      const timestamp = new Date().toLocaleString(); // Format: M/D/YYYY, H:MM:SS AM/PM
+      const templatesCollectionRef = collection(firestore, 'companies', companyId, 'instructionTemplates');
+      await setDoc(doc(templatesCollectionRef), {
+        name: timestamp,
+        instructions: assistantInfo.instructions
+      });
+
+      toast.success('Template saved successfully');
+      fetchTemplates(); // Refresh templates list
+    } catch (error) {
+      console.error('Error saving template:', error);
+      toast.error('Failed to save template');
+    }
+  };
+
+  const loadTemplate = (template: InstructionTemplate) => {
+    setAssistantInfo(prev => ({
+      ...prev,
+      instructions: template.instructions
+    }));
+    toast.success('Template loaded');
+  };
+
+  const deleteTemplate = async (templateId: string) => {
+    if (!companyId) return;
+
+    try {
+      await deleteDoc(doc(firestore, 'companies', companyId, 'instructionTemplates', templateId));
+      toast.success('Template deleted successfully');
+      fetchTemplates(); // Refresh templates list
+    } catch (error) {
+      console.error('Error deleting template:', error);
+      toast.error('Failed to delete template');
+    }
+  };
+
+  const renderTemplateSection = () => (
+    <div className="mb-4">
+      <div className="flex justify-between items-center mb-2">
+        <div className="flex gap-2">
+          <button
+            onClick={saveTemplate}
+            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-md"
+            disabled={userRole === "3"}
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h-2v5.586l-1.293-1.293z" />
+            </svg>
+            Save Current
+          </button>
+          <button
+            onClick={() => setIsTemplateModalOpen(true)}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-md"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+              <path d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+            </svg>
+            View Templates
+          </button>
+        </div>
+      </div>
+
+      <Transition appear show={isTemplateModalOpen} as={Fragment}>
+        <Dialog as="div" className="relative z-50" onClose={() => setIsTemplateModalOpen(false)}>
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-25" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-4 text-center">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
+                <Dialog.Panel className="w-full max-w-md transform overflow-hidden rounded-2xl bg-white dark:bg-gray-800 p-6 text-left align-middle shadow-xl transition-all">
+                  <Dialog.Title
+                    as="h3"
+                    className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-100 mb-4"
+                  >
+                    Saved Templates
+                  </Dialog.Title>
+                  <div className="max-h-[60vh] overflow-y-auto">
+                    {templates.length === 0 ? (
+                      <p className="text-gray-500 dark:text-gray-400 text-center py-4">
+                        No templates saved yet
+                      </p>
+                    ) : (
+                      templates.map((template) => (
+                        <div 
+                          key={template.id} 
+                          className="mb-4 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg shadow-sm hover:shadow-md transition-shadow duration-200"
+                        >
+                          <div className="flex justify-between items-center mb-2">
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                              {template.name}
+                            </span>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => {
+                                  loadTemplate(template);
+                                  setIsTemplateModalOpen(false);
+                                }}
+                                className="px-3 py-1 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors duration-200 text-sm flex items-center gap-1"
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h-2v5.586l-1.293-1.293z" />
+                                </svg>
+                                Load
+                              </button>
+                              <button
+                                onClick={() => deleteTemplate(template.id)}
+                                className="px-3 py-1 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors duration-200 text-sm flex items-center gap-1"
+                                disabled={userRole === "3"}
+                              >
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
+                                </svg>
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 line-clamp-2">
+                            {template.instructions}
+                          </p>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                  <div className="mt-4">
+                    <button
+                      type="button"
+                      className="inline-flex justify-center rounded-md border border-transparent bg-gray-100 dark:bg-gray-600 px-4 py-2 text-sm font-medium text-gray-900 dark:text-gray-100 hover:bg-gray-200 dark:hover:bg-gray-500 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
+                      onClick={() => setIsTemplateModalOpen(false)}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
+    </div>
+  );
+
   return (
     <div className="flex justify-center h-screen bg-gray-100 dark:bg-gray-900">
       <div className={`w-full ${isWideScreen ? 'max-w-6xl flex' : 'max-w-lg'}`}>
@@ -739,41 +938,39 @@ const Main: React.FC = () => {
                       />
                     </div>
                   </div>
-                  <div className="mb-4">
-                    <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="description">
-                      Description
-                    </label>
-                    <div className="relative">
-                      <textarea
-                        id="description"
-                        name="description"
-                        className="w-full p-3 border border-gray-300 rounded-lg h-24 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Add a short description of what this assistant does"
-                        value={assistantInfo.description}
-                        onChange={handleInputChange}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                      />
-                    </div>
-                  </div>
+
                   <div className="mb-4">
                     <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="instructions">
                       Instructions
                     </label>
+                    {renderTemplateSection()}
                     <div className="relative">
                       <textarea
                         id="instructions"
                         name="instructions"
-                        className="w-full p-3 border border-gray-300 rounded-lg h-32 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="w-full p-3 border border-gray-300 rounded-lg h-[600px] text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         placeholder="Tell your assistant what to do"
                         value={assistantInfo.instructions}
                         onChange={handleInputChange}
                         onFocus={handleFocus}
-                        rows={10}
+                        rows={35}
                         disabled={userRole === "3"}
                       />
+                      <button
+                        onClick={() => {
+                          console.log('Opening fullscreen modal');
+                          setIsFullscreenModalOpen(true);
+                        }}
+                        className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                        title="Edit in fullscreen"
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                          <path d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 111.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 111.414-1.414L15 13.586V12a1 1 0 011-1z" />
+                        </svg>
+                      </button>
                     </div>
                   </div>
+                  
                   <div className="mb-4">
                     <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="file-upload">
                       Knowledge Base
@@ -907,18 +1104,32 @@ const Main: React.FC = () => {
                       <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="instructions">
                         Instructions
                       </label>
-                   
-                      <textarea
-                        id="instructions"
-                        name="instructions"
-                        className="w-full p-3 border border-gray-300 rounded-lg h-32 text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                        placeholder="Instructions for the assistant"
-                        value={assistantInfo.instructions}
-                        onChange={handleInputChange}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                        rows={5}
-                      />
+                      {renderTemplateSection()}
+                      <div className="relative">
+                        <textarea
+                          id="instructions"
+                          name="instructions"
+                          className="w-full p-3 border border-gray-300 rounded-lg h-[600px] text-sm bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                          placeholder="Tell your assistant what to do"
+                          value={assistantInfo.instructions}
+                          onChange={handleInputChange}
+                          onFocus={handleFocus}
+                          rows={35}
+                          disabled={userRole === "3"}
+                        />
+                        <button
+                          onClick={() => {
+                            console.log('Opening fullscreen modal');
+                            setIsFullscreenModalOpen(true);
+                          }}
+                          className="absolute top-2 right-2 p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                          title="Edit in fullscreen"
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+                            <path d="M3 4a1 1 0 011-1h4a1 1 0 010 2H6.414l2.293 2.293a1 1 0 11-1.414 1.414L5 6.414V8a1 1 0 01-2 0V4zm9 1a1 1 0 010-2h4a1 1 0 011 1v4a1 1 0 01-2 0V6.414l-2.293 2.293a1 1 0 11-1.414-1.414L13.586 5H12zm-9 7a1 1 0 012 0v1.586l2.293-2.293a1 1 0 111.414 1.414L6.414 15H8a1 1 0 010 2H4a1 1 0 01-1-1v-4zm13-1a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 010-2h1.586l-2.293-2.293a1 1 0 111.414-1.414L15 13.586V12a1 1 0 011-1z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                     <div className="mb-4">
                       <label className="mb-2 text-lg font-medium dark:text-gray-200" htmlFor="file-upload">
@@ -982,6 +1193,68 @@ const Main: React.FC = () => {
         )}
         <ToastContainer />
       </div>
+
+      {/* Fullscreen Modal */}
+      <Transition appear show={isFullscreenModalOpen} as={Fragment}>
+        <Dialog 
+          as="div" 
+          className="relative z-50" 
+          onClose={() => setIsFullscreenModalOpen(false)}
+        >
+          <Transition.Child
+            as={Fragment}
+            enter="ease-out duration-300"
+            enterFrom="opacity-0"
+            enterTo="opacity-100"
+            leave="ease-in duration-200"
+            leaveFrom="opacity-100"
+            leaveTo="opacity-0"
+          >
+            <div className="fixed inset-0 bg-black bg-opacity-25" />
+          </Transition.Child>
+
+          <div className="fixed inset-0 overflow-y-auto">
+            <div className="flex min-h-full items-center justify-center p-0">
+              <Transition.Child
+                as={Fragment}
+                enter="ease-out duration-300"
+                enterFrom="opacity-0 scale-95"
+                enterTo="opacity-100 scale-100"
+                leave="ease-in duration-200"
+                leaveFrom="opacity-100 scale-100"
+                leaveTo="opacity-0 scale-95"
+              >
+                <Dialog.Panel className="w-screen h-screen transform overflow-hidden bg-white dark:bg-gray-800 p-6 text-left align-middle shadow-xl transition-all">
+                  <div className="flex justify-between items-center mb-4">
+                    <Dialog.Title
+                      as="h3"
+                      className="text-lg font-medium leading-6 text-gray-900 dark:text-gray-100"
+                    >
+                      Edit Instructions
+                    </Dialog.Title>
+                    <button
+                      onClick={() => setIsFullscreenModalOpen(false)}
+                      className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                    >
+                      <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                  <textarea
+                    className="w-full h-[calc(100vh-120px)] p-4 text-base bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    value={assistantInfo.instructions}
+                    onChange={handleInputChange}
+                    name="instructions"
+                    placeholder="Tell your assistant what to do"
+                    disabled={userRole === "3"}
+                  />
+                </Dialog.Panel>
+              </Transition.Child>
+            </div>
+          </div>
+        </Dialog>
+      </Transition>
     </div>
   );
 }

@@ -23,6 +23,15 @@ const firebaseConfig = {
   measurementId: "G-2C9J1RY67L"
 };
 
+interface Employee {
+  id: string;
+  name: string;
+  email: string;
+  role: string;
+  employeeId?: string;
+  phoneNumber?: string;
+}
+
 function Main() {
   const app = initializeApp(firebaseConfig);
   const auth = getAuth(app);
@@ -39,7 +48,10 @@ function Main() {
   const [isAddingNewGroup, setIsAddingNewGroup] = useState(false);
   const [newGroup, setNewGroup] = useState("");
 
+  const [employeeList, setEmployeeList] = useState<Employee[]>([]);
   const [currentUserRole, setCurrentUserRole] = useState("");
+  const [selectedEmployees, setSelectedEmployees] = useState<string[]>([]);
+  const [filteredEmployeeList, setFilteredEmployeeList] = useState<Employee[]>([]);
 
   const [phoneOptions, setPhoneOptions] = useState<number[]>([]);
   const [phoneNames, setPhoneNames] = useState<{ [key: number]: string }>({});
@@ -57,17 +69,31 @@ function Main() {
             setCompanyId(userData.companyId);
             setCurrentUserRole(userData.role);
             
+            // Fetch employees
+            const employeeRef = collection(firestore, `companies/${userData.companyId}/employee`);
+            const employeeSnapshot = await getDocs(employeeRef);
+            
+            const employeeListData: Employee[] = [];
+            employeeSnapshot.forEach((doc) => {
+              const employeeData = doc.data();
+              employeeListData.push({
+                id: doc.id,
+                name: employeeData.name,
+                email: employeeData.email || doc.id,
+                role: employeeData.role,
+                employeeId: employeeData.employeeId,
+                phoneNumber: employeeData.phoneNumber
+              });
+            });
+            
+            setEmployeeList(employeeListData);
             
             // Fetch phoneIndex from company document
             fetchPhoneIndex(userData.companyId);
-          } else {
-            
           }
         } catch (error) {
           console.error("Error fetching user data:", error);
         }
-      } else {
-        
       }
     });
 
@@ -99,6 +125,8 @@ function Main() {
     weightage: number;
     weightage2?: number;
     weightage3?: number;
+    viewEmployees: string[];
+    viewEmployee: string | null;
   }>({
     name: "",
     phoneNumber: "",
@@ -114,6 +142,8 @@ function Main() {
     phone: 0,
     imageUrl: "",
     weightage: 0,
+    viewEmployees: [],
+    viewEmployee: null,
   });
 
   useEffect(() => {
@@ -125,7 +155,6 @@ function Main() {
           
           if (userDocSnap.exists()) {
             const firebaseUserData = userDocSnap.data();
-            
             
             const userData = {
               name: firebaseUserData.name || "",
@@ -145,11 +174,14 @@ function Main() {
               imageUrl: firebaseUserData.imageUrl || "",
               weightage: firebaseUserData.weightage,
               weightage2: firebaseUserData.weightage2,
-              weightage3: firebaseUserData.weightage3
+              weightage3: firebaseUserData.weightage3,
+              viewEmployees: firebaseUserData.viewEmployees || [],
+              viewEmployee: firebaseUserData.viewEmployee || null,
             };
 
             
             setUserData(userData);
+            setSelectedEmployees(firebaseUserData.viewEmployees || []);
             setCategories([firebaseUserData.role]);
           } else {
             
@@ -303,6 +335,22 @@ function Main() {
     return getDownloadURL(storageRef);
   };
 
+  const handleEmployeeSelection = (e: React.ChangeEvent<HTMLSelectElement>) => {
+    // Get all selected options (can be empty if user deselects all)
+    const selectedOptions = Array.from(e.target.selectedOptions, option => option.value);
+    setSelectedEmployees(selectedOptions);
+    
+    // Update both viewEmployees (array) and viewEmployee (used by Chat component)
+    setUserData(prev => ({ 
+      ...prev, 
+      viewEmployees: selectedOptions,
+      // If no employees are selected, set viewEmployee to null
+      // Otherwise use the first selected employee
+      // This ensures both fields are consistent for the Chat component
+      viewEmployee: selectedOptions.length > 0 ? selectedOptions[0] : null
+    }));
+  };
+
   const saveUser = async () => {
     if (!validateForm()) return;
 
@@ -321,7 +369,6 @@ function Main() {
         try {
           await updatePassword(userOri, userData.password);
         } catch (error: any) {
-          // Handle specific Firebase password update errors
           if (error.code === 'auth/requires-recent-login') {
             setErrorMessage("For security reasons, please log out and log in again to change your password.");
           } else {
@@ -343,7 +390,6 @@ function Main() {
         }
       }
 
-      // Continue with the rest of the user update logic
       if (currentUserRole !== "3" || isUpdatingSelf) {
         const docUserRef = doc(firestore, 'user', userOri.email);
         const docUserSnapshot = await getDoc(docUserRef);
@@ -353,7 +399,6 @@ function Main() {
         const docRef = doc(firestore, 'companies', companyId);
         const docSnapshot = await getDoc(docRef);
         if (!docSnapshot.exists()) {
-          
           return;
         }
         const data2 = docSnapshot.data();
@@ -362,7 +407,6 @@ function Main() {
           return phoneNumber && !phoneNumber.startsWith('+') ? "+6" + phoneNumber : phoneNumber;
         };
 
-        // Get company data to know how many phones are configured
         const companyDocRef = doc(firestore, 'companies', companyId);
         const companyDocSnap = await getDoc(companyDocRef);
         const companyData = companyDocSnap.data();
@@ -380,25 +424,21 @@ function Main() {
           notes: userData.notes || null,
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
-          
-          // First, set the base phone and weightage fields
-          phone: 0, // Set default phone to 0 for the first phone
-          weightage: Number(userData.weightage) || 0, // Use weightage1 for the first phone
-          
-          // Then include additional phone and weightage fields
+          phone: 0,
+          weightage: Number(userData.weightage) || 0,
           ...(Object.keys(phoneNames).reduce((acc, index) => {
             const phoneIndex = parseInt(index);
-            if (phoneIndex > 1) { // Only handle phone2 and above here
+            if (phoneIndex > 1) {
               const phoneField = `phone${phoneIndex}`;
               const weightageField = `weightage${phoneIndex}`;
-              
               acc[phoneField] = phoneIndex;
               acc[weightageField] = Number(userData[weightageField as keyof typeof userData]) || 0;
             }
             return acc;
           }, {} as Record<string, any>)),
-          
           imageUrl: imageUrl || "",
+          viewEmployees: userData.viewEmployees || [],
+          viewEmployee: userData.viewEmployee || null,
         };
 
         if (contactId) {
@@ -448,6 +488,8 @@ function Main() {
               phone: -1,
               imageUrl: "",
               weightage: 0,
+              viewEmployees: [],
+              viewEmployee: null,
             });
         
             const roleMap = {
@@ -559,6 +601,32 @@ function Main() {
 
   const [editorData, setEditorData] = useState("<p>Content of the editor.</p>");
   const [isLoading, setIsLoading] = useState(false);
+
+  useEffect(() => {
+    // Filter employees based on role hierarchy
+    const filterEmployeesByRole = () => {
+      if (!currentUserRole || !employeeList) return;
+      
+      const roleHierarchy: { [key: string]: number } = {
+        "1": 5, // Admin - highest level
+        "4": 4, // Manager
+        "5": 3, // Supervisor
+        "2": 2, // Sales
+        "3": 1  // Observer - lowest level
+      };
+
+      const currentRoleLevel = roleHierarchy[currentUserRole];
+      
+      const filtered = employeeList.filter(employee => {
+        const employeeRoleLevel = roleHierarchy[employee.role];
+        return employeeRoleLevel < currentRoleLevel;
+      });
+
+      setFilteredEmployeeList(filtered);
+    };
+
+    filterEmployeesByRole();
+  }, [currentUserRole, employeeList]);
 
   return (
     <div className="w-full px-4 py-6 h-full flex flex-col">
@@ -705,6 +773,30 @@ function Main() {
             </select>
             {fieldErrors.role && <p className="text-red-500 text-sm mt-1">{fieldErrors.role}</p>}
           </div>
+          {auth.currentUser?.email === userData.email && currentUserRole !== "3" && currentUserRole !== "2" && (
+            <div>
+              <FormLabel htmlFor="viewEmployees">View Employee's Chats</FormLabel>
+              <select
+                id="viewEmployees"
+                name="viewEmployees"
+                multiple
+                value={selectedEmployees}
+                onChange={handleEmployeeSelection}
+                className="text-black dark:text-white border-primary dark:border-primary-dark bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700 focus:ring-2 focus:ring-blue-300 dark:focus:ring-blue-700 rounded-lg text-sm w-full"
+                size={5}
+              >
+                {filteredEmployeeList.map((employee) => (
+                  <option key={employee.id} value={employee.email}>
+                    {employee.name} - {employee.role === "2" ? "Sales" : 
+                                     employee.role === "3" ? "Observer" : 
+                                     employee.role === "4" ? "Manager" : 
+                                     employee.role === "5" ? "Supervisor" : "Admin"}
+                  </option>
+                ))}
+              </select>
+              <p className="text-sm text-gray-500 mt-1">Hold Ctrl/Cmd to select multiple employees or deselect all employees</p>
+            </div>
+          )}
           <div>
             <FormLabel htmlFor="phone">Phone</FormLabel>
             <select

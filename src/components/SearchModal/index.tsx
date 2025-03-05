@@ -36,7 +36,7 @@ interface SearchResponse {
 interface SearchModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSelectResult: (type: string, id: string) => void;
+  onSelectResult: (type: string, id: string, contactId: string) => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
   contacts: Contact[];
@@ -75,7 +75,6 @@ const SearchModal: React.FC<SearchModalProps> = ({
   }, [loading, hasMore]);
 
   const handleClose = () => {
-    setSearchQuery('');
     onClose();
   };
 
@@ -143,6 +142,9 @@ const SearchModal: React.FC<SearchModalProps> = ({
           contactName: contact?.contactName || 'Unknown',
           profilePicUrl: contact?.profilePicUrl,
         };
+      }).filter(message => {
+        const messageText = (message.text?.body || message.caption || '').toLowerCase();
+        return messageText.includes(query.toLowerCase());
       });
 
       setMessages(prevMessages => isNewSearch ? enhancedMessages : [...prevMessages, ...enhancedMessages]);
@@ -260,7 +262,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
                 <div className="relative mb-4">
                   <input
                     type="text"
-                    className="w-full h-12 pl-12 pr-4 text-gray-900 dark:text-white placeholder-gray-500 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg focus:ring-2 focus:ring-blue-500"
+                    className="w-full h-12 pl-12 pr-10 text-gray-900 dark:text-white placeholder-gray-500 bg-gray-100 dark:bg-gray-700 border-0 rounded-lg focus:ring-2 focus:ring-blue-500"
                     placeholder={`Search ${categories[selectedTab].toLowerCase()}...`}
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
@@ -270,6 +272,17 @@ const SearchModal: React.FC<SearchModalProps> = ({
                     icon="Search"
                     className="absolute left-4 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400"
                   />
+                  {searchQuery && (
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSearchQuery('');
+                      }}
+                      className="absolute right-3 top-1/2 transform -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+                    >
+                      <Lucide icon="X" className="w-5 h-5" />
+                    </button>
+                  )}
                 </div>
 
                 <Tab.Panels className="mt-2 max-h-[60vh] overflow-y-auto">
@@ -279,7 +292,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
                         <div
                           key={contact.id}
                           className="p-3 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg cursor-pointer"
-                          onClick={() => onSelectResult('contact', contact.id!)}
+                          onClick={() => onSelectResult('contact', contact.id!, contact.id!)}
                         >
                           <div className="flex items-center space-x-3">
                             <div className="flex-shrink-0">
@@ -341,10 +354,7 @@ const SearchModal: React.FC<SearchModalProps> = ({
                           key={message.id} 
                           ref={index === messages.length - 1 ? lastMessageElementRef : null}
                           className="p-4 border dark:border-gray-700 rounded cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors duration-200"
-                          onClick={() => {
-                            onSelectResult('message', message.id);
-                            onClose();
-                          }}
+                          onClick={() => onSelectResult('message', message.id, message.contactId)}
                         >
                           <div className="flex items-center justify-between mb-2">
                             <div className="flex items-center space-x-3">

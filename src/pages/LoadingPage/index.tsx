@@ -739,6 +739,85 @@ useEffect(() => {
     return () => window.removeEventListener('beforeunload', cleanupStorage);
   }, []);
 
+// ... existing code ...
+
+const handlePayment = async () => {
+  try {
+    const user = auth.currentUser;
+    if (!user?.email) {
+      throw new Error("User not authenticated");
+    }
+
+    const docUserRef = doc(firestore, 'user', user.email);
+    const docUserSnapshot = await getDoc(docUserRef);
+    if (!docUserSnapshot.exists()) {
+      throw new Error("User document does not exist");
+    }
+
+    const dataUser = docUserSnapshot.data();
+    const companyId = dataUser.companyId;
+
+    const docRef = doc(firestore, 'companies', companyId);
+    const docSnapshot = await getDoc(docRef);
+    if (!docSnapshot.exists()) {
+      throw new Error("Company document does not exist");
+    }
+
+    const companyData = docSnapshot.data();
+    let amount: number;
+
+    // Set amount based on plan
+    switch (companyData.plan) {
+      case 'blaster':
+        amount = 6800; // RM 68.00
+        break;
+      case 'enterprise':
+        amount = 31800; // RM 318.00
+        break;
+      case 'unlimited':
+        amount = 71800; // RM 718.00
+        break;
+      default:
+        amount = 6800; // Default to blaster plan if no plan is specified
+    }
+
+    const idToken = await user.getIdToken();
+
+    const response = await axios.post(
+      'https://mighty-dane-newly.ngrok-free.app/api/payments/create',
+      {
+        email: user.email,
+        name: user.displayName || user.email,
+        amount,
+        description: `WhatsApp Business API Subscription - ${companyData.plan.toUpperCase()} Plan`
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${idToken}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+    
+    if (response.data?.paymentUrl) {
+      window.location.href = response.data.paymentUrl;
+    } else {
+      throw new Error("Payment URL not received");
+    }
+  } catch (error: unknown) {
+    console.error("Payment error:", error);
+    if (error instanceof Error) {
+      setError(error.message);
+    } else if (axios.isAxiosError(error) && error.response?.data?.message) {
+      setError(error.response.data.message);
+    } else {
+      setError("Failed to initialize payment. Please try again.");
+    }
+  }
+};
+
+// ... existing code ...
+
   return (
     <div className="flex items-center justify-center min-h-screen bg-white dark:bg-gray-900 py-8">
       {!isAuthReady ? (
@@ -749,17 +828,13 @@ useEffect(() => {
       ) : trialExpired ? (
         <div className="text-center p-8">
           <h2 className="text-2xl font-bold text-red-600 mb-4">Trial Period Expired</h2>
-          <p className="text-gray-600 mb-4">Your trial period has ended. Please contact support to continue using the service.</p>
-          <a
-    href="https://wa.link/jopopm"
-    target="_blank"
-    rel="noopener noreferrer"
-    className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full inline-block text-center"
-  >
-    Pay Now
-  </a>
-         
-
+          <p className="text-gray-600 mb-4">Your trial period has ended. Please subscribe to continue using the service.</p>
+          <button
+            onClick={handlePayment}
+            className="mt-4 px-6 py-3 bg-green-500 text-white text-lg font-semibold rounded hover:bg-green-600 transition-colors focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-opacity-50 w-full"
+          >
+            Pay Now 
+          </button>
           <button
             onClick={handleLogout}
             className="mt-6 px-6 py-3 bg-primary text-white text-lg font-semibold rounded hover:bg-blue-600 transition-colors"

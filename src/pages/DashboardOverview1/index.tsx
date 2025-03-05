@@ -131,37 +131,72 @@ function EmployeeSearch({
     return () => document.removeEventListener("mousedown", handleClickOutside as EventListener);
   }, []);
 
+  // Set initial search query to current user's name
+  useEffect(() => {
+    if (currentUser) {
+      const currentEmployee = employees.find(emp => emp.id === currentUser.id);
+      if (currentEmployee) {
+        setSearchQuery(currentEmployee.name);
+      }
+    }
+  }, [currentUser, employees]);
+
   return (
     <div className="relative" ref={dropdownRef}>
-      <FormInput
-        type="text"
-        placeholder="Search employees..."
-        value={searchQuery}
-        onChange={(e) => {
-          setSearchQuery(e.target.value);
-          setIsOpen(true);
-        }}
-        onFocus={() => setIsOpen(true)}
-        className="w-full"
-      />
+      <div className="flex items-center relative">
+        <Lucide icon="User" className="absolute left-3 text-gray-400" />
+        <FormInput
+          type="text"
+          placeholder="Search employees..."
+          value={searchQuery}
+          onChange={(e) => {
+            setSearchQuery(e.target.value);
+            setIsOpen(true);
+          }}
+          onFocus={() => setIsOpen(true)}
+          className="w-full pl-10 pr-10 border-gray-300 dark:border-gray-700 focus:border-primary dark:focus:border-primary"
+        />
+        {searchQuery && (
+          <button 
+            className="absolute right-3 text-gray-400 hover:text-gray-600"
+            onClick={() => {
+              setSearchQuery("");
+              setIsOpen(true);
+            }}
+          >
+            <Lucide icon="X" className="w-4 h-4" />
+          </button>
+        )}
+      </div>
       {isOpen && (
         <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md shadow-lg max-h-60 overflow-auto">
-          {filteredEmployees.map((employee) => (
-            <div
-              key={employee.id}
-              className={`p-2 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer ${
-                employee.id === currentUser?.id ? 'bg-blue-100 dark:bg-blue-900' : ''
-              }`}
-              onClick={() => {
-                onSelect(employee);
-                setIsOpen(false);
-                setSearchQuery(employee.name);
-              }}
-            >
-              <span className="text-gray-900 dark:text-gray-100">{employee.name}</span>
-              <span className="text-gray-600 dark:text-gray-400"> ({employee.assignedContacts || 0} assigned contacts)</span>
+          {filteredEmployees.length > 0 ? (
+            filteredEmployees.map((employee) => (
+              <div
+                key={employee.id}
+                className={`p-3 hover:bg-gray-100 dark:hover:bg-gray-700 cursor-pointer flex items-center ${
+                  employee.id === currentUser?.id ? 'bg-blue-50 dark:bg-blue-900' : ''
+                }`}
+                onClick={() => {
+                  onSelect(employee);
+                  setIsOpen(false);
+                  setSearchQuery(employee.name);
+                }}
+              >
+                <div className="w-8 h-8 rounded-full bg-primary text-white flex items-center justify-center mr-3">
+                  {employee.name.charAt(0).toUpperCase()}
+                </div>
+                <div>
+                  <span className="text-gray-900 dark:text-gray-100 font-medium block">{employee.name}</span>
+                  <span className="text-gray-600 dark:text-gray-400 text-sm">{employee.assignedContacts || 0} assigned contacts</span>
+                </div>
+              </div>
+            ))
+          ) : (
+            <div className="p-3 text-gray-500 dark:text-gray-400 text-center">
+              No employees found
             </div>
-          ))}
+          )}
         </div>
       )}
     </div>
@@ -653,11 +688,35 @@ interface Tag {
           monthlyAssignments[monthKey] = runningTotal;
         });
 
+        // Ensure we have at least one data point if there are assigned contacts
+        if (Object.keys(monthlyAssignments).length === 0 && employeeData.assignedContacts > 0) {
+          const currentMonth = format(new Date(), 'yyyy-MM');
+          monthlyAssignments[currentMonth] = employeeData.assignedContacts;
+          
+          // Also update the employee document with this monthly assignment data
+          try {
+            const monthlyAssignmentsRef = doc(firestore, `companies/${companyId}/employee/${employeeId}/monthlyAssignments/${currentMonth}`);
+            await setDoc(monthlyAssignmentsRef, { 
+              assignments: employeeData.assignedContacts,
+              lastUpdated: serverTimestamp()
+            });
+            console.log(`Updated monthly assignments for ${employeeData.name} in Firestore`);
+          } catch (error) {
+            console.error('Error updating monthly assignments in Firestore:', error);
+          }
+        }
+
         // Count current closed contacts
         const closedContacts = contactsSnapshot.docs.filter(doc => {
           const data = doc.data();
           return data.tags?.includes('closed') && data.tags?.includes(employeeData.name);
         }).length;
+
+        console.log(`Fetched employee data for ${employeeData.name}:`, {
+          assignedContacts: employeeData.assignedContacts,
+          monthlyAssignments,
+          closedContacts
+        });
 
         return {
           ...employeeData,
@@ -719,10 +778,16 @@ interface Tag {
     }
   }, [currentUser]);
 
-  const getLast12MonthsData = (monthlyAssignments: { [key: string]: number } = {}) => {
+  const getLast12MonthsData = (monthlyAssignments: { [key: string]: number } = {}, assignedContacts: number = 0) => {
     const last12Months = [];
     const currentDate = new Date();
     let lastKnownTotal = 0;
+
+    // If we have no monthly assignments but have assigned contacts, create a data point
+    if (Object.keys(monthlyAssignments).length === 0 && assignedContacts > 0) {
+      const currentMonth = format(currentDate, 'yyyy-MM');
+      monthlyAssignments[currentMonth] = assignedContacts;
+    }
 
     for (let i = 11; i >= 0; i--) {
       const date = new Date(currentDate.getFullYear(), currentDate.getMonth() - i, 1);
@@ -745,8 +810,30 @@ interface Tag {
   const chartData = useMemo(() => {
     if (!selectedEmployee) return null;
 
-    const last12Months = getLast12MonthsData(selectedEmployee.monthlyAssignments);
-     // Debug log
+    // Create a fallback data point if there are no monthly assignments but there are assigned contacts
+    let monthlyAssignments = selectedEmployee.monthlyAssignments || {};
+    const assignedContacts = selectedEmployee.assignedContacts || 0;
+    
+    if (Object.keys(monthlyAssignments).length === 0 && assignedContacts > 0) {
+      // Create data for the current month
+      const currentMonth = format(new Date(), 'yyyy-MM');
+      monthlyAssignments = { [currentMonth]: assignedContacts };
+      
+      // Also update the selected employee state to include this data
+      setSelectedEmployee(prev => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          monthlyAssignments: { ...monthlyAssignments }
+        };
+      });
+    }
+
+    // Pass both parameters to the function
+    const last12Months = getLast12MonthsData(monthlyAssignments, assignedContacts);
+    
+    // Debug log
+    console.log('Chart data for', selectedEmployee.name, last12Months);
     
     return {
       labels: last12Months.map(d => `${d.month} ${d.year}`),
@@ -924,9 +1011,30 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
 
   // Modify the handleEmployeeSelect function
   const handleEmployeeSelect = async (employee: Employee) => {
+    console.log('Employee selected:', employee);
+    setLoading(true);
     
-    setSelectedEmployee(employee);
-    fetchEmployeeStats(employee.id);
+    try {
+      // Fetch complete employee data including monthly assignments
+      const completeEmployeeData = await fetchEmployeeData(employee.id);
+      
+      if (completeEmployeeData) {
+        console.log('Complete employee data:', completeEmployeeData);
+        setSelectedEmployee(completeEmployeeData);
+        fetchEmployeeStats(completeEmployeeData.id);
+      } else {
+        // If we couldn't fetch complete data, still update with what we have
+        setSelectedEmployee(employee);
+        fetchEmployeeStats(employee.id);
+      }
+    } catch (error) {
+      console.error('Error in handleEmployeeSelect:', error);
+      // Still update with basic employee data if there's an error
+      setSelectedEmployee(employee);
+      fetchEmployeeStats(employee.id);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // Add new state for tag filter
@@ -1271,6 +1379,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   // Add this new function to fetch blast message data
   const fetchBlastMessageData = async () => {
     try {
+      console.log("Starting fetchBlastMessageData");
       const auth = getAuth(app);
       const user = auth.currentUser;
       if (!user) {
@@ -1287,59 +1396,152 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
 
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
+      console.log("Company ID:", companyId);
 
       // Fetch scheduled messages collection
       const scheduledMessagesRef = collection(firestore, 'companies', companyId, 'scheduledMessages');
       const scheduledMessagesSnapshot = await getDocs(scheduledMessagesRef);
+      console.log("Total messages found:", scheduledMessagesSnapshot.size);
 
       const monthlyData: { [key: string]: { scheduled: number; completed: number; failed: number } } = {};
+      let messageCount = 0;
+      let invalidDateCount = 0;
 
       scheduledMessagesSnapshot.forEach(doc => {
-        const messageData = doc.data();
-        const scheduledTime = messageData.scheduledTime?.toDate() || new Date(messageData.scheduledTime);
-        const monthKey = format(scheduledTime, 'MMM yyyy');
-        const status = messageData.status;
+        try {
+          messageCount++;
+          const messageData = doc.data();
+          console.log(`Processing message ${messageCount}:`, {
+            id: doc.id,
+            status: messageData.status,
+            scheduledTime: messageData.scheduledTime
+          });
+          
+          // Check if scheduledTime is a Firestore Timestamp or a regular Date
+          let scheduledTime;
+          let isValidDate = true;
+          
+          if (messageData.scheduledTime && typeof messageData.scheduledTime.toDate === 'function') {
+            scheduledTime = messageData.scheduledTime.toDate();
+            console.log("Parsed scheduledTime from Firestore Timestamp:", scheduledTime);
+          } else if (messageData.scheduledTime instanceof Date) {
+            scheduledTime = messageData.scheduledTime;
+            console.log("Using scheduledTime as Date:", scheduledTime);
+          } else if (messageData.scheduledTime) {
+            // If it's a string or timestamp number, convert to Date
+            try {
+              scheduledTime = new Date(messageData.scheduledTime);
+              if (isNaN(scheduledTime.getTime())) {
+                console.log("Invalid date detected, using current date as fallback");
+                scheduledTime = new Date();
+                isValidDate = false;
+                invalidDateCount++;
+              } else {
+                console.log("Converted scheduledTime from other format:", scheduledTime);
+              }
+            } catch (error) {
+              console.log("Error parsing date, using current date as fallback:", error);
+              scheduledTime = new Date();
+              isValidDate = false;
+              invalidDateCount++;
+            }
+          } else {
+            scheduledTime = new Date(); // Fallback to current date
+            console.log("Using current date as fallback for scheduledTime");
+            isValidDate = false;
+            invalidDateCount++;
+          }
+          
+          // Only proceed with valid dates
+          if (isValidDate) {
+            let monthKey;
+            try {
+              monthKey = format(scheduledTime, 'MMM yyyy');
+              console.log("Month key:", monthKey);
+            } catch (error) {
+              console.log("Error formatting date, skipping this message:", error);
+              return; // Skip this message
+            }
+            
+            const status = messageData.status || 'unknown';
+            console.log("Message status:", status);
 
-        if (!monthlyData[monthKey]) {
-          monthlyData[monthKey] = { scheduled: 0, completed: 0, failed: 0 };
-        }
+            if (!monthlyData[monthKey]) {
+              monthlyData[monthKey] = { scheduled: 0, completed: 0, failed: 0 };
+            }
 
-        // Count messages based on their status
-        if (status === 'completed') {
-          monthlyData[monthKey].completed++;
-        } else if (status === 'failed') {
-          monthlyData[monthKey].failed++;
+            // Count messages based on their status
+            if (status === 'completed') {
+              monthlyData[monthKey].completed++;
+            } else if (status === 'failed') {
+              monthlyData[monthKey].failed++;
+            } else if (status === 'scheduled') {
+              monthlyData[monthKey].scheduled++;
+            } else {
+              console.log("Unknown status:", status);
+              // Default to scheduled if status is unknown
+              monthlyData[monthKey].scheduled++;
+            }
+            
+            console.log("Updated monthly data for", monthKey, ":", monthlyData[monthKey]);
+          }
+        } catch (error) {
+          console.error(`Error processing message ${messageCount}:`, error);
+          // Continue with the next message
         }
-        monthlyData[monthKey].scheduled++; // Count all messages as scheduled
       });
 
-      const labels = Object.keys(monthlyData).sort((a, b) => {
-        return new Date(a).getTime() - new Date(b).getTime();
+      console.log("Final monthly data:", monthlyData);
+      console.log("Invalid date count:", invalidDateCount);
+
+      // Convert month strings to Date objects for proper sorting
+      const sortedMonths = Object.keys(monthlyData).sort((a, b) => {
+        // Parse the month strings to dates for comparison
+        const [monthA, yearA] = a.split(' ');
+        const [monthB, yearB] = b.split(' ');
+        
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        
+        const yearDiff = parseInt(yearA) - parseInt(yearB);
+        if (yearDiff !== 0) return yearDiff;
+        
+        return monthNames.indexOf(monthA) - monthNames.indexOf(monthB);
       });
-      const scheduledData = labels.map(key => monthlyData[key].scheduled);
-      const completedData = labels.map(key => monthlyData[key].completed);
-      const failedData = labels.map(key => monthlyData[key].failed);
+      
+      console.log("Sorted labels:", sortedMonths);
+      
+      const scheduledData = sortedMonths.map(key => monthlyData[key].scheduled);
+      const completedData = sortedMonths.map(key => monthlyData[key].completed);
+      const failedData = sortedMonths.map(key => monthlyData[key].failed);
+      
+      console.log("Data arrays:", {
+        scheduledData,
+        completedData,
+        failedData
+      });
 
       setBlastMessageData({
-        labels,
+        labels: sortedMonths,
         datasets: [
           {
             label: 'Scheduled',
             data: scheduledData,
-            backgroundColor: 'rgba(54, 162, 235, 0.6)',
+            backgroundColor: 'rgba(54, 162, 235, 0.8)',
           },
           {
             label: 'Completed',
             data: completedData,
-            backgroundColor: 'rgba(75, 192, 192, 0.6)',
+            backgroundColor: 'rgba(75, 192, 192, 0.8)',
           },
           {
             label: 'Failed',
             data: failedData,
-            backgroundColor: 'rgba(255, 99, 132, 0.6)',
+            backgroundColor: 'rgba(255, 99, 132, 0.8)',
           },
         ],
       });
+
+      console.log("Blast message data set successfully");
 
     } catch (error) {
       console.error('Error fetching scheduled messages data:', error);
@@ -1365,7 +1567,6 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   // Add this new function
   const fetchEmployeeStats = async (employeeId: string) => {
     try {
-      
       const user = getAuth().currentUser;
       if (!user) {
         console.error("User not authenticated");
@@ -1375,7 +1576,6 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        
         return;
       }
       const dataUser = docUserSnapshot.data();
@@ -1383,21 +1583,62 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        
         return;
       }
       const data2 = docSnapshot.data();
-      const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
-      // Update the URL to match your actual API endpoint
-      const response = await axios.get(`${baseUrl}/api/stats/${companyId}?employeeId=${employeeId}`);
       
-      setEmployeeStats(response.data);
+      // Try to get the API URL from the company data
+      const baseUrl = data2.apiUrl || 'https://juta.ngrok.app';
+      
+      try {
+        // Try to fetch from the API with a timeout
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
+        const response = await axios.get(
+          `${baseUrl}/api/stats/${companyId}?employeeId=${employeeId}`,
+          { signal: controller.signal }
+        );
+        
+        clearTimeout(timeoutId);
+        setEmployeeStats(response.data);
+      } catch (apiError) {
+        console.error('Error fetching employee stats from API:', apiError);
+        
+        // Fallback to local data if API call fails
+        // Generate placeholder stats based on local data
+        const fallbackStats: EmployeeStats = {
+          conversationsAssigned: 0,
+          outgoingMessagesSent: 0,
+          averageResponseTime: 0,
+          closedContacts: 0
+        };
+        
+        // Try to get some real data from Firestore
+        try {
+          // Get assigned contacts count
+          const employee = employees.find(emp => emp.id === employeeId);
+          if (employee) {
+            fallbackStats.conversationsAssigned = employee.assignedContacts || 0;
+            fallbackStats.closedContacts = employee.closedContacts || 0;
+          }
+          
+          // Set the fallback stats
+          setEmployeeStats(fallbackStats);
+        } catch (fallbackError) {
+          console.error('Error generating fallback stats:', fallbackError);
+          setEmployeeStats(fallbackStats);
+        }
+      }
     } catch (error) {
-      console.error('Error fetching employee stats:', error);
-      // Add user-friendly error handling
-      setEmployeeStats(null);
-      // Optionally show an error message to the user
-      // setError('Failed to load employee performance metrics');
+      console.error('Error in fetchEmployeeStats:', error);
+      // Set default stats as fallback
+      setEmployeeStats({
+        conversationsAssigned: 0,
+        outgoingMessagesSent: 0,
+        averageResponseTime: 0,
+        closedContacts: 0
+      });
     }
   };
 
@@ -1764,7 +2005,26 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
         <div className="h-full flex flex-col">
           {blastMessageData.labels.length > 0 ? (
             <Bar 
-              data={blastMessageData} 
+              data={{
+                labels: blastMessageData.labels,
+                datasets: [
+                  {
+                    label: 'Scheduled',
+                    data: blastMessageData.datasets[0].data,
+                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                  },
+                  {
+                    label: 'Completed',
+                    data: blastMessageData.datasets[1].data,
+                    backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                  },
+                  {
+                    label: 'Failed',
+                    data: blastMessageData.datasets[2].data,
+                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                  },
+                ]
+              }}
               options={{ 
                 responsive: true, 
                 maintainAspectRatio: false,
@@ -1774,54 +2034,77 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                     title: {
                       display: true,
                       text: 'Number of Messages',
+                      font: {
+                        weight: 'bold'
+                      }
                     },
+                    grid: {
+                      color: 'rgba(107, 114, 128, 0.1)'
+                    },
+                    ticks: {
+                      color: 'rgb(107, 114, 128)'
+                    }
                   },
                   x: {
                     title: {
                       display: true,
                       text: 'Month',
+                      font: {
+                        weight: 'bold'
+                      }
                     },
+                    grid: {
+                      color: 'rgba(107, 114, 128, 0.1)'
+                    },
+                    ticks: {
+                      color: 'rgb(107, 114, 128)'
+                    }
                   },
                 },
                 plugins: {
                   title: {
                     display: true,
                     text: 'Monthly Scheduled Message Statistics',
+                    font: {
+                      size: 16,
+                      weight: 'bold'
+                    },
+                    padding: {
+                      top: 10,
+                      bottom: 20
+                    }
+                  },
+                  legend: {
+                    position: 'top',
+                    labels: {
+                      usePointStyle: true,
+                      padding: 15
+                    }
                   },
                   tooltip: {
                     mode: 'index',
                     intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                    padding: 10,
+                    cornerRadius: 4,
+                    titleFont: {
+                      size: 14
+                    },
+                    bodyFont: {
+                      size: 13
+                    }
                   },
                 },
               }} 
             />
           ) : (
-            <p className="text-center text-gray-600 dark:text-gray-400">No scheduled message data available</p>
-          )}
-          <div className="mt-4">
-            {blastMessageData.labels.length > 0 && (
-              <div className="grid grid-cols-3 gap-4">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
-                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                    {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
-                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                    {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                  </p>
-                </div>
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
-                  <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                    {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                  </p>
-                </div>
+            <div className="flex items-center justify-center h-full text-center text-gray-600 dark:text-gray-400">
+              <div>
+                <p className="text-lg mb-2">No scheduled message data available</p>
+                <p className="text-sm">Create blast messages to see analytics here</p>
               </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       )
     },
@@ -2121,6 +2404,30 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
     await fetchEmployees();
   };
 
+  // Add this debug function to help diagnose issues
+  const debugEmployeeData = (employee: Employee | null) => {
+    if (!employee) {
+      console.log('No employee selected');
+      return;
+    }
+    
+    console.log('Employee Debug Info:', {
+      name: employee.name,
+      id: employee.id,
+      assignedContacts: employee.assignedContacts,
+      monthlyAssignments: employee.monthlyAssignments,
+      hasMonthlyData: employee.monthlyAssignments && Object.keys(employee.monthlyAssignments).length > 0,
+      chartData: chartData
+    });
+  };
+
+  // Call this in the useEffect for selectedEmployee
+  useEffect(() => {
+    if (selectedEmployee) {
+      debugEmployeeData(selectedEmployee);
+    }
+  }, [selectedEmployee, chartData]);
+
   return (
     <div className="flex flex-col w-full h-full overflow-x-hidden overflow-y-auto">
       <div className="flex-grow p-4 space-y-6">
@@ -2146,7 +2453,11 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                       {Array.isArray(card.content) && card.content.map((item, index) => (
                         <div key={index} className="text-center">
                           <div className="text-3xl font-bold text-blue-500 dark:text-blue-400">
-                            {!loading ? item.value : <LoadingIcon icon="spinning-circles" className="w-8 h-8 mx-auto" />}
+                            {!loading ? item.value : (
+                              <div className="flex justify-center">
+                                <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                              </div>
+                            )}
                           </div>
                           <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{item.label}</div>
                         </div>
@@ -2161,6 +2472,9 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                   ) : card.id === 'employee-assignments' ? (
                     <div>
                       <div className="mb-4">
+                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                          Select Employee
+                        </label>
                         <EmployeeSearch 
                           employees={employees}
                           onSelect={(employee: { id: string; name: string; assignedContacts?: number | undefined; }) => handleEmployeeSelect(employee as Employee)}
@@ -2168,11 +2482,24 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                         />
                       </div>
                       <div className="h-64">
-                        {selectedEmployee ? (
+                        {loading ? (
+                          <div className="flex flex-col items-center justify-center h-full">
+                            <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                            <span className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading...</span>
+                          </div>
+                        ) : selectedEmployee ? (
                           chartData ? (
-                            <Line data={chartData} options={lineChartOptions} />
+                            <>
+                              <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
+                                <span className="font-medium">{selectedEmployee.name}</span> has <span className="font-medium">{selectedEmployee.assignedContacts || 0}</span> assigned contacts
+                              </div>
+                              <Line data={chartData} options={lineChartOptions} />
+                            </>
                           ) : (
-                            <div className="text-center text-gray-600 dark:text-gray-400">No data available for this employee</div>
+                            <div className="flex flex-col items-center justify-center h-full text-gray-600 dark:text-gray-400">
+                              <p>No assignment data available for this employee</p>
+                              <p className="text-sm mt-1">Employee has {selectedEmployee.assignedContacts || 0} assigned contacts</p>
+                            </div>
                           )
                         ) : (
                           <div className="text-center text-gray-600 dark:text-gray-400">Select an employee to view their chart</div>
@@ -2188,7 +2515,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                       </Button>
                     </Link>
                     </div>
-                    <div className="h-64">
+                    <div className="h-80">
                       {blastMessageData.labels.length > 0 ? (
                         <Bar 
                           data={blastMessageData} 
@@ -2201,47 +2528,94 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
                                 title: {
                                   display: true,
                                   text: 'Number of Messages',
+                                  font: {
+                                    weight: 'bold'
+                                  }
                                 },
+                                grid: {
+                                  color: 'rgba(107, 114, 128, 0.1)'
+                                },
+                                ticks: {
+                                  color: 'rgb(107, 114, 128)'
+                                }
                               },
                               x: {
                                 title: {
                                   display: true,
                                   text: 'Month',
+                                  font: {
+                                    weight: 'bold'
+                                  }
                                 },
+                                grid: {
+                                  color: 'rgba(107, 114, 128, 0.1)'
+                                },
+                                ticks: {
+                                  color: 'rgb(107, 114, 128)'
+                                }
                               },
                             },
                             plugins: {
                               title: {
                                 display: true,
                                 text: 'Monthly Scheduled Message Statistics',
+                                font: {
+                                  size: 16,
+                                  weight: 'bold'
+                                },
+                                padding: {
+                                  top: 10,
+                                  bottom: 20
+                                }
+                              },
+                              legend: {
+                                position: 'top',
+                                labels: {
+                                  usePointStyle: true,
+                                  padding: 15
+                                }
                               },
                               tooltip: {
                                 mode: 'index',
                                 intersect: false,
+                                backgroundColor: 'rgba(0, 0, 0, 0.7)',
+                                padding: 10,
+                                cornerRadius: 4,
+                                titleFont: {
+                                  size: 14
+                                },
+                                bodyFont: {
+                                  size: 13
+                                }
                               },
                             },
                           }} 
                         />
                       ) : (
-                        <div className="text-center text-gray-600 dark:text-gray-400">No scheduled message data available</div>
+                        <div className="flex items-center justify-center h-full text-center text-gray-600 dark:text-gray-400">
+                          <div>
+                            <p className="text-lg mb-2">No scheduled message data available</p>
+                            <p className="text-sm">Create blast messages to see analytics here</p>
+                          </div>
+                        </div>
                       )}
                     </div>
-                    <div className="mt-4">
+                    <div className="mt-6">
                       {blastMessageData.labels.length > 0 && (
                         <div className="grid grid-cols-3 gap-4">
-                          <div>
+                          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow-sm">
                             <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
                             <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
                               {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
                             </p>
                           </div>
-                          <div>
+                          <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg shadow-sm">
                             <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
                             <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
                               {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
                             </p>
                           </div>
-                          <div>
+                          <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg shadow-sm">
                             <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
                             <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
                               {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}

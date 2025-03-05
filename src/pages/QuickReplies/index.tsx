@@ -23,6 +23,14 @@ interface QuickReply {
         lastModified: number;
     }[] | null;
     images?: string[] | null;
+    videos?: {
+        name: string;
+        type: string;
+        size: number;
+        url: string;
+        lastModified: number;
+        thumbnail?: string;
+    }[] | null;
     showImage?: boolean;
     showDocument?: boolean;
     createdAt?: any;
@@ -46,7 +54,7 @@ const QuickRepliesPage: React.FC = () => {
   const [previewUrls, setPreviewUrls] = useState<{ [key: string]: string }>({});
   const [previewModal, setPreviewModal] = useState<{
     isOpen: boolean;
-    type: 'image' | 'document';
+    type: 'image' | 'document' | 'video';
     url: string;
     title: string;
   }>({
@@ -58,7 +66,7 @@ const QuickRepliesPage: React.FC = () => {
 
   // Add new state for preview
   const [selectedPreview, setSelectedPreview] = useState<{
-    type: 'image' | 'document' | null;
+    type: 'image' | 'document' | 'video' | null;
     url: string;
     title: string;
   } | null>(null);
@@ -68,6 +76,9 @@ const QuickRepliesPage: React.FC = () => {
   const [categories, setCategories] = useState<string[]>([]);
   const [showCategoryModal, setShowCategoryModal] = useState(false);
   const [newCategoryName, setNewCategoryName] = useState('');
+
+  const [selectedVideos, setSelectedVideos] = useState<File[]>([]);
+  const [editingVideos, setEditingVideos] = useState<File[]>([]);
 
   const firebaseConfig = {
     apiKey: "AIzaSyCc0oSHlqlX7fLeqqonODsOIC3XA8NI7hc",
@@ -129,6 +140,7 @@ const QuickRepliesPage: React.FC = () => {
           documents: doc.data().documents || null,
           images: doc.data().images || null,
           category: doc.data().category || '',
+          videos: doc.data().videos || null,
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -138,6 +150,7 @@ const QuickRepliesPage: React.FC = () => {
           documents: doc.data().documents || null,
           images: doc.data().images || null,
           category: doc.data().category || '',
+          videos: doc.data().videos || null,
         }))
       ];
 
@@ -190,7 +203,46 @@ const QuickRepliesPage: React.FC = () => {
     return await getDownloadURL(storageRef); // Return the download URL
   };
 
-  const handlePreviewClick = (type: 'image' | 'document', url: string, title: string) => {
+  const uploadVideo = async (file: File): Promise<{ name: string; type: string; size: number; url: string; lastModified: number; thumbnail?: string }> => {
+    const storage = getStorage();
+    const storageRef = ref(storage, `quickReplies/videos/${file.name}`);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+
+    // Generate thumbnail using canvas
+    let thumbnail;
+    try {
+      const video = document.createElement('video');
+      video.src = URL.createObjectURL(file);
+      await new Promise((resolve) => {
+        video.onloadeddata = resolve;
+        video.load();
+      });
+      video.currentTime = 1; // Get frame at 1 second
+      await new Promise((resolve) => {
+        video.onseeked = resolve;
+      });
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext('2d');
+      ctx?.drawImage(video, 0, 0);
+      thumbnail = canvas.toDataURL('image/jpeg');
+    } catch (error) {
+      console.error('Error generating thumbnail:', error);
+    }
+
+    return {
+      name: file.name,
+      type: file.type,
+      size: file.size,
+      url: url,
+      lastModified: file.lastModified,
+      thumbnail
+    };
+  };
+
+  const handlePreviewClick = (type: 'image' | 'document' | 'video', url: string, title: string) => {
     setPreviewModal({
       isOpen: true,
       type,
@@ -199,10 +251,13 @@ const QuickRepliesPage: React.FC = () => {
     });
   };
 
-  const getFileType = (fileName: string): 'image' | 'document' => {
+  const getFileType = (fileName: string): 'image' | 'document' | 'video' => {
     const imageExtensions = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+    const videoExtensions = ['mp4', 'webm', 'ogg', 'mov'];
     const extension = fileName.split('.').pop()?.toLowerCase() || '';
-    return imageExtensions.includes(extension) ? 'image' : 'document';
+    if (imageExtensions.includes(extension)) return 'image';
+    if (videoExtensions.includes(extension)) return 'video';
+    return 'document';
   };
 
   const generatePreviewUrl = (file: File): string => {
@@ -278,6 +333,33 @@ const QuickRepliesPage: React.FC = () => {
     });
   };
 
+  const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>, isEditing: boolean = false) => {
+    const files = Array.from(e.target.files || []);
+    if (isEditing) {
+      setEditingVideos(prev => [...prev, ...files]);
+    } else {
+      setSelectedVideos(prev => [...prev, ...files]);
+    }
+    files.forEach(file => {
+      const url = URL.createObjectURL(file);
+      setPreviewUrls(prev => ({ ...prev, [file.name]: url }));
+    });
+  };
+
+  const removeVideo = (fileName: string, isEditing: boolean = false) => {
+    if (isEditing) {
+      setEditingVideos(prev => prev.filter(file => file.name !== fileName));
+    } else {
+      setSelectedVideos(prev => prev.filter(file => file.name !== fileName));
+    }
+    URL.revokeObjectURL(previewUrls[fileName]);
+    setPreviewUrls(prev => {
+      const newUrls = { ...prev };
+      delete newUrls[fileName];
+      return newUrls;
+    });
+  };
+
   useEffect(() => {
     return () => {
       // Cleanup preview URLs when component unmounts
@@ -317,6 +399,7 @@ const QuickRepliesPage: React.FC = () => {
         createdBy: user.email,
         documents: [],
         images: [],
+        videos: [],
       };
 
       let docRef;
@@ -330,10 +413,11 @@ const QuickRepliesPage: React.FC = () => {
       const quickReplyRef = await addDoc(docRef, newQuickReplyData);
 
       // Then, if there are attachments, update the document
-      if (selectedDocuments.length > 0 || selectedImages.length > 0) {
+      if (selectedDocuments.length > 0 || selectedImages.length > 0 || selectedVideos.length > 0) {
         const updates: Partial<QuickReply> = {
           documents: [],
           images: [],
+          videos: [],
         };
         
         if (selectedDocuments.length > 0) {
@@ -346,6 +430,11 @@ const QuickRepliesPage: React.FC = () => {
           updates.images = imageUrls;
         }
 
+        if (selectedVideos.length > 0) {
+          const videoData = await Promise.all(selectedVideos.map(file => uploadVideo(file)));
+          updates.videos = videoData;
+        }
+
         await updateDoc(quickReplyRef, updates);
       }
 
@@ -353,6 +442,7 @@ const QuickRepliesPage: React.FC = () => {
       setNewQuickReplyKeyword('');
       setSelectedDocuments([]);
       setSelectedImages([]);
+      setSelectedVideos([]);
       setPreviewUrls({});
       toast.success('Quick reply added successfully');
       fetchQuickReplies();
@@ -407,10 +497,16 @@ const QuickRepliesPage: React.FC = () => {
         updatedData.images = imageUrls;
       }
 
+      if (editingVideos.length > 0) {
+        const videoData = await Promise.all(editingVideos.map(file => uploadVideo(file)));
+        updatedData.videos = videoData;
+      }
+
       await updateDoc(quickReplyDoc, updatedData);
       setEditingReply(null);
       setEditingDocuments([]);
       setEditingImages([]);
+      setEditingVideos([]);
       setPreviewUrls({});
       toast.success('Quick reply updated successfully');
       fetchQuickReplies();
@@ -669,83 +765,101 @@ const QuickRepliesPage: React.FC = () => {
                     rows={3}
                   />
                 </div>
-                <div className="flex items-center space-x-4">
-                  <div className="flex-1 flex space-x-4">
-                    <div>
-                      <input
-                        type="file"
-                        id="quickReplyFile"
-                        className="hidden"
-                        multiple
-                        onChange={(e) => handleFileSelect(e, 'document')}
-                      />
-                      <label
-                        htmlFor="quickReplyFile"
-                        className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                      >
-                        <Lucide icon="File" className="w-5 h-5 mr-2" />
-                        Documents
-                      </label>
-                    </div>
-                    <div>
-                      <input
-                        type="file"
-                        id="quickReplyImage"
-                        accept="image/*"
-                        className="hidden"
-                        multiple
-                        onChange={(e) => handleFileSelect(e, 'image')}
-                      />
-                      <label
-                        htmlFor="quickReplyImage"
-                        className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                      >
-                        <Lucide icon="Image" className="w-5 h-5 mr-2" />
-                        Images
-                      </label>
-                    </div>
-                  </div>
-                  <button
-                    className={`px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center ${
-                      isLoading ? 'opacity-50 cursor-not-allowed' : ''
-                    }`}
-                    onClick={addQuickReply}
-                    disabled={isLoading}
+                <div className="flex items-center gap-4">
+                  <input
+                    type="file"
+                    id="quickReplyFile"
+                    className="hidden"
+                    multiple
+                    onChange={(e) => handleFileSelect(e, 'document')}
+                  />
+                  <label
+                    htmlFor="quickReplyFile"
+                    className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
                   >
-                    {isLoading ? (
-                      <>
-                        <Lucide icon="Loader" className="w-5 h-5 mr-2 animate-spin" />
-                        Adding...
-                      </>
-                    ) : (
-                      <>
-                        <Lucide icon="Plus" className="w-5 h-5 mr-2" />
-                        Add
-                      </>
-                    )}
-                  </button>
+                    <Lucide icon="File" className="w-5 h-5 mr-2" />
+                    Documents
+                  </label>
+                  <input
+                    type="file"
+                    id="quickReplyImage"
+                    accept="image/*"
+                    className="hidden"
+                    multiple
+                    onChange={(e) => handleFileSelect(e, 'image')}
+                  />
+                  <label
+                    htmlFor="quickReplyImage"
+                    className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    <Lucide icon="Image" className="w-5 h-5 mr-2" />
+                    Images
+                  </label>
+                  <input
+                    type="file"
+                    id="quickReplyVideo"
+                    accept="video/*"
+                    className="hidden"
+                    multiple
+                    onChange={(e) => handleVideoSelect(e, false)}
+                  />
+                  <label
+                    htmlFor="quickReplyVideo"
+                    className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                  >
+                    <Lucide icon="Video" className="w-5 h-5 mr-2" />
+                    Videos
+                  </label>
+                  <div className="ml-auto">
+                    <button
+                      className={`px-6 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center ${
+                        isLoading ? 'opacity-50 cursor-not-allowed' : ''
+                      }`}
+                      onClick={addQuickReply}
+                      disabled={isLoading}
+                    >
+                      {isLoading ? (
+                        <>
+                          <Lucide icon="Loader" className="w-5 h-5 mr-2 animate-spin" />
+                          Adding...
+                        </>
+                      ) : (
+                        <>
+                          <Lucide icon="Plus" className="w-5 h-5 mr-2" />
+                          Add
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {/* Preview Section */}
-                {(selectedDocuments.length > 0 || selectedImages.length > 0) && (
+                {(selectedDocuments.length > 0 || selectedImages.length > 0 || selectedVideos.length > 0) && (
                   <div className="mt-4">
                     <h4 className="text-sm font-medium text-gray-500 mb-2">Attachments</h4>
                     <div className="flex flex-wrap gap-2">
-                      {[...selectedImages, ...selectedDocuments].map((file) => (
+                      {[...selectedImages, ...selectedDocuments, ...selectedVideos].map((file) => (
                         <div key={file.name} className="relative group">
                           <div 
                             className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                             onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
                           >
                             <Lucide 
-                              icon={getFileType(file.name) === 'image' ? 'Image' : 'File'} 
+                              icon={getFileType(file.name) === 'image' ? 'Image' : getFileType(file.name) === 'video' ? 'Video' : 'File'} 
                               className="w-5 h-5 mr-2 text-gray-500"
                             />
                             <span className="text-sm truncate max-w-[150px]">{file.name}</span>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
-                                removeFile(file.name, getFileType(file.name));
+                                const fileType = getFileType(file.name);
+                                if (fileType === 'video') {
+                                  removeVideo(file.name, false);
+                                } else if (fileType === 'image') {
+                                  removeFile(file.name, 'image');
+                                } else {
+                                  removeFile(file.name, 'document');
+                                }
                               }}
                               className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
                             >
@@ -833,6 +947,23 @@ const QuickRepliesPage: React.FC = () => {
                             </label>
                           </div>
                         </div>
+                        <div>
+                          <input
+                            type="file"
+                            id={`editVideo-${reply.id}`}
+                            accept="video/*"
+                            className="hidden"
+                            multiple
+                            onChange={(e) => handleVideoSelect(e, true)}
+                          />
+                          <label
+                            htmlFor={`editVideo-${reply.id}`}
+                            className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                          >
+                            <Lucide icon="Video" className="w-5 h-5 mr-2" />
+                            Videos
+                          </label>
+                        </div>
                         <div className="flex space-x-2">
                           <button
                             className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
@@ -846,6 +977,7 @@ const QuickRepliesPage: React.FC = () => {
                               setEditingReply(null);
                               setEditingDocuments([]);
                               setEditingImages([]);
+                              setEditingVideos([]);
                             }}
                           >
                             Cancel
@@ -854,25 +986,32 @@ const QuickRepliesPage: React.FC = () => {
                       </div>
 
                       {/* Preview Section for Editing */}
-                      {(editingDocuments.length > 0 || editingImages.length > 0) && (
+                      {(editingDocuments.length > 0 || editingImages.length > 0 || editingVideos.length > 0) && (
                         <div className="mt-4">
                           <h4 className="text-sm font-medium text-gray-500 mb-2">New Attachments</h4>
                           <div className="flex flex-wrap gap-2">
-                            {[...editingImages, ...editingDocuments].map((file) => (
+                            {[...editingImages, ...editingDocuments, ...editingVideos].map((file) => (
                               <div key={file.name} className="relative group">
                                 <div 
                                   className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                                   onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
                                 >
                                   <Lucide 
-                                    icon={getFileType(file.name) === 'image' ? 'Image' : 'File'} 
+                                    icon={getFileType(file.name) === 'image' ? 'Image' : getFileType(file.name) === 'video' ? 'Video' : 'File'} 
                                     className="w-5 h-5 mr-2 text-gray-500"
                                   />
                                   <span className="text-sm truncate max-w-[150px]">{file.name}</span>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      removeEditingFile(file.name, getFileType(file.name));
+                                      const fileType = getFileType(file.name);
+                                      if (fileType === 'video') {
+                                        removeVideo(file.name, true);
+                                      } else if (fileType === 'image') {
+                                        removeEditingFile(file.name, 'image');
+                                      } else {
+                                        removeEditingFile(file.name, 'document');
+                                      }
                                     }}
                                     className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
                                   >
@@ -924,7 +1063,7 @@ const QuickRepliesPage: React.FC = () => {
                         </div>
                       </div>
                       {/* Attachments Section */}
-                      {((reply.images && reply.images.length > 0) || (reply.documents && reply.documents.length > 0)) && (
+                      {((reply.images && reply.images.length > 0) || (reply.documents && reply.documents.length > 0) || (reply.videos && reply.videos.length > 0)) && (
                         <div className="flex flex-wrap gap-2 mt-2">
                           {reply.images?.map((image, index) => (
                             <div
@@ -939,6 +1078,32 @@ const QuickRepliesPage: React.FC = () => {
                               />
                               <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
                                 <Lucide icon="ZoomIn" className="w-6 h-6 text-white" />
+                              </div>
+                            </div>
+                          ))}
+                          {reply.videos?.map((video, index) => (
+                            <div
+                              key={`video-${index}`}
+                              className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                              onClick={() => handlePreviewClick('video', video.url, video.name)}
+                            >
+                              <div className="relative">
+                                {video.thumbnail && (
+                                  <img
+                                    src={video.thumbnail}
+                                    alt={`Video thumbnail ${index + 1}`}
+                                    className="w-20 h-20 object-cover rounded-lg"
+                                  />
+                                )}
+                                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
+                                  <Lucide icon="Play" className="w-8 h-8 text-white" />
+                                </div>
+                              </div>
+                              <div className="ml-3 flex flex-col">
+                                <span className="text-sm font-medium">{video.name}</span>
+                                <span className="text-xs text-gray-500">
+                                  {(video.size / 1024 / 1024).toFixed(2)} MB • {video.type}
+                                </span>
                               </div>
                             </div>
                           ))}
@@ -987,6 +1152,14 @@ const QuickRepliesPage: React.FC = () => {
                   src={previewModal.url}
                   alt={previewModal.title}
                   className="w-full h-auto"
+                />
+              ) : previewModal.type === 'video' ? (
+                <video
+                  src={previewModal.url}
+                  controls
+                  className="w-full h-auto"
+                  controlsList="nodownload"
+                  playsInline
                 />
               ) : (
                 <iframe

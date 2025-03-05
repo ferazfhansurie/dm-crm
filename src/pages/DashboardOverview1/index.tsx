@@ -31,6 +31,7 @@ import { BarChart } from "lucide-react";
 import { useContacts } from "@/contact";
 import { User, ChevronRight } from 'lucide-react';
 import { format, subDays, subMonths, startOfDay, endOfDay, eachHourOfInterval, eachDayOfInterval,  parse,  } from 'date-fns';
+import { Radar } from "react-chartjs-2";
 
 
 // Register ChartJS components
@@ -1924,22 +1925,23 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       id: 'kpi',
       title: 'Key Performance Indicators',
       content: [
-        { icon: "Contact", label: "Total Contacts", value: totalContacts },
-        { icon: "MessageCircleReply", label: "Number Replies", value: numReplies },
-        { icon: "Check", label: "Closed Contacts", value: closedContacts },
+        { icon: "Users", label: "Total Contacts", value: totalContacts },
+        { icon: "CheckCircle", label: "Closed Contacts", value: closedContacts },
         { icon: "Mail", label: "Open Contacts", value: openContacts },
       ]
     },
-    {
-      id: 'engagement-metrics',
-      title: 'Engagement Metrics',
-      content: [
-        { label: "Response Rate", value: `${responseRate}%` },
-        { label: "Book Appointments Rate", value: `${averageRepliesPerLead}%` },
-        { label: "Engagement Score", value: engagementScore },
-        { label: "Conversion Rate", value: `${closedContacts > 0 ? ((closedContacts / totalContacts) * 100).toFixed(2) : 0}%` },
-      ],
-    },
+    // {
+    //   id: 'engagement-metrics',
+    //   title: 'Engagement Metrics',
+    //   content: [
+    //     { icon: "ActivitySquare", label: "Engagement Score", value: engagementScore },
+    //     { icon: "TrendingUp", label: "Conversion Rate", value: `${closedContacts > 0 ? ((closedContacts / totalContacts) * 100).toFixed(2) : 0}%` },
+    //     { icon: "MessageCircle", label: "Response Rate", value: `${responseRate}%` },
+    //     { icon: "Calendar", label: "Appointment Rate", value: `${averageRepliesPerLead}%` },
+    //     { icon: "Users", label: "Active Contacts", value: numReplies },
+    //     { icon: "Clock", label: "Avg. Engagement Time", value: "3.2 days" },
+    //   ],
+    // },
     // {
     //   id: 'leads',
     //   title: 'Leads Overview',
@@ -2003,179 +2005,159 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       title: 'Scheduled Messages Analytics',
       content: (
         <div className="h-full flex flex-col">
-          {blastMessageData.labels.length > 0 ? (
-            <Bar 
-              data={{
-                labels: blastMessageData.labels,
-                datasets: [
-                  {
-                    label: 'Scheduled',
-                    data: blastMessageData.datasets[0].data,
-                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+          <div className="mb-4 flex items-center justify-between">
+            <Link to="blast-history">
+              <Button variant="primary" className="mr-2 shadow-sm">
+                <span className="flex items-center">
+                  <i className="ti ti-history mr-2"></i>
+                  Blast History
+                </span>
+              </Button>
+            </Link>
+          </div>
+          <div className="h-64">
+            {blastMessageData.labels.length > 0 ? (
+              <Bar 
+                data={{
+                  labels: blastMessageData.labels,
+                  datasets: [
+                    {
+                      label: 'Scheduled',
+                      data: blastMessageData.datasets[0].data,
+                      backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                    },
+                    {
+                      label: 'Completed',
+                      data: blastMessageData.datasets[1].data,
+                      backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                    },
+                    {
+                      label: 'Failed',
+                      data: blastMessageData.datasets[2].data,
+                      backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                    }
+                  ]
+                }}
+                options={{
+                  responsive: true,
+                  maintainAspectRatio: false,
+                  plugins: {
+                    legend: {
+                      position: 'bottom',
+                    }
                   },
-                  {
-                    label: 'Completed',
-                    data: blastMessageData.datasets[1].data,
-                    backgroundColor: 'rgba(75, 192, 192, 0.8)',
-                  },
-                  {
-                    label: 'Failed',
-                    data: blastMessageData.datasets[2].data,
-                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
-                  },
-                ]
-              }}
-              options={{ 
-                responsive: true, 
-                maintainAspectRatio: false,
-                scales: {
-                  y: {
-                    beginAtZero: true,
-                    title: {
-                      display: true,
-                      text: 'Number of Messages',
-                      font: {
-                        weight: 'bold'
+                  scales: {
+                    y: {
+                      beginAtZero: true,
+                      title: {
+                        display: true,
+                        text: 'Count'
                       }
-                    },
-                    grid: {
-                      color: 'rgba(107, 114, 128, 0.1)'
-                    },
-                    ticks: {
-                      color: 'rgb(107, 114, 128)'
                     }
-                  },
-                  x: {
-                    title: {
-                      display: true,
-                      text: 'Month',
-                      font: {
-                        weight: 'bold'
-                      }
-                    },
-                    grid: {
-                      color: 'rgba(107, 114, 128, 0.1)'
-                    },
-                    ticks: {
-                      color: 'rgb(107, 114, 128)'
-                    }
-                  },
-                },
-                plugins: {
-                  title: {
-                    display: true,
-                    text: 'Monthly Scheduled Message Statistics',
-                    font: {
-                      size: 16,
-                      weight: 'bold'
-                    },
-                    padding: {
-                      top: 10,
-                      bottom: 20
-                    }
-                  },
-                  legend: {
-                    position: 'top',
-                    labels: {
-                      usePointStyle: true,
-                      padding: 15
-                    }
-                  },
-                  tooltip: {
-                    mode: 'index',
-                    intersect: false,
-                    backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                    padding: 10,
-                    cornerRadius: 4,
-                    titleFont: {
-                      size: 14
-                    },
-                    bodyFont: {
-                      size: 13
-                    }
-                  },
-                },
-              }} 
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-center text-gray-600 dark:text-gray-400">
-              <div>
-                <p className="text-lg mb-2">No scheduled message data available</p>
-                <p className="text-sm">Create blast messages to see analytics here</p>
+                  }
+                }}
+              />
+            ) : (
+              <div className="flex items-center justify-center h-full text-gray-500">
+                No scheduled messages data available
+              </div>
+            )}
+          </div>
+          
+          {/* Summary statistics */}
+          {blastMessageData.labels.length > 0 && (
+            <div className="mt-4 grid grid-cols-3 gap-4">
+              <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow-sm">
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
+                <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg shadow-sm">
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
+                <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                </p>
+              </div>
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg shadow-sm">
+                <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
+                <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                  {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                </p>
               </div>
             </div>
           )}
         </div>
       )
     },
-    {
-      id: 'performance-metrics',
-      title: 'Employee Performance Metrics',
-      content: (
-        <div className="h-full">
-          {employeeStats ? (
-            <Bar
-              data={getPerformanceMetricsData(employeeStats)}
-              options={{
-                responsive: true,
-                maintainAspectRatio: false,
-                indexAxis: 'y', // This makes it a horizontal bar chart
-                scales: {
-                  x: {
-                    beginAtZero: true,
-                    grid: {
-                      color: 'rgba(107, 114, 128, 0.1)'
-                    },
-                    ticks: {
-                      color: 'rgb(107, 114, 128)'
-                    }
-                  },
-                  y: {
-                    grid: {
-                      display: false
-                    },
-                    ticks: {
-                      color: 'rgb(107, 114, 128)'
-                    }
-                  }
-                },
-                plugins: {
-                  legend: {
-                    display: false
-                  },
-                  // title: {
-                  //   display: true,
-                  //   text: 'Employee Performance Metrics',
-                  //   color: 'rgb(31, 41, 55)',
-                  //   font: {
-                  //     size: 16
-                  //   }
-                  // },
-                  tooltip: {
-                    callbacks: {
-                      label: function(context) {
-                        const label = context.dataset.label || '';
-                        const value = context.parsed.x;
-                        const metric = context.label;
+    // {
+    //   id: 'performance-metrics',
+    //   title: 'Employee Performance Metrics',
+    //   content: (
+    //     <div className="h-full">
+    //       {employeeStats ? (
+    //         <Bar
+    //           data={getPerformanceMetricsData(employeeStats)}
+    //           options={{
+    //             responsive: true,
+    //             maintainAspectRatio: false,
+    //             indexAxis: 'y', // This makes it a horizontal bar chart
+    //             scales: {
+    //               x: {
+    //                 beginAtZero: true,
+    //                 grid: {
+    //                   color: 'rgba(107, 114, 128, 0.1)'
+    //                 },
+    //                 ticks: {
+    //                   color: 'rgb(107, 114, 128)'
+    //                 }
+    //               },
+    //               y: {
+    //                 grid: {
+    //                   display: false
+    //                 },
+    //                 ticks: {
+    //                   color: 'rgb(107, 114, 128)'
+    //                 }
+    //               }
+    //             },
+    //             plugins: {
+    //               legend: {
+    //                 display: false
+    //               },
+    //               // title: {
+    //               //   display: true,
+    //               //   text: 'Employee Performance Metrics',
+    //               //   color: 'rgb(31, 41, 55)',
+    //               //   font: {
+    //               //     size: 16
+    //               //   }
+    //               // },
+    //               tooltip: {
+    //                 callbacks: {
+    //                   label: function(context) {
+    //                     const label = context.dataset.label || '';
+    //                     const value = context.parsed.x;
+    //                     const metric = context.label;
                         
-                        if (metric === 'Response Time (min)') {
-                          return `${label}: ${value} minutes`;
-                        }
-                        return `${label}: ${value}`;
-                      }
-                    }
-                  }
-                }
-              }}
-            />
-          ) : (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              No performance data available
-            </div>
-          )}
-        </div>
-      ),
-    },
+    //                     if (metric === 'Response Time (min)') {
+    //                       return `${label}: ${value} minutes`;
+    //                     }
+    //                     return `${label}: ${value}`;
+    //                   }
+    //                 }
+    //               }
+    //             }
+    //           }}
+    //         />
+    //       ) : (
+    //         <div className="flex items-center justify-center h-full text-gray-500">
+    //           No performance data available
+    //         </div>
+    //       )}
+    //     </div>
+    //   ),
+    // },
     // Inside your dashboardCards array, add this conditional card
     ...(companyId === '072' ? [{
       id: 'assignments-chart',
@@ -2429,331 +2411,354 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   }, [selectedEmployee, chartData]);
 
   return (
-    <div className="flex flex-col w-full h-full overflow-x-hidden overflow-y-auto">
-      <div className="flex-grow p-4 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-4">
-          {dashboardCards.map((card) => (
-            <div 
-              key={card.id}
-              className="bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden flex flex-col h-full"
-            >
-              <div className="p-6 flex-grow flex flex-col">
-                {card.id === 'contacts-over-time' && (
-                  <div className="flex justify-between items-center mb-4">
-                    <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200">{card.title}</h3>
-                    {card.filterControls}
-                  </div>
-                )}
-                {card.id !== 'contacts-over-time' && (
-                  <h3 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">{card.title}</h3>
-                )}
-                <div className="flex-grow">
-                  {card.id === 'kpi' || card.id === 'leads' || card.id === 'engagement-metrics' ? (
-                    <div className="grid grid-cols-2 gap-4">
-                      {Array.isArray(card.content) && card.content.map((item, index) => (
-                        <div key={index} className="text-center">
-                          <div className="text-3xl font-bold text-blue-500 dark:text-blue-400">
-                            {!loading ? item.value : (
-                              <div className="flex justify-center">
-                                <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
-                              </div>
-                            )}
-                          </div>
-                          <div className="mt-1 text-sm text-gray-600 dark:text-gray-400">{item.label}</div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : card.id === 'contacts-over-time' ? (
-                    <div className="h-full">
-                      {('datasets' in card.content) && (
-                        <Bar data={card.content} options={totalContactsChartOptions} />
-                      )}
-                    </div>
-                  ) : card.id === 'employee-assignments' ? (
-                    <div>
-                      <div className="mb-4">
-                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                          Select Employee
-                        </label>
-                        <EmployeeSearch 
-                          employees={employees}
-                          onSelect={(employee: { id: string; name: string; assignedContacts?: number | undefined; }) => handleEmployeeSelect(employee as Employee)}
-                          currentUser={currentUser}
-                        />
+    <div className="flex flex-col w-full h-full overflow-x-hidden overflow-y-auto bg-gray-50 dark:bg-gray-900">
+      {/* Dashboard Header */}
+      <div className="bg-white dark:bg-gray-800 shadow-sm border-b border-gray-200 dark:border-gray-700">
+        <div className="px-6 py-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Dashboard Overview</h1>
+              <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                Monitor your performance metrics and business growth
+              </p>
+            </div>
+            <div className="flex items-center space-x-3">
+              <button className="inline-flex items-center px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm text-sm font-medium text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <span className="mr-2"><i className="ti ti-refresh"></i></span>
+                Refresh Data
+              </button>
+              <button className="inline-flex items-center px-3 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <span className="mr-2"><i className="ti ti-report"></i></span>
+                Export Report
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      {/* Dashboard Content */}
+      <div className="flex-grow p-6">
+        {/* KPI Row - Always full width and smaller height */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6">
+          {dashboardCards
+            .filter(card => card.id === 'kpi')
+            .map(card => 
+              Array.isArray(card.content) 
+                ? card.content.map((item, index) => (
+                    <div 
+                      key={`kpi-${index}`}
+                      className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex p-4 hover:shadow-md transition-shadow"
+                    >
+                      <div className="rounded-full p-3 mr-4 self-center bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-300">
+                        <span className="text-xl"><i className={`ti ti-${item.icon?.toLowerCase()}`}></i></span>
                       </div>
-                      <div className="h-64">
-                        {loading ? (
-                          <div className="flex flex-col items-center justify-center h-full">
-                            <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
-                            <span className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading...</span>
-                          </div>
-                        ) : selectedEmployee ? (
-                          chartData ? (
-                            <>
-                              <div className="mb-2 text-sm text-gray-600 dark:text-gray-400">
-                                <span className="font-medium">{selectedEmployee.name}</span> has <span className="font-medium">{selectedEmployee.assignedContacts || 0}</span> assigned contacts
-                              </div>
-                              <Line data={chartData} options={lineChartOptions} />
-                            </>
-                          ) : (
-                            <div className="flex flex-col items-center justify-center h-full text-gray-600 dark:text-gray-400">
-                              <p>No assignment data available for this employee</p>
-                              <p className="text-sm mt-1">Employee has {selectedEmployee.assignedContacts || 0} assigned contacts</p>
+                      <div>
+                        <h4 className="text-sm font-medium text-gray-500 dark:text-gray-400">{item.label}</h4>
+                        <div className="text-2xl font-bold text-gray-900 dark:text-white mt-1">
+                          {!loading ? item.value : (
+                            <div className="flex">
+                              <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
                             </div>
-                          )
-                        ) : (
-                          <div className="text-center text-gray-600 dark:text-gray-400">Select an employee to view their chart</div>
-                        )}
+                          )}
+                        </div>
                       </div>
                     </div>
-                  ) : card.id === 'blast-messages' ? (
-                    <div>
-                    <div className="mb-4">
-                    <Link to="blast-history">
-                      <Button variant="primary" className="mr-2 shadow-md">
-                          Blast History
-                      </Button>
-                    </Link>
-                    </div>
-                    <div className="h-80">
-                      {blastMessageData.labels.length > 0 ? (
-                        <Bar 
-                          data={blastMessageData} 
-                          options={{ 
-                            responsive: true, 
-                            maintainAspectRatio: false,
-                            scales: {
-                              y: {
-                                beginAtZero: true,
-                                title: {
-                                  display: true,
-                                  text: 'Number of Messages',
-                                  font: {
-                                    weight: 'bold'
-                                  }
-                                },
-                                grid: {
-                                  color: 'rgba(107, 114, 128, 0.1)'
-                                },
-                                ticks: {
-                                  color: 'rgb(107, 114, 128)'
-                                }
-                              },
-                              x: {
-                                title: {
-                                  display: true,
-                                  text: 'Month',
-                                  font: {
-                                    weight: 'bold'
-                                  }
-                                },
-                                grid: {
-                                  color: 'rgba(107, 114, 128, 0.1)'
-                                },
-                                ticks: {
-                                  color: 'rgb(107, 114, 128)'
-                                }
-                              },
-                            },
-                            plugins: {
-                              title: {
-                                display: true,
-                                text: 'Monthly Scheduled Message Statistics',
-                                font: {
-                                  size: 16,
-                                  weight: 'bold'
-                                },
-                                padding: {
-                                  top: 10,
-                                  bottom: 20
-                                }
-                              },
-                              legend: {
-                                position: 'top',
-                                labels: {
-                                  usePointStyle: true,
-                                  padding: 15
-                                }
-                              },
-                              tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                                backgroundColor: 'rgba(0, 0, 0, 0.7)',
-                                padding: 10,
-                                cornerRadius: 4,
-                                titleFont: {
-                                  size: 14
-                                },
-                                bodyFont: {
-                                  size: 13
-                                }
-                              },
-                            },
-                          }} 
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-center text-gray-600 dark:text-gray-400">
-                          <div>
-                            <p className="text-lg mb-2">No scheduled message data available</p>
-                            <p className="text-sm">Create blast messages to see analytics here</p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                    <div className="mt-6">
-                      {blastMessageData.labels.length > 0 && (
-                        <div className="grid grid-cols-3 gap-4">
-                          <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
-                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                              {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
-                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                              {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                            </p>
-                          </div>
-                          <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg shadow-sm">
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
-                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                              {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
-                            </p>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  ) : card.id === 'performance-metrics' ? (
-                    <div className="h-full">
-                      {employeeStats ? (
-                        <Bar
-                          data={getPerformanceMetricsData(employeeStats)}
-                          options={{
-                            responsive: true,
-                            maintainAspectRatio: false,
-                            indexAxis: 'y', // This makes it a horizontal bar chart
-                            scales: {
-                              x: {
-                                beginAtZero: true,
-                                grid: {
-                                  color: 'rgba(107, 114, 128, 0.1)'
-                                },
-                                ticks: {
-                                  color: 'rgb(107, 114, 128)'
-                                }
-                              },
-                              y: {
-                                grid: {
-                                  display: false
-                                },
-                                ticks: {
-                                  color: 'rgb(107, 114, 128)'
-                                }
-                              }
-                            },
-                            plugins: {
-                              legend: {
-                                display: false
-                              },
-                              // title: {
-                              //   display: true,
-                              //   text: 'Employee Performance Metrics',
-                              //   color: 'rgb(31, 41, 55)',
-                              //   font: {
-                              //     size: 16
-                              //   }
-                              // },
-                              tooltip: {
-                                callbacks: {
-                                  label: function(context) {
-                                    const label = context.dataset.label || '';
-                                    const value = context.parsed.x;
-                                    const metric = context.label;
-                                    
-                                    if (metric === 'Response Time (min)') {
-                                      return `${label}: ${value} minutes`;
-                                    }
-                                    return `${label}: ${value}`;
-                                  }
-                                }
-                              }
-                            }
-                          }}
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500">
-                          No performance data available
-                        </div>
-                      )}
-                    </div>
-                  ) : card.id === 'assignments-chart' ? (
-                    <div className="h-full">
-                      {assignmentsData.labels.length > 0 ? (
-                        <Bar 
-                          data={assignmentsData} 
-                          options={{ 
-                            responsive: true, 
-                            maintainAspectRatio: false,
-                            scales: {
-                              y: {
-                                beginAtZero: true,
-                                title: {
-                                  display: true,
-                                  text: 'Number of Assignments',
-                                },
-                              },
-                              x: {
-                                title: {
-                                  display: true,
-                                  text: 'Employee',
-                                },
-                              },
-                            },
-                            plugins: {
-                              title: {
-                                display: true,
-                                text: 'Assignments Distribution',
-                              },
-                              tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                              },
-                            },
-                          }} 
-                        />
-                      ) : (
-                        <div className="flex items-center justify-center h-full text-gray-500">
-                          No assignments data available
-                        </div>
-                      )}
-                      
-                      {/* Summary statistics */}
-                      {assignmentsData.labels.length > 0 && (
-                        <div className="mt-4 grid grid-cols-2 gap-4">
-                          <div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Total Assignments:</p>
-                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                              {assignmentsData.datasets[0].data.reduce((a, b) => a + b, 0)}
-                            </p>
-                          </div>
-                          <div>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">Assigned Employees:</p>
-                            <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-                              {assignmentsData.labels.length}
-                            </p>
-                          </div>
-                        </div>
-                      )}
+                  ))
+                : null
+            )
+          }
+        </div>
+        
+        {/* Main Cards Grid */}
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          {dashboardCards
+            .filter(card => card.id !== 'kpi')
+            .map(card => (
+              <div 
+                key={card.id}
+                className="bg-white dark:bg-gray-800 rounded-lg shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden flex flex-col h-full hover:shadow-md transition-shadow"
+              >
+                <div className="p-6 flex-grow flex flex-col">
+                  {card.id === 'contacts-over-time' ? (
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
+                      <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100">{card.title}</h3>
+                      {card.filterControls}
                     </div>
                   ) : (
-                    <div className="text-center text-gray-600 dark:text-gray-400">No data available</div>
+                    <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-100 mb-4 pb-2 border-b border-gray-100 dark:border-gray-700">{card.title}</h3>
                   )}
+                  
+                  <div className="flex-grow">
+                    {card.id === 'engagement-metrics' && Array.isArray(card.content) ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                        {card.content.map((item, index) => (
+                          <div key={index} className="bg-gray-50 dark:bg-gray-700 rounded-xl p-4 shadow-sm transition-all hover:shadow-md">
+                            <div className="flex items-center mb-2">
+                              {item.icon && (
+                                <div className="rounded-full p-2 mr-3 bg-purple-100 dark:bg-purple-900/30 text-purple-600 dark:text-purple-300">
+                                  <span className="text-xl"><i className={`ti ti-${item.icon.toLowerCase()}`}></i></span>
+                                </div>
+                              )}
+                              <div className="text-sm font-medium text-gray-600 dark:text-gray-300">{item.label}</div>
+                            </div>
+                            <div className="text-3xl font-bold text-purple-600 dark:text-purple-300">
+                              {!loading ? item.value : (
+                                <div className="flex">
+                                  <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-purple-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : card.id === 'contacts-over-time' ? (
+                      <div className="h-80">
+                        {('datasets' in card.content) && (
+                          <Bar 
+                            data={card.content} 
+                            options={{
+                              ...totalContactsChartOptions, 
+                              maintainAspectRatio: false,
+                              plugins: {
+                                ...totalContactsChartOptions.plugins,
+                                legend: {
+                                  position: 'bottom',
+                                  labels: {
+                                    padding: 20,
+                                    usePointStyle: true,
+                                    boxWidth: 6
+                                  }
+                                }
+                              }
+                            }} 
+                          />
+                        )}
+                      </div>
+                    ) : card.id === 'employee-assignments' ? (
+                      <div>
+                        <div className="mb-6 bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                            Select Employee:
+                          </label>
+                          <EmployeeSearch 
+                            employees={employees}
+                            onSelect={(employee: { id: string; name: string; assignedContacts?: number | undefined; }) => handleEmployeeSelect(employee as Employee)}
+                            currentUser={currentUser}
+                          />
+                        </div>
+                        <div className="h-64">
+                          {loading ? (
+                            <div className="flex flex-col items-center justify-center h-full">
+                              <div className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-solid border-blue-500 border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite]"></div>
+                              <span className="mt-2 text-sm text-gray-600 dark:text-gray-400">Loading...</span>
+                            </div>
+                          ) : selectedEmployee ? (
+                            <Line data={chartData as ChartData<'line'>} options={lineChartOptions} />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500 dark:text-gray-400">
+                              Select an employee to view metrics
+                            </div>
+                          )}
+                        </div>
+                        {/* {selectedEmployee && closedContactsChartData && closedContactsChartData.datasets[0].data.length > 0 && (
+                          <div className="mt-8">
+                            <h4 className="text-md font-medium text-gray-700 dark:text-gray-300 mb-4">
+                              Monthly Closed Contacts
+                            </h4>
+                            <div className="h-48">
+                              <Bar data={closedContactsChartData} options={closedContactsChartOptions} />
+                            </div>
+                          </div>
+                        )} */}
+                      </div>
+                    ) : card.id === 'blast-messages' ? (
+                      <div className="h-full flex flex-col">
+                        <div className="mb-4 flex items-center justify-between">
+                          <Link to="blast-history">
+                            <Button variant="primary" className="mr-2 shadow-sm">
+                              <span className="flex items-center">
+                                <i className="ti ti-history mr-2"></i>
+                                Blast History
+                              </span>
+                            </Button>
+                          </Link>
+                        </div>
+                        <div className="h-64">
+                          {blastMessageData.labels.length > 0 ? (
+                            <Bar 
+                              data={{
+                                labels: blastMessageData.labels,
+                                datasets: [
+                                  {
+                                    label: 'Scheduled',
+                                    data: blastMessageData.datasets[0].data,
+                                    backgroundColor: 'rgba(54, 162, 235, 0.8)',
+                                  },
+                                  {
+                                    label: 'Completed',
+                                    data: blastMessageData.datasets[1].data,
+                                    backgroundColor: 'rgba(75, 192, 192, 0.8)',
+                                  },
+                                  {
+                                    label: 'Failed',
+                                    data: blastMessageData.datasets[2].data,
+                                    backgroundColor: 'rgba(255, 99, 132, 0.8)',
+                                  }
+                                ]
+                              }}
+                              options={{
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: {
+                                  legend: {
+                                    position: 'bottom',
+                                  }
+                                },
+                                scales: {
+                                  y: {
+                                    beginAtZero: true,
+                                    title: {
+                                      display: true,
+                                      text: 'Count'
+                                    }
+                                  }
+                                }
+                              }}
+                            />
+                          ) : (
+                            <div className="flex items-center justify-center h-full text-gray-500">
+                              No scheduled messages data available
+                            </div>
+                          )}
+                        </div>
+                        
+                        {/* Summary statistics */}
+                        {blastMessageData.labels.length > 0 && (
+                          <div className="mt-4 grid grid-cols-3 gap-4">
+                            <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg shadow-sm">
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Scheduled:</p>
+                              <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                                {blastMessageData.datasets[0].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg shadow-sm">
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Completed:</p>
+                              <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                                {blastMessageData.datasets[1].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                              </p>
+                            </div>
+                            <div className="p-3 bg-red-50 dark:bg-red-900/20 rounded-lg shadow-sm">
+                              <p className="text-sm text-gray-600 dark:text-gray-400">Total Failed:</p>
+                              <p className="text-lg font-semibold text-gray-800 dark:text-gray-200">
+                                {blastMessageData.datasets[2].data.reduce((a, b) => a + b, 0).toLocaleString()}
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ) : card.id === 'stats-grid' ? (
+                      <div>
+                        {selectedEmployee ? (
+                          <div className="grid grid-cols-2 gap-4">
+                            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                              <div className="text-sm text-gray-500 dark:text-gray-400">Assigned Conversations</div>
+                              <div className="text-2xl font-bold text-gray-800 dark:text-white">{employeeStats?.conversationsAssigned || '0'}</div>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                              <div className="text-sm text-gray-500 dark:text-gray-400">Messages Sent</div>
+                              <div className="text-2xl font-bold text-gray-800 dark:text-white">{employeeStats?.outgoingMessagesSent || '0'}</div>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                              <div className="text-sm text-gray-500 dark:text-gray-400">Avg. Response Time</div>
+                              <div className="text-2xl font-bold text-gray-800 dark:text-white">{employeeStats?.averageResponseTime ? `${employeeStats.averageResponseTime.toFixed(2)}h` : 'N/A'}</div>
+                            </div>
+                            <div className="bg-gray-50 dark:bg-gray-700 p-4 rounded-lg">
+                              <div className="text-sm text-gray-500 dark:text-gray-400">Closed Contacts</div>
+                              <div className="text-2xl font-bold text-gray-800 dark:text-white">{employeeStats?.closedContacts || '0'}</div>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center justify-center h-48 text-gray-500 dark:text-gray-400">
+                            Select an employee to view performance metrics
+                          </div>
+                        )}
+                      </div>
+                    ) : card.id === 'performance-metrics' ? (
+                      <div className="h-80">
+                        {selectedEmployee && employeeStats ? (
+                          <Radar 
+                            data={getPerformanceMetricsData(employeeStats)} 
+                            options={{
+                              responsive: true,
+                              maintainAspectRatio: false,
+                              scales: {
+                                r: {
+                                  angleLines: {
+                                    display: true
+                                  },
+                                  beginAtZero: true,
+                                  ticks: {
+                                    backdropColor: 'transparent'
+                                  }
+                                }
+                              }
+                            }}
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-gray-500">
+                            No performance data available
+                          </div>
+                        )}
+                      </div>
+                    ) : card.id === 'assignments-chart' ? (
+                      <div className="h-full">
+                        {assignmentsData.labels.length > 0 ? (
+                          <Bar 
+                            data={assignmentsData} 
+                            options={{ 
+                              responsive: true, 
+                              maintainAspectRatio: false,
+                              scales: {
+                                y: {
+                                  beginAtZero: true,
+                                  title: {
+                                    display: true,
+                                    text: 'Number of Assignments',
+                                  },
+                                },
+                                x: {
+                                  title: {
+                                    display: true,
+                                    text: 'Employee',
+                                  },
+                                },
+                              },
+                              plugins: {
+                                title: {
+                                  display: true,
+                                  text: 'Assignments Distribution',
+                                },
+                                tooltip: {
+                                  mode: 'index',
+                                  intersect: false,
+                                },
+                                legend: {
+                                  position: 'bottom',
+                                },
+                              },
+                            }} 
+                          />
+                        ) : (
+                          <div className="flex items-center justify-center h-full text-gray-500">
+                            No assignments data available
+                          </div>
+                        )}
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
       </div>
       

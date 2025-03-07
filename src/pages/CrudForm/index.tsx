@@ -231,10 +231,13 @@ function Main() {
         
         // Generate phoneNames object
         const phoneNamesData: { [key: number]: string } = {};
-        for (let i = 0; i <= phoneCount; i++) {
-          const phoneName = companyData[`phone${i}`];
+        for (let i = 0; i < phoneCount; i++) {
+          const phoneName = companyData[`phone${i + 1}`];
           if (phoneName) {
             phoneNamesData[i] = phoneName;
+          } else {
+            // Use default name if not found
+            phoneNamesData[i] = `Phone ${i + 1}`;
           }
         }
         

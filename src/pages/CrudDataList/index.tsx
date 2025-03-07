@@ -433,10 +433,13 @@ function Main() {
         
         // Generate phoneNames object
         const phoneNamesData: { [key: number]: string } = {};
-        for (let i = 0; i <= phoneCount; i++) {
-          const phoneName = companyData[`phone${i}`];
+        for (let i = 0; i < phoneCount; i++) {
+          const phoneName = companyData[`phone${i + 1}`];
           if (phoneName) {
             phoneNamesData[i] = phoneName;
+          } else {
+            // Use default name if not found
+            phoneNamesData[i] = `Phone ${i + 1}`;
           }
         }
         
@@ -4199,14 +4202,21 @@ const resetForm = () => {
 
   // Add this helper function to get status color and text
   const getStatusInfo = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'ready':
-      case 'authenticated':
-        return {
-          color: 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200',
-          text: 'Connected',
-          icon: 'CheckCircle' as const
-        };
+    const statusLower = status?.toLowerCase() || '';
+    
+    // Check if the phone is connected (consistent with Chat component)
+    const isConnected = statusLower === 'ready' || statusLower === 'authenticated';
+    
+    if (isConnected) {
+      return {
+        color: 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200',
+        text: 'Connected',
+        icon: 'CheckCircle' as const
+      };
+    }
+    
+    // For other statuses, provide more detailed information
+    switch (statusLower) {
       case 'qr':
         return {
           color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-200',
@@ -4228,7 +4238,7 @@ const resetForm = () => {
       default:
         return {
           color: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200',
-          text: 'Unknown',
+          text: 'Not Connected',  // Changed from 'Unknown' to 'Not Connected' to match Chat component
           icon: 'HelpCircle' as const
         };
     }
@@ -4236,13 +4246,21 @@ const resetForm = () => {
 
   // Add this helper function to get phone name
   const getPhoneName = (phoneIndex: number) => {
+    // First check if we have a name in the phoneNames object
     if (phoneNames[phoneIndex]) {
       return phoneNames[phoneIndex];
     }
+    
+    // If not found in phoneNames but we have a special company ID, use predefined names
     if (companyId === '0123') {
-      return phoneIndex === 0 ? 'Revotrend' : phoneIndex === 1 ? 'Storeguru' : 'ShipGuru';
+      if (phoneIndex === 0) return 'Revotrend';
+      if (phoneIndex === 1) return 'Storeguru';
+      if (phoneIndex === 2) return 'ShipGuru';
+      return `Phone ${phoneIndex + 1}`;
     }
-    return `Phone ${phoneIndex + 1}`;
+    
+    // Default fallback - consistent with Chat component
+    return "Select a phone";
   };
 
   // Add this effect to fetch phone statuses periodically
@@ -4271,9 +4289,11 @@ const resetForm = () => {
         });
 
         if (botStatusResponse.status === 200) {
+          // Ensure we always have an array of QR codes
           const qrCodesData = Array.isArray(botStatusResponse.data) 
             ? botStatusResponse.data 
-            : [botStatusResponse.data];
+            : botStatusResponse.data ? [botStatusResponse.data] : [];
+          
           setQrCodes(qrCodesData);
 
           // If no phone is selected and we have connected phones, select the first connected one

@@ -7,8 +7,8 @@ interface TagResponseFormProps {
     availableTags: Array<{ id: string; name: string; }>;
     selectedTags: string[];
     onTagSelection: (tagId: string) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
     tagActionMode: 'add' | 'delete';
     onTagActionModeChange: (mode: 'add' | 'delete') => void;
 }

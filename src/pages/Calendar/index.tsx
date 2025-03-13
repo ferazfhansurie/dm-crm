@@ -129,6 +129,8 @@ interface ReminderSettings {
     timeUnit: 'minutes' | 'hours' | 'days';
     type: 'before' | 'after';
     message: string;
+    recipientType?: 'contacts' | 'employees'; // Who should receive the reminder
+    selectedEmployees?: string[]; // Array of employee IDs when recipientType is 'employees'
   }>;
 }
 
@@ -737,66 +739,150 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
       }
     });
   };
-  const sendWhatsAppNotification = async (contacts: any[], appointmentDetails: any, companyId: string) => {
+  const sendWhatsAppNotification = async (contacts: any[], appointmentDetails: any, companyId: string, reminderConfig?: any) => {
     try {
       const user = getAuth().currentUser;
       if (!user) {
         console.error("User not authenticated");
+        return false;
       }
       const docUserRef = doc(firestore, 'user', user?.email!);
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
-        
-        return;
+        return false;
       }
       const dataUser = docUserSnapshot.data();
       const companyId = dataUser.companyId;
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
       if (!docSnapshot.exists()) {
-        
-        return;
+        return false;
       }
       const data2 = docSnapshot.data();
       const baseUrl = data2.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      
       // Format the message
-      const message = `
-  🗓️ New Appointment Details:
-  📌 ${appointmentDetails.title}
-  📅 Date: ${format(new Date(appointmentDetails.startTime), 'MMMM dd, yyyy')}
-  ⏰ Time: ${format(new Date(appointmentDetails.startTime), 'h:mm a')} - ${format(new Date(appointmentDetails.endTime), 'h:mm a')}
-  ${appointmentDetails.meetLink ? `\n🎥 Join Meeting: ${appointmentDetails.meetLink}` : ''}
-  `;
-  
-      // Send WhatsApp message to each contact
-      const sendPromises = contacts.map(async (contact) => {
-        if (!contact.id) {
-          console.error('Contact ID missing:', contact);
+      let message = '';
+      if (reminderConfig) {
+        // Use the reminder template if provided
+        const startTime = new Date(appointmentDetails.startTime);
+        message = formatReminderMessage(reminderConfig.message, appointmentDetails, startTime);
+      } else {
+        // Use the default message format
+        message = `
+🗓️ New Appointment Details:
+📌 ${appointmentDetails.title}
+📅 Date: ${format(new Date(appointmentDetails.startTime), 'MMMM dd, yyyy')}
+⏰ Time: ${format(new Date(appointmentDetails.startTime), 'h:mm a')} - ${format(new Date(appointmentDetails.endTime), 'h:mm a')}
+${appointmentDetails.meetLink ? `\n🎥 Join Meeting: ${appointmentDetails.meetLink}` : ''}
+`;
+      }
+
+      // Determine recipients based on reminderConfig
+      let recipients: { id: string, phone?: string }[] = [];
+      
+      if (reminderConfig && reminderConfig.recipientType === 'employees' && reminderConfig.selectedEmployees?.length > 0) {
+        // Get employee phone numbers
+        const employeePromises = reminderConfig.selectedEmployees.map(async (employeeId: string) => {
+          const employeeRef = doc(firestore, `companies/${companyId}/employee/${employeeId}`);
+          const employeeSnapshot = await getDoc(employeeRef);
+          if (employeeSnapshot.exists()) {
+            const employeeData = employeeSnapshot.data();
+            if (employeeData.phoneNumber) {
+              return { id: employeeId, phone: employeeData.phoneNumber };
+            }
+          }
+          return null;
+        });
+        
+        const employeeResults = await Promise.all(employeePromises);
+        recipients = employeeResults.filter(Boolean) as { id: string, phone: string }[];
+      } else {
+        // Use appointment contacts
+        recipients = contacts;
+      }
+
+      if (recipients.length === 0) {
+        console.warn('No valid recipients found for WhatsApp notification');
+        return false;
+      }
+
+      // Send WhatsApp message to each recipient
+      const sendPromises = recipients.map(async (recipient) => {
+        const contactId = recipient.id;
+        const phoneNumber = recipient.phone || '';
+        
+        if (!contactId && !phoneNumber) {
+          console.error('Recipient missing ID and phone:', recipient);
           return;
         }
-  
+        
         try {
-          const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${contact.id}`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({ message }),
-          });
-  
-          if (!response.ok) {
-            throw new Error(`WhatsApp API responded with status: ${response.status}`);
+          // If we have a contact ID, use the API endpoint with contact ID
+          if (contactId) {
+            const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${contactId}`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({ message }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`WhatsApp API responded with status: ${response.status}`);
+            }
+
+            const result = await response.json();
+            return result;
+          } 
+          // If we have a phone number but no contact ID (for employees), use the direct phone number API
+          else if (phoneNumber) {
+            // Format phone number for WhatsApp
+            const formattedPhone = phoneNumber.replace(/\D/g, '') + "@c.us";
+            
+            const scheduledMessageData = {
+              chatIds: [formattedPhone],
+              phoneIndex: 0,
+              message: message,
+              companyId,
+              v2: data2.v2 || false,
+              whapiToken: data2.whapiToken || '',
+              scheduledTime: {
+                seconds: Math.floor(Date.now() / 1000),
+                nanoseconds: 0
+              },
+              status: "scheduled",
+              createdAt: {
+                seconds: Math.floor(Date.now() / 1000),
+                nanoseconds: 0
+              },
+              batchQuantity: 1,
+              messages: [],
+              messageDelays: [],
+              repeatInterval: null,
+              repeatUnit: null,
+              minDelay: 0,
+              maxDelay: 0,
+              activateSleep: false,
+              sleepAfterMessages: null,
+              sleepDuration: null,
+              activeHours: {
+                start: null,
+                end: null
+              },
+              infiniteLoop: false,
+              numberOfBatches: 1
+            };
+            
+            const response = await axios.post(`${baseUrl}/api/schedule-message/${companyId}`, scheduledMessageData);
+            return response.data;
           }
-  
-          const result = await response.json();
-          
-          return result;
         } catch (error) {
-          console.error(`Failed to send WhatsApp notification to contact ${contact.id}:`, error);
+          console.error(`Failed to send WhatsApp notification to recipient ${contactId || phoneNumber}:`, error);
           throw error;
         }
       });
-  
+
       await Promise.all(sendPromises);
       return true;
     } catch (error) {
@@ -806,32 +892,36 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
   };
   
   const handleSaveAppointment = async () => {
-    const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
-    const startTime = new Date(`${dateStr}T${startTimeStr}`).toISOString();
-    const endTime = new Date(`${dateStr}T${endTimeStr}`).toISOString();
-  
-    // Combine title with type and units if they exist
-    const combinedTitle = extendedProps.units 
-      ? `${title} | ${extendedProps.type || ''} | ${extendedProps.units} Units`
-      : title;
-  
-    const firstEmployeeId = extendedProps.staff?.[0];
-    const secondEmployeeId = extendedProps.staff?.[1];
-    const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
-    const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
-  
-    let color;
-    if (firstEmployee && secondEmployee) {
-      color = `linear-gradient(to right, ${firstEmployee.color} 50%, ${secondEmployee.color} 50%)`;
-    } else if (firstEmployee) {
-      color = firstEmployee.color;
-    } else {
-      color = '#51484f'; // Default color
-    }
-  
     try {
+      const auth = getAuth(app);
       const user = auth.currentUser;
-      if (!user?.email) return;
+      if (!user || !user.email) {
+        console.error("User not authenticated or email missing");
+        return;
+      }
+
+      const { id, title, dateStr, startTimeStr, endTimeStr, extendedProps } = currentEvent;
+      const startTime = new Date(`${dateStr}T${startTimeStr}`).toISOString();
+      const endTime = new Date(`${dateStr}T${endTimeStr}`).toISOString();
+  
+      // Combine title with type and units if they exist
+      const combinedTitle = extendedProps.units 
+        ? `${title} | ${extendedProps.type || ''} | ${extendedProps.units} Units`
+        : title;
+  
+      const firstEmployeeId = extendedProps.staff?.[0];
+      const secondEmployeeId = extendedProps.staff?.[1];
+      const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
+      const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
+  
+      let color;
+      if (firstEmployee && secondEmployee) {
+        color = `linear-gradient(to right, ${firstEmployee.color} 50%, ${secondEmployee.color} 50%)`;
+      } else if (firstEmployee) {
+        color = firstEmployee.color;
+      } else {
+        color = '#51484f'; // Default color
+      }
   
       // Get company ID
       const userDocRef = doc(firestore, 'user', user.email);
@@ -908,6 +998,9 @@ const generateTimeSlots = (isWeekend: boolean): string[] => {
           await setDoc(appointmentRef, cleanAppointment);
         }
       }
+  
+      // Process reminders for this appointment
+      await processAppointmentReminders(cleanAppointment);
   
       // Update the appointments state with the normalized status
       setAppointments(prevAppointments =>
@@ -1056,86 +1149,96 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
   };
   
   const handleAddAppointment = async () => {
-    const firstEmployeeId = selectedEmployeeIds[0];
-    const secondEmployeeId = selectedEmployeeIds[1];
-    const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
-    const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
+    try {
+      const firstEmployeeId = selectedEmployeeIds[0];
+      const secondEmployeeId = selectedEmployeeIds[1];
+      const firstEmployee = employees.find(emp => emp.id === firstEmployeeId);
+      const secondEmployee = employees.find(emp => emp.id === secondEmployeeId);
 
-    let color;
-    if (firstEmployee && secondEmployee) {
-      color = `linear-gradient(to right, ${firstEmployee.color} 50%, ${secondEmployee.color} 50%)`;
-    } else if (firstEmployee) {
-      color = firstEmployee.color;
-    } else {
-      color = '#51484f'; // Default color
-    }
-  // Combine title and address
-  const combinedTitle = currentEvent.extendedProps.units 
-    ? `${currentEvent.title} | ${currentEvent.extendedProps.type} | ${currentEvent.extendedProps.units} Units`
-    : currentEvent.title;
-
-    const newEvent = {
-      title: combinedTitle,
-      startTime: new Date(`${currentEvent.dateStr}T${currentEvent.startTimeStr}`).toISOString(),
-      endTime: new Date(`${currentEvent.dateStr}T${currentEvent.endTimeStr}`).toISOString(),
-      address: currentEvent.extendedProps.address,
-      appointmentStatus: currentEvent.extendedProps.appointmentStatus,
-      staff: selectedEmployeeIds,
-      tags: currentEvent.extendedProps.tags || [],
-      color: color,
-      contacts: selectedContacts.map(contact => ({
-        id: contact.id,
-        name: contact.contactName,
-        session: contactSessions[contact.id] || getPackageSessions(currentEvent.extendedProps.package)
-      })),
-      packageId: currentEvent.extendedProps.package?.id || null,
-      minyak: currentEvent.extendedProps?.minyak || 0,
-      toll: currentEvent.extendedProps?.toll || 0,
-      details: currentEvent.extendedProps?.details || '',
-      meetLink: currentEvent.extendedProps?.meetLink || '',
-    };
-    const phoneRegex = /(?:\/|\\)?(\d{10,11})/;
-    const match = combinedTitle.match(phoneRegex);
-    let phoneNumber = match ? match[1] : '';
-    
-    // If number doesn't start with 6, add it
-    if (phoneNumber && !phoneNumber.startsWith('6')) {
-      phoneNumber = '6' + phoneNumber;
-    }
-
-    const newAppointment = await createAppointment(newEvent);
-    if (newAppointment) {
-      if (phoneNumber) {
-        try {
-          await scheduleMessages(
-            phoneNumber,
-            new Date(newAppointment.startTime)
-          );
-        } catch (error) {
-          console.error('Error scheduling reminder:', error);
-          toast.error('Appointment created but failed to schedule reminder');
-        }
+      let color;
+      if (firstEmployee && secondEmployee) {
+        color = `linear-gradient(to right, ${firstEmployee.color} 50%, ${secondEmployee.color} 50%)`;
+      } else if (firstEmployee) {
+        color = firstEmployee.color;
+      } else {
+        color = '#51484f'; // Default color
       }
-      // Update the calendar immediately
-      if (calendarRef.current) {
-        const calendarApi = (calendarRef.current as any).getApi();
-        calendarApi.addEvent({
-          id: newAppointment.id,
-          title: newAppointment.title,
-          start: new Date(newAppointment.startTime),
-          end: new Date(newAppointment.endTime),
-          backgroundColor: newAppointment.color,
-          borderColor: 'transparent',
-          extendedProps: {
-            appointmentStatus: newAppointment.appointmentStatus,
-            staff: newAppointment.staff,
-            tags: newAppointment.tags || [],
-            details: newAppointment.details || '',
-            meetLink: newAppointment.meetLink || '',
+    // Combine title and address
+    const combinedTitle = currentEvent.extendedProps.units 
+      ? `${currentEvent.title} | ${currentEvent.extendedProps.type} | ${currentEvent.extendedProps.units} Units`
+      : currentEvent.title;
+
+      const newEvent = {
+        title: combinedTitle,
+        startTime: new Date(`${currentEvent.dateStr}T${currentEvent.startTimeStr}`).toISOString(),
+        endTime: new Date(`${currentEvent.dateStr}T${currentEvent.endTimeStr}`).toISOString(),
+        address: currentEvent.extendedProps.address,
+        appointmentStatus: currentEvent.extendedProps.appointmentStatus,
+        staff: selectedEmployeeIds,
+        tags: currentEvent.extendedProps.tags || [],
+        color: color,
+        contacts: selectedContacts.map(contact => ({
+          id: contact.id,
+          name: contact.contactName,
+          session: contactSessions[contact.id] || getPackageSessions(currentEvent.extendedProps.package)
+        })),
+        packageId: currentEvent.extendedProps.package?.id || null,
+        minyak: currentEvent.extendedProps?.minyak || 0,
+        toll: currentEvent.extendedProps?.toll || 0,
+        details: currentEvent.extendedProps?.details || '',
+        meetLink: currentEvent.extendedProps?.meetLink || '',
+      };
+      const phoneRegex = /(?:\/|\\)?(\d{10,11})/;
+      const match = combinedTitle.match(phoneRegex);
+      let phoneNumber = match ? match[1] : '';
+      
+      // If number doesn't start with 6, add it
+      if (phoneNumber && !phoneNumber.startsWith('6')) {
+        phoneNumber = '6' + phoneNumber;
+      }
+
+      const newAppointment = await createAppointment(newEvent);
+      
+      if (newAppointment) {
+        if (phoneNumber) {
+          try {
+            await scheduleMessages(
+              phoneNumber,
+              new Date(newAppointment.startTime)
+            );
+          } catch (error) {
+            console.error('Error scheduling reminder:', error);
+            toast.error('Appointment created but failed to schedule reminder');
           }
-        });
+        }
+        
+        // Process reminders for this appointment
+        await processAppointmentReminders(newAppointment);
+        
+        // Update the calendar immediately
+        if (calendarRef.current) {
+          const calendarApi = (calendarRef.current as any).getApi();
+          calendarApi.addEvent({
+            id: newAppointment.id,
+            title: newAppointment.title,
+            start: new Date(newAppointment.startTime),
+            end: new Date(newAppointment.endTime),
+            backgroundColor: newAppointment.color,
+            borderColor: 'transparent',
+            extendedProps: {
+              appointmentStatus: newAppointment.appointmentStatus,
+              staff: newAppointment.staff,
+              tags: newAppointment.tags || [],
+              details: newAppointment.details || '',
+              meetLink: newAppointment.meetLink || '',
+            }
+          });
+        }
+        setAddModalOpen(false);
       }
-      setAddModalOpen(false);
+    } catch (error) {
+      console.error('Error adding appointment:', error);
+      toast.error('Failed to add appointment');
     }
   };
 
@@ -1194,12 +1297,6 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
   const handleEventDrop = async (eventDropInfo: any) => {
     const { event } = eventDropInfo;
   
-    
-    
-    
-    
-    
-  
     // Fetch the full appointment data to get the contacts array
     try {
       const user = auth.currentUser;
@@ -1226,15 +1323,21 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
         endTime: event.end.toISOString()
       };
   
-      
-  
       await setDoc(appointmentRef, updatedAppointment);
+
+      // Process reminders for this updated appointment
+      await processAppointmentReminders(updatedAppointment);
   
       setAppointments(appointments.map(appointment =>
         appointment.id === event.id ? updatedAppointment : appointment
       ));
+
+      toast.success('Appointment time updated successfully');
     } catch (error) {
       console.error('Error updating appointment:', error);
+      toast.error('Failed to update appointment time');
+      // Revert the drag if there was an error
+      eventDropInfo.revert();
     }
   };
   
@@ -1808,7 +1911,100 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
       `${appointment.meetLink ? `\n🎥 Join Meeting: ${appointment.meetLink}` : ''}`;
   };
 
-  
+  // Add this function to process reminders for appointments
+  const processAppointmentReminders = async (appointment: Appointment) => {
+    try {
+      const auth = getAuth(app);
+      const user = auth.currentUser;
+      if (!user?.email) return;
+
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      // Get reminder settings
+      const reminderSettingsRef = doc(firestore, `companies/${companyId}/config/reminders`);
+      const reminderSettingsSnapshot = await getDoc(reminderSettingsRef);
+
+      if (!reminderSettingsSnapshot.exists()) {
+        console.log('No reminder settings found');
+        return;
+      }
+
+      const settings = reminderSettingsSnapshot.data() as ReminderSettings;
+      
+      // Process each enabled reminder
+      for (const reminder of settings.reminders) {
+        if (!reminder.enabled) continue;
+
+        // Calculate the reminder time
+        const appointmentTime = new Date(appointment.startTime);
+        let reminderTime: Date;
+
+        if (reminder.type === 'before') {
+          // Calculate time before appointment
+          reminderTime = new Date(appointmentTime);
+          if (reminder.timeUnit === 'minutes') {
+            reminderTime.setMinutes(reminderTime.getMinutes() - reminder.time);
+          } else if (reminder.timeUnit === 'hours') {
+            reminderTime.setHours(reminderTime.getHours() - reminder.time);
+          } else if (reminder.timeUnit === 'days') {
+            reminderTime.setDate(reminderTime.getDate() - reminder.time);
+          }
+        } else {
+          // Calculate time after appointment
+          reminderTime = new Date(appointmentTime);
+          if (reminder.timeUnit === 'minutes') {
+            reminderTime.setMinutes(reminderTime.getMinutes() + reminder.time);
+          } else if (reminder.timeUnit === 'hours') {
+            reminderTime.setHours(reminderTime.getHours() + reminder.time);
+          } else if (reminder.timeUnit === 'days') {
+            reminderTime.setDate(reminderTime.getDate() + reminder.time);
+          }
+        }
+
+        // Skip if reminder time is in the past
+        if (reminderTime < new Date()) {
+          console.log('Reminder time is in the past, skipping');
+          continue;
+        }
+
+        // Schedule the reminder
+        const scheduledMessageData = {
+          appointment: appointment,
+          reminderConfig: reminder,
+          scheduledTime: reminderTime,
+          processed: false
+        };
+
+        // Store the scheduled reminder in Firestore
+        const reminderRef = doc(collection(firestore, `companies/${companyId}/scheduledReminders`));
+        await setDoc(reminderRef, scheduledMessageData);
+
+        // If the reminder is due soon (within the next hour), send it immediately
+        const oneHourFromNow = new Date();
+        oneHourFromNow.setHours(oneHourFromNow.getHours() + 1);
+        
+        if (reminderTime <= oneHourFromNow) {
+          // Send the reminder immediately
+          await sendWhatsAppNotification(
+            appointment.contacts,
+            appointment,
+            companyId,
+            reminder
+          );
+          
+          // Mark as processed
+          await updateDoc(reminderRef, { processed: true });
+        }
+      }
+    } catch (error) {
+      console.error('Error processing appointment reminders:', error);
+    }
+  };
 
   // Add this JSX somewhere in your return statement, perhaps in the settings section or as a new modal
   const renderCalendarConfigModal = () => (
@@ -2006,6 +2202,91 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
 
                 {reminder.enabled && (
                   <div className="space-y-4">
+                    {/* Recipient Type Selection */}
+                    <div>
+                      <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                        Send Reminder To
+                      </label>
+                      <div className="flex space-x-4">
+                        <label className="inline-flex items-center">
+                          <input
+                            type="radio"
+                            className="form-radio text-primary"
+                            name={`recipient-type-${index}`}
+                            value="contacts"
+                            checked={!reminder.recipientType || reminder.recipientType === 'contacts'}
+                            onChange={() => {
+                              const newReminders = [...(reminderSettings?.reminders || [])];
+                              newReminders[index].recipientType = 'contacts';
+                              setReminderSettings({ reminders: newReminders });
+                            }}
+                          />
+                          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Appointment Contacts</span>
+                        </label>
+                        <label className="inline-flex items-center">
+                          <input
+                            type="radio"
+                            className="form-radio text-primary"
+                            name={`recipient-type-${index}`}
+                            value="employees"
+                            checked={reminder.recipientType === 'employees'}
+                            onChange={() => {
+                              const newReminders = [...(reminderSettings?.reminders || [])];
+                              newReminders[index].recipientType = 'employees';
+                              if (!newReminders[index].selectedEmployees) {
+                                newReminders[index].selectedEmployees = [];
+                              }
+                              setReminderSettings({ reminders: newReminders });
+                            }}
+                          />
+                          <span className="ml-2 text-sm text-gray-700 dark:text-gray-300">Specific Employees</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {/* Employee Selection (only shown when recipientType is 'employees') */}
+                    {reminder.recipientType === 'employees' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
+                          Select Employees
+                        </label>
+                        <div className="max-h-40 overflow-y-auto border rounded-md p-2 bg-white dark:bg-gray-700">
+                          {employees.map((employee) => (
+                            <div key={employee.id} className="flex items-center space-x-2 mb-2">
+                              <input
+                                type="checkbox"
+                                checked={reminder.selectedEmployees?.includes(employee.id) || false}
+                                onChange={(e) => {
+                                  const newReminders = [...(reminderSettings?.reminders || [])];
+                                  if (!newReminders[index].selectedEmployees) {
+                                    newReminders[index].selectedEmployees = [];
+                                  }
+                                  
+                                  if (e.target.checked) {
+                                    newReminders[index].selectedEmployees = [
+                                      ...(newReminders[index].selectedEmployees || []),
+                                      employee.id
+                                    ];
+                                  } else {
+                                    newReminders[index].selectedEmployees = newReminders[index].selectedEmployees?.filter(
+                                      id => id !== employee.id
+                                    );
+                                  }
+                                  
+                                  setReminderSettings({ reminders: newReminders });
+                                }}
+                                className="rounded text-indigo-600 focus:ring-indigo-500"
+                              />
+                              <span className="text-gray-900 dark:text-white">{employee.name}</span>
+                            </div>
+                          ))}
+                        </div>
+                        {(!reminder.selectedEmployees || reminder.selectedEmployees.length === 0) && (
+                          <p className="mt-1 text-xs text-red-500">Please select at least one employee</p>
+                        )}
+                      </div>
+                    )}
+
                     <div className="grid grid-cols-3 gap-4">
                       <div>
                         <label className="block text-sm font-medium text-gray-600 dark:text-gray-400 mb-1">
@@ -2095,7 +2376,8 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
                   time: 24,
                   timeUnit: 'hours' as const,
                   type: 'before' as const,
-                  message: "You have an upcoming appointment {time} {unit} {when}."
+                  message: "You have an upcoming appointment {time} {unit} {when}.",
+                  recipientType: 'contacts' as const
                 }];
                 setReminderSettings({ reminders: newReminders });
               }}

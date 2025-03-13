@@ -7,8 +7,8 @@ interface ImageResponseFormProps {
     selectedImageUrls: string[];
     onImageSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onImageRemove: (index: number) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
 }
 
 const ImageResponseForm: React.FC<ImageResponseFormProps> = ({ 

@@ -14,8 +14,8 @@ interface AssignResponseFormProps {
     employees: Employee[];
     selectedEmployees: string[];
     onEmployeeSelection: (employeeId: string) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
 }
 
 const AssignResponseForm: React.FC<AssignResponseFormProps> = ({ 

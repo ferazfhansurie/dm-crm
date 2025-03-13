@@ -57,7 +57,7 @@ function AIResponses() {
     const [selectedVideos, setSelectedVideos] = useState<File[]>([]);
     const [selectedVideoUrls, setSelectedVideoUrls] = useState<string[]>([]);
 
-    const [keywordSource, setKeywordSource] = useState<'user' | 'bot'>('user');
+    const [keywordSource, setKeywordSource] = useState<'user' | 'bot' | 'own'>('user');
 
     const [tagActionMode, setTagActionMode] = useState<'add' | 'delete'>('add');
 

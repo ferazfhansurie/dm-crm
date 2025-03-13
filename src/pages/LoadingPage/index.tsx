@@ -152,7 +152,6 @@ function LoadingPage() {
         ?  {
           'Authorization': `Bearer ${await user?.getIdToken()}`,
           'Content-Type': 'application/json',
-          'ngrok-skip-browser-warning': 'true',  // Add this for ngrok
         }
         : {
             'Authorization': `Bearer ${await user?.getIdToken()}`,

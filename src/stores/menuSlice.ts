@@ -8,6 +8,7 @@ import simpleMenu2 from "@/main/simple-menu2";
 import simpleMenu3 from "@/main/simple-menu3";
 import simpleMenuJuta from "@/main/simple-menuJuta";
 import simpleMenuRole2 from "@/main/simple-menu-role-2";
+import simpleMenuRole3 from "@/main/simple-menu-role-3";
 import topMenu from "@/main/top-menu";
 import { useConfig } from '../config';
 
@@ -56,6 +57,8 @@ export const selectMenu = (layout: Themes["layout"]) => (state: RootState) => {
           return simpleMenu;
         case "2":
           return simpleMenuRole2;
+        case "3":
+          return simpleMenuRole3;
         default:
           return simpleMenu;
       }

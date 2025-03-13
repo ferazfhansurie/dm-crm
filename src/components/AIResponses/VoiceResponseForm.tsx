@@ -7,8 +7,8 @@ interface VoiceResponseFormProps {
     selectedAudioUrls: string[];
     onAudioSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onAudioRemove: (index: number) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
 }
 
 const VoiceResponseForm: React.FC<VoiceResponseFormProps> = ({

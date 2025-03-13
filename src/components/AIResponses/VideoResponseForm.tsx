@@ -7,8 +7,8 @@ interface VideoResponseFormProps {
     selectedVideoUrls: string[];
     onVideoSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onVideoRemove: (index: number) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
 }
 
 const VideoResponseForm: React.FC<VideoResponseFormProps> = ({

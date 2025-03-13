@@ -63,6 +63,8 @@ interface FollowUpMessage {
     useScheduledTime: boolean;
     scheduledTime: string;
     templateId?: string;
+    addTags?: string[];
+    removeTags?: string[];
 }
 
 interface TimeInterval {
@@ -261,6 +263,8 @@ const FollowUpsPage: React.FC = () => {
         useScheduledTime: boolean;
         scheduledTime: string;
         templateId?: string;
+        addTags: string[];
+        removeTags: string[];
     } & Partial<Omit<FollowUpMessage, 'id' | 'createdAt'>>;
 
     // Update initial state
@@ -280,7 +284,9 @@ const FollowUpsPage: React.FC = () => {
         },
         useScheduledTime: false,
         scheduledTime: '',
-        templateId: undefined  // Add this (optional)
+        templateId: undefined,  // Add this (optional)
+        addTags: [],
+        removeTags: []
     });
 
     // Firebase setup
@@ -573,7 +579,9 @@ const FollowUpsPage: React.FC = () => {
                     numbers: editingMessage.specificNumbers?.numbers || []
                 },
                 useScheduledTime: editingMessage.useScheduledTime || false,
-                scheduledTime: editingMessage.scheduledTime || ''
+                scheduledTime: editingMessage.scheduledTime || '',
+                addTags: editingMessage.addTags || [],
+                removeTags: editingMessage.removeTags || []
             };
 
             // Handle document upload if a new document is selected
@@ -767,7 +775,9 @@ const FollowUpsPage: React.FC = () => {
                     numbers: newMessage.specificNumbers.numbers // Make sure this array is included
                 },
                 useScheduledTime: newMessage.useScheduledTime,
-                scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : null
+                scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : null,
+                addTags: newMessage.addTags || [],
+                removeTags: newMessage.removeTags || []
             };
 
             const messagesRef = collection(firestore, 
@@ -796,7 +806,9 @@ const FollowUpsPage: React.FC = () => {
                     numbers: []
                 },
                 useScheduledTime: false,
-                scheduledTime: ''
+                scheduledTime: '',
+                addTags: [],
+                removeTags: []
             });
             setNewNumber('');
             setSelectedDocument(null);
@@ -1107,6 +1119,61 @@ const FollowUpsPage: React.FC = () => {
                                     )}
                                 </div>
 
+                                {/* Tag Management */}
+                                <div className="mb-4 border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                                    <h4 className="text-md font-semibold mb-3">Tag Management</h4>
+                                    
+                                    {/* Add Tags */}
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Add Tags
+                                        </label>
+                                        <Select
+                                            isMulti
+                                            options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                            value={(newMessage.addTags || []).map(tag => ({ value: tag, label: tag }))}
+                                            onChange={(selected) => {
+                                                const selectedTags = selected ? selected.map(option => option.value) : [];
+                                                setNewMessage({
+                                                    ...newMessage,
+                                                    addTags: selectedTags
+                                                });
+                                            }}
+                                            placeholder="Select tags to add..."
+                                            className="basic-multi-select"
+                                            classNamePrefix="select"
+                                        />
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            These tags will be added to the contact when this message is sent
+                                        </p>
+                                    </div>
+                                    
+                                    {/* Remove Tags */}
+                                    <div className="mb-3">
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Remove Tags
+                                        </label>
+                                        <Select
+                                            isMulti
+                                            options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                            value={(newMessage.removeTags || []).map(tag => ({ value: tag, label: tag }))}
+                                            onChange={(selected) => {
+                                                const selectedTags = selected ? selected.map(option => option.value) : [];
+                                                setNewMessage({
+                                                    ...newMessage,
+                                                    removeTags: selectedTags
+                                                });
+                                            }}
+                                            placeholder="Select tags to remove..."
+                                            className="basic-multi-select"
+                                            classNamePrefix="select"
+                                        />
+                                        <p className="mt-1 text-xs text-gray-500">
+                                            These tags will be removed from the contact when this message is sent
+                                        </p>
+                                    </div>
+                                </div>
+
                                 {/* File Attachments */}
                                 <div className="grid grid-cols-2 gap-4 mb-4">
                                     <div>
@@ -1177,6 +1244,35 @@ const FollowUpsPage: React.FC = () => {
                                                 : `After: ${newMessage.delayAfter.value} ${newMessage.delayAfter.unit}`
                                         }
                                     />
+                                    
+                                    {/* Display Tags */}
+                                    <div className="mt-3 space-y-2">
+                                        {newMessage.addTags && newMessage.addTags.length > 0 && (
+                                            <div>
+                                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to add:</span>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {newMessage.addTags.map((tag, index) => (
+                                                        <span key={index} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                                            +{tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                        
+                                        {newMessage.removeTags && newMessage.removeTags.length > 0 && (
+                                            <div>
+                                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to remove:</span>
+                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                    {newMessage.removeTags.map((tag, index) => (
+                                                        <span key={index} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                                                            -{tag}
+                                                        </span>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Action Buttons */}
@@ -1391,6 +1487,65 @@ const FollowUpsPage: React.FC = () => {
                                                                         )}
                                                                     </div>
 
+                                                                    {/* Tag Management */}
+                                                                    <div className="space-y-2 mb-4 border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
+                                                                        <h4 className="text-md font-semibold mb-3">Tag Management</h4>
+                                                                        
+                                                                        {/* Add Tags */}
+                                                                        <div className="mb-3">
+                                                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                                                Add Tags
+                                                                            </label>
+                                                                            <Select
+                                                                                isMulti
+                                                                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                                                                value={(editingMessage?.addTags || []).map(tag => ({ value: tag, label: tag }))}
+                                                                                onChange={(selected) => {
+                                                                                    if (editingMessage) {
+                                                                                        const selectedTags = selected ? selected.map(option => option.value) : [];
+                                                                                        setEditingMessage({
+                                                                                            ...editingMessage,
+                                                                                            addTags: selectedTags
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                                placeholder="Select tags to add..."
+                                                                                className="basic-multi-select"
+                                                                                classNamePrefix="select"
+                                                                            />
+                                                                            <p className="mt-1 text-xs text-gray-500">
+                                                                                These tags will be added to the contact when this message is sent
+                                                                            </p>
+                                                                        </div>
+                                                                        
+                                                                        {/* Remove Tags */}
+                                                                        <div className="mb-3">
+                                                                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                                                                Remove Tags
+                                                                            </label>
+                                                                            <Select
+                                                                                isMulti
+                                                                                options={tags.map(tag => ({ value: tag.name, label: tag.name }))}
+                                                                                value={(editingMessage?.removeTags || []).map(tag => ({ value: tag, label: tag }))}
+                                                                                onChange={(selected) => {
+                                                                                    if (editingMessage) {
+                                                                                        const selectedTags = selected ? selected.map(option => option.value) : [];
+                                                                                        setEditingMessage({
+                                                                                            ...editingMessage,
+                                                                                            removeTags: selectedTags
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                                placeholder="Select tags to remove..."
+                                                                                className="basic-multi-select"
+                                                                                classNamePrefix="select"
+                                                                            />
+                                                                            <p className="mt-1 text-xs text-gray-500">
+                                                                                These tags will be removed from the contact when this message is sent
+                                                                            </p>
+                                                                        </div>
+                                                                    </div>
+
                                                                     {/* Preview Section */}
                                                                     <div className="bg-white dark:bg-gray-700 p-4 rounded-lg">
                                                                         <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Message Preview</h5>
@@ -1406,6 +1561,35 @@ const FollowUpsPage: React.FC = () => {
                                                                                     : `After: ${editingMessage?.delayAfter?.value} ${editingMessage?.delayAfter?.unit}`
                                                                             }
                                                                         />
+                                                                        
+                                                                        {/* Display Tags */}
+                                                                        <div className="mt-3 space-y-2">
+                                                                            {editingMessage?.addTags && editingMessage.addTags.length > 0 && (
+                                                                                <div>
+                                                                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to add:</span>
+                                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                                        {editingMessage.addTags.map((tag, index) => (
+                                                                                            <span key={index} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                                                                                +{tag}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                            
+                                                                            {editingMessage?.removeTags && editingMessage.removeTags.length > 0 && (
+                                                                                <div>
+                                                                                    <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to remove:</span>
+                                                                                    <div className="flex flex-wrap gap-1 mt-1">
+                                                                                        {editingMessage.removeTags.map((tag, index) => (
+                                                                                            <span key={index} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                                                                                                -{tag}
+                                                                                            </span>
+                                                                                        ))}
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
                                                                     </div>
 
                                                                     {/* Action Buttons */}
@@ -1444,6 +1628,35 @@ const FollowUpsPage: React.FC = () => {
                                                                                 : `After: ${message.delayAfter?.value} ${message.delayAfter?.unit}`
                                                                         }
                                                                     />
+                                                                    
+                                                                    {/* Display Tags */}
+                                                                    <div className="mt-3 space-y-2">
+                                                                        {message.addTags && message.addTags.length > 0 && (
+                                                                            <div>
+                                                                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to add:</span>
+                                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                                    {message.addTags.map((tag, index) => (
+                                                                                        <span key={index} className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">
+                                                                                            +{tag}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                        
+                                                                        {message.removeTags && message.removeTags.length > 0 && (
+                                                                            <div>
+                                                                                <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Tags to remove:</span>
+                                                                                <div className="flex flex-wrap gap-1 mt-1">
+                                                                                    {message.removeTags.map((tag, index) => (
+                                                                                        <span key={index} className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded-full">
+                                                                                            -{tag}
+                                                                                        </span>
+                                                                                    ))}
+                                                                                </div>
+                                                                            </div>
+                                                                        )}
+                                                                    </div>
                                                                 </div>
                                                             )}
                                                         </div>

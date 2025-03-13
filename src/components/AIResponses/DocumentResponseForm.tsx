@@ -7,8 +7,8 @@ interface DocumentResponseFormProps {
     selectedDocUrls: string[];
     onDocumentSelect: (e: React.ChangeEvent<HTMLInputElement>) => void;
     onDocumentRemove: (index: number) => void;
-    keywordSource: 'user' | 'bot';
-    onKeywordSourceChange: (source: 'user' | 'bot') => void;
+    keywordSource: 'user' | 'bot' | 'own';
+    onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
 }
 
 const DocumentResponseForm: React.FC<DocumentResponseFormProps> = ({

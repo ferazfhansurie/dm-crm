@@ -6378,50 +6378,21 @@ const toggleBot = async () => {
     try {
       setIsGeneratingResponse(true);
   
-      // Prepare the context from the last 10 messages with support for different message types
-      const context = messages.slice(0, 10).reverse().map(msg => {
-        let messageContent = "";
-        
-        // Handle different message types
-        if (msg.text && msg.text.body) {
-          // Text message
-          messageContent = msg.text.body;
-        } else if (msg.voice || msg.audio || msg.ptt) {
-          // Voice/audio message
-          const caption = msg.voice?.caption || msg.audio?.caption || msg.ptt?.caption;
-          messageContent = caption ? `[Voice Message: ${caption}]` : "[Voice Message]";
-        } else if (msg.image) {
-          // Image message
-          messageContent = msg.image.caption ? `[Image: ${msg.image.caption}]` : "[Image]";
-        } else if (msg.document) {
-          // Document message
-          messageContent = msg.document.caption ? 
-            `[Document: ${msg.document.file_name || 'file'} - ${msg.document.caption}]` : 
-            `[Document: ${msg.document.file_name || 'file'}]`;
-        } else if (msg.video) {
-          // Video message
-          messageContent = msg.video.caption ? `[Video: ${msg.video.caption}]` : "[Video]";
-        } else if (msg.sticker) {
-          // Sticker message
-          messageContent = "[Sticker]";
-        } else if (msg.location) {
-          // Location message
-          messageContent = `[Location: ${msg.location.name || 'Unknown location'}]`;
-        } else {
-          // Other message types
-          messageContent = "[Message]";
-        }
-        
-        return `${msg.from_me ? "Me" : "User"}: ${messageContent}`;
-      }).join("\n");
+        // Prepare the context from recent messages
+        // Prepare the context from all messages in reverse order
+        // Prepare the context from the last 20 messages in reverse order
+        const context = messages.slice(0, 10).reverse().map(msg => 
+          `${msg.from_me ? "Me" : "User"}: ${msg.text?.body || ""}`
+        ).join("\n");
+
 
       const prompt = `
-Your goal is to act like you are Me, and generate a response to the last message in the conversation, if the last message is from "Me", continue or add to that message appropriately, maintaining the same language and style. Note that "Me" indicates messages I sent, and "User" indicates messages from the person I'm talking to.
+        Your goal is to act like you are Me, and generate a response to the last message in the conversation, if the last message is from "Me", continue or add to that message appropriately, maintaining the same language and style. Note that "Me" indicates messages I sent, and "User" indicates messages from the person I'm talking to.
 
-Based on this conversation:
-${context}
+        Based on this conversation:
+        ${context}
 
-:`;
+        :`;
 
       // Use the sendMessageToAssistant function
       const aiResponse = await sendMessageToAssistant(prompt);

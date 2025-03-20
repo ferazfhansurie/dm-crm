@@ -3290,6 +3290,9 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     setNewMessage('');
     setReplyToMessage(null);
   
+    // Get the current phoneIndex the user is using
+    const currentPhoneIndex = userData?.phone;
+    
     // Create temporary message object for immediate display
     const tempMessage = {
       id: `temp_${Date.now()}`,
@@ -3297,7 +3300,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
       text: { body: messageText },
       createdAt: new Date().toISOString(),
       type: 'text',
-      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      phoneIndex: currentPhoneIndex,
       chat_id: selectedChatId,
       from_name: userData?.name || '',
       timestamp: Math.floor(Date.now() / 1000)
@@ -3333,7 +3336,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
   
       const dataUser = docUserSnapshot.data();
       companyId = dataUser.companyId;
-      const phoneIndex = selectedContact?.phoneIndex ?? 0;
+      const phoneIndex = currentPhoneIndex;
       const userName = dataUser.name || dataUser.email || '';
   
       const docRef = doc(firestore, 'companies', companyId);
@@ -3352,7 +3355,7 @@ async function fetchMessagesBackground(selectedChatId: string, whapiToken: strin
     const requestBody = {
       message: messageText,
       quotedMessageId: replyToMessage?.id || null,
-      phoneIndex: selectedContact?.phoneIndex ?? 0,
+      phoneIndex: phoneIndex,
       userName: userData?.name || ''
     };
 

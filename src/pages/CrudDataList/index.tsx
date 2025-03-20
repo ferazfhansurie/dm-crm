@@ -3921,13 +3921,27 @@ const resetForm = () => {
     // Remove all non-numeric characters except '+'
     let cleaned = phone.replace(/[^0-9+]/g, '');
     
-    // If already starts with +, validate length and return
+    // If already starts with +
     if (cleaned.startsWith('+')) {
+      // Check if there's a country code after the +
+      if (cleaned.charAt(1) === '0') {
+        // If it starts with +0, add 6 after the + and before the 0
+        cleaned = `+6${cleaned.substring(1)}`;
+      } else if (!/^\+[1-9]/.test(cleaned)) {
+        // If there's no digit after +, add 6
+        cleaned = `+6${cleaned.substring(1)}`;
+      }
       return cleaned.length >= 10 ? cleaned : null;
     }
     
-    // Add + prefix if missing
-    return cleaned.length >= 10 ? `+${cleaned}` : null;
+    // For numbers without + prefix
+    if (cleaned.startsWith('0')) {
+      // If it starts with 0, add +6 before the number
+      return cleaned.length >= 9 ? `+6${cleaned}` : null;
+    }
+    
+    // Add +6 prefix for Malaysian numbers if missing + prefix
+    return cleaned.length >= 9 ? `+6${cleaned}` : null;
   };
   
   const parseCSV = async (): Promise<Array<any>> => {

@@ -40,6 +40,16 @@ function AIResponses() {
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     
+    console.log('[AIResponses] Component mounted');
+    console.log('[AIResponses] Current state:', {
+        responseType,
+        responsesCount: responses.length,
+        availableTagsCount: availableTags.length,
+        selectedTagsCount: selectedTags.length,
+        isEditing,
+        searchQuery
+    });
+
     const [newResponse, setNewResponse] = useState({
         keywords: [''],
         description: '',
@@ -67,6 +77,7 @@ function AIResponses() {
     const storage = getStorage();
 
     useEffect(() => {
+        console.log('[AIResponses] useEffect triggered with responseType:', responseType);
         fetchResponses();
         if (responseType === 'Tag') {
             fetchTags();
@@ -77,20 +88,30 @@ function AIResponses() {
 
     const fetchResponses = async () => {
         try {
+            console.log('[AIResponses] Fetching responses for type:', responseType);
             const user = auth.currentUser;
-            if (!user) return;
+            if (!user) {
+                console.log('[AIResponses] No user found, skipping fetch');
+                return;
+            }
 
             const userRef = doc(firestore, 'user', user.email!);
             const userSnapshot = await getDoc(userRef);
-            if (!userSnapshot.exists()) return;
+            if (!userSnapshot.exists()) {
+                console.log('[AIResponses] No user document found, skipping fetch');
+                return;
+            }
             const companyId = userSnapshot.data().companyId;
 
             const responsesRef = collection(firestore, `companies/${companyId}/ai${responseType}Responses`);
             const responsesQuery = query(responsesRef, orderBy('createdAt', 'desc'));
             const responsesSnapshot = await getDocs(responsesQuery);
 
+            console.log(`[AIResponses] Fetched ${responsesSnapshot.size} responses`);
+
             const fetchedResponses: AIResponse[] = responsesSnapshot.docs.map(doc => {
                 const data = doc.data();
+                console.log(`[AIResponses] Processing response ${doc.id}:`, data);
                 const baseResponse = {
                     id: doc.id,
                     keywords: Array.isArray(data.keywords) ? data.keywords : 
@@ -142,8 +163,9 @@ function AIResponses() {
             });
 
             setResponses(fetchedResponses);
+            console.log('[AIResponses] Successfully set responses:', fetchedResponses.length);
         } catch (error) {
-            console.error('Error fetching responses:', error);
+            console.error('[AIResponses] Error fetching responses:', error);
             toast.error('Error fetching responses');
         }
     };
@@ -234,8 +256,16 @@ function AIResponses() {
     };
 
     const addResponse = async () => {
+        console.log('[AIResponses] Adding new response:', {
+            responseType,
+            keywords: newResponse.keywords,
+            description: newResponse.description,
+            status: newResponse.status
+        });
+
         const validKeywords = newResponse.keywords.filter(k => k.trim() !== '');
         if (validKeywords.length === 0) {
+            console.log('[AIResponses] No valid keywords provided');
             toast.error('Please provide at least one keyword');
             return;
         }
@@ -354,22 +384,25 @@ function AIResponses() {
             setSelectedVideos([]);
             setSelectedVideoUrls([]);
             
+            console.log('[AIResponses] Successfully added response');
             fetchResponses();
             toast.success('Response added successfully');
         } catch (error) {
-            console.error('Error adding response:', error);
+            console.error('[AIResponses] Error adding response:', error);
             toast.error('Error adding response');
         }
     };
 
     const handleImageSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
+        console.log('[AIResponses] Selected images:', files.map(f => f.name));
         const urls = files.map(file => URL.createObjectURL(file));
         setSelectedImages(files);
         setSelectedImageUrls(urls);
     };
 
     const handleImageRemove = (index: number) => {
+        console.log('[AIResponses] Removing image at index:', index);
         URL.revokeObjectURL(selectedImageUrls[index]);
         setSelectedImages(prev => prev.filter((_, i) => i !== index));
         setSelectedImageUrls(prev => prev.filter((_, i) => i !== index));
@@ -441,36 +474,53 @@ function AIResponses() {
     }, [selectedImageUrls, selectedAudioUrls, selectedDocUrls, selectedVideoUrls]);
 
     const deleteResponse = async (id: string) => {
+        console.log('[AIResponses] Deleting response:', id);
         try {
             const user = auth.currentUser;
-            if (!user) return;
+            if (!user) {
+                console.log('[AIResponses] No user found, skipping delete');
+                return;
+            }
 
             const userRef = doc(firestore, 'user', user.email!);
             const userSnapshot = await getDoc(userRef);
-            if (!userSnapshot.exists()) return;
+            if (!userSnapshot.exists()) {
+                console.log('[AIResponses] No user document found, skipping delete');
+                return;
+            }
             const companyId = userSnapshot.data().companyId;
 
             await deleteDoc(doc(firestore, `companies/${companyId}/ai${responseType}Responses`, id));
+            console.log('[AIResponses] Successfully deleted response');
             fetchResponses();
             toast.success('Response deleted successfully');
         } catch (error) {
-            console.error('Error deleting response:', error);
+            console.error('[AIResponses] Error deleting response:', error);
             toast.error('Error deleting response');
         }
     };
 
     const updateResponse = async (id: string) => {
+        console.log('[AIResponses] Updating response:', id);
         try {
             const user = auth.currentUser;
-            if (!user) return;
+            if (!user) {
+                console.log('[AIResponses] No user found, skipping update');
+                return;
+            }
+
+            const response = responses.find(r => r.id === id);
+            if (!response) {
+                console.log('[AIResponses] Response not found:', id);
+                return;
+            }
+
+            console.log('[AIResponses] Current response data:', response);
 
             const userRef = doc(firestore, 'user', user.email!);
             const userSnapshot = await getDoc(userRef);
             if (!userSnapshot.exists()) return;
             const companyId = userSnapshot.data().companyId;
-
-            const response = responses.find(r => r.id === id);
-            if (!response) return;
 
             const responseRef = doc(firestore, `companies/${companyId}/ai${responseType}Responses`, id);
             
@@ -549,12 +599,13 @@ function AIResponses() {
             }
 
             await updateDoc(responseRef, updatedData);
+            console.log('[AIResponses] Successfully updated response');
             setIsEditing(null);
             resetForm();
             fetchResponses();
             toast.success('Response updated successfully');
         } catch (error) {
-            console.error('Error updating response:', error);
+            console.error('[AIResponses] Error updating response:', error);
             toast.error('Error updating response');
         }
     };
@@ -587,8 +638,15 @@ function AIResponses() {
         )
     );
 
+    console.log('[AIResponses] Filtered responses:', {
+        total: responses.length,
+        filtered: filteredResponses.length,
+        searchQuery
+    });
+
     // When starting to edit, set the selected items based on the response type
     const startEditing = (response: AIResponse) => {
+        console.log('[AIResponses] Starting edit for response:', response.id);
         setIsEditing(response.id);
         setKeywordSource(response.keywordSource || 'user');
         
@@ -596,6 +654,7 @@ function AIResponses() {
         switch (response.type) {
             case 'Tag':
                 const tagResponse = response as AITagResponse;
+                console.log('[AIResponses] Setting selected tags:', tagResponse.tags);
                 const selectedTagIds = tagResponse.tags
                     .map(tagName => availableTags.find(t => t.name === tagName)?.id)
                     .filter((id): id is string => id !== undefined);

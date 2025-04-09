@@ -178,24 +178,6 @@ function SettingsPage() {
             </Button>
           </Link>
           
-          <Link to="/a-i-responses">
-            <Button variant="primary" className="shadow-md">
-              AI Responses
-            </Button>
-          </Link>
-          
-          <Link to="/a-i-generative-responses">
-            <Button variant="primary" className="shadow-md">
-              AI Generative Responses
-            </Button>
-          </Link>
-          
-          <Link to="/follow-ups-select">
-            <Button variant="primary" className="shadow-md">
-              Follow Ups
-            </Button>
-          </Link>
-          
           {companyId === "0123" && (
             <Link to="/storage-pricing">
               <Button variant="primary" className="shadow-md">
@@ -203,50 +185,6 @@ function SettingsPage() {
               </Button>
             </Link>
           )}
-        </div>
-
-        {/* AI Settings Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
-          <h2 className="text-xl font-semibold mb-6">AI Settings</h2>
-          
-          <div className="space-y-6">
-            <div>
-              <label className="flex items-center space-x-2 mb-4">
-                <input
-                  type="checkbox"
-                  checked={aiAutoResponse}
-                  onChange={(e) => setAiAutoResponse(e.target.checked)}
-                  className="form-checkbox"
-                />
-                <span>Enable AI Auto-Response for New Contacts</span>
-              </label>
-            </div>
-
-            <div>
-              <label className="block mb-2">Response Delay (seconds)</label>
-              <input
-                type="number"
-                min="0"
-                max="300"
-                value={aiDelay}
-                onChange={(e) => setAiDelay(Number(e.target.value))}
-                className="w-full px-3 py-2 border rounded dark:bg-gray-700 dark:border-gray-600"
-              />
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Set how long the AI should wait before responding (0-300 seconds)
-              </p>
-            </div>
-
-            <div>
-              <Button
-                variant="primary"
-                onClick={handleSaveAiSettings}
-                className="shadow-md"
-              >
-                Save AI Settings
-              </Button>
-            </div>
-          </div>
         </div>
 
         {/* Daily Report Settings Section */}

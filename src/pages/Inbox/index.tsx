@@ -111,23 +111,29 @@ const MessageList: React.FC<MessageListProps> = ({ messages, onSendMessage, assi
 
       <div className="flex-1 overflow-y-auto p-4 dark:bg-gray-900">
         {messages.slice().reverse().map((message, index) => (
-          <div
-            className={`p-2 mb-2 rounded ${message.from_me ? myMessageClass : otherMessageClass}`}
-            key={index}
-            style={{
-              maxWidth: '70%',
-              width: `${message.type === 'image' || message.type === 'document' ? '350' : Math.min((message.text?.length || 0) * 10, 350)}px`,
-              minWidth: '75px'
-            }}
-          >
-            {message.type === 'text' && (
-              <div className="whitespace-pre-wrap break-words">
-                {message.text}
+          <div key={index}>
+            {message.text.split('||').map((splitText, splitIndex) => (
+              <div
+                key={`${index}-${splitIndex}`}
+                className={`p-2 mb-2 rounded ${message.from_me ? myMessageClass : otherMessageClass}`}
+                style={{
+                  maxWidth: '70%',
+                  width: `${message.type === 'image' || message.type === 'document' ? '350' : Math.min((splitText.trim().length || 0) * 10, 350)}px`,
+                  minWidth: '75px'
+                }}
+              >
+                {message.type === 'text' && (
+                  <div className="whitespace-pre-wrap break-words">
+                    {splitText.trim()}
+                  </div>
+                )}
+                {splitIndex === message.text.split('||').length - 1 && (
+                  <div className="message-timestamp text-xs text-gray-500 dark:text-gray-300 mt-1">
+                    {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </div>
+                )}
               </div>
-            )}
-            <div className="message-timestamp text-xs text-gray-500 dark:text-gray-300 mt-1">
-              {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-            </div>
+            ))}
           </div>
         ))}
       </div>
@@ -187,6 +193,9 @@ const Main: React.FC = () => {
   const [templates, setTemplates] = useState<InstructionTemplate[]>([]);
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [isFullscreenModalOpen, setIsFullscreenModalOpen] = useState(false);
+  const [isToolsCollapsed, setIsToolsCollapsed] = useState(false);
+  const [aiAutoResponse, setAiAutoResponse] = useState<boolean>(false);
+  const [aiDelay, setAiDelay] = useState<number>(0);
 
   useEffect(() => {
     fetchCompanyId();
@@ -224,6 +233,12 @@ const Main: React.FC = () => {
   useEffect(() => {
     if (companyId) {
       fetchTemplates();
+    }
+  }, [companyId]);
+
+  useEffect(() => {
+    if (companyId) {
+      fetchAiSettings();
     }
   }, [companyId]);
 
@@ -768,19 +783,19 @@ const Main: React.FC = () => {
         <div className="flex gap-2">
           <button
             onClick={saveTemplate}
-            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-md"
+            className="px-4 py-2 bg-white dark:bg-gray-700 text-green-600 dark:text-green-300 border border-green-200 dark:border-green-700 rounded-lg hover:bg-green-50 dark:hover:bg-green-900/50 shadow-sm active:scale-95 transition-all duration-200 flex items-center gap-2"
             disabled={userRole === "3"}
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path d="M7.707 10.293a1 1 0 10-1.414 1.414l3 3a1 1 0 001.414 0l3-3a1 1 0 00-1.414-1.414L11 11.586V6h-2v5.586l-1.293-1.293z" />
             </svg>
             Save Current
           </button>
           <button
             onClick={() => setIsTemplateModalOpen(true)}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 active:scale-95 transition-all duration-200 flex items-center gap-2 shadow-md"
+            className="px-4 py-2 bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50 shadow-sm active:scale-95 transition-all duration-200 flex items-center gap-2"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-5 w-5" viewBox="0 0 20 20" fill="currentColor">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
               <path d="M9 2a1 1 0 00-.894.553L7.382 4H4a1 1 0 000 2v10a2 2 0 002 2h8a2 2 0 002-2V6a1 1 0 100-2h-3.382l-.724-1.447A1 1 0 0011 2H9zM7 8a1 1 0 012 0v6a1 1 0 11-2 0V8zm5-1a1 1 0 00-1 1v6a1 1 0 102 0V8a1 1 0 00-1-1z" clipRule="evenodd" />
             </svg>
             View Templates
@@ -885,6 +900,41 @@ const Main: React.FC = () => {
     </div>
   );
 
+  const fetchAiSettings = async () => {
+    if (!companyId) return;
+
+    try {
+      const settingsRef = doc(firestore, 'companies', companyId, 'settings', 'ai');
+      const settingsSnapshot = await getDoc(settingsRef);
+      
+      if (settingsSnapshot.exists()) {
+        const data = settingsSnapshot.data();
+        setAiAutoResponse(data.autoResponse || false);
+        setAiDelay(data.responseDelay || 0);
+      }
+    } catch (error) {
+      console.error('Error fetching AI settings:', error);
+      toast.error('Failed to fetch AI settings');
+    }
+  };
+
+  const handleSaveAiSettings = async () => {
+    if (!companyId) return;
+
+    try {
+      const settingsRef = doc(firestore, 'companies', companyId, 'settings', 'ai');
+      await setDoc(settingsRef, {
+        autoResponse: aiAutoResponse,
+        responseDelay: aiDelay
+      }, { merge: true });
+      
+      toast.success('AI settings saved successfully');
+    } catch (error) {
+      console.error('Error saving AI settings:', error);
+      toast.error('Failed to save AI settings');
+    }
+  };
+
   return (
     <div className="flex justify-center h-screen bg-gray-100 dark:bg-gray-900">
       <div className={`w-full ${isWideScreen ? 'max-w-6xl flex' : 'max-w-lg'}`}>
@@ -901,25 +951,25 @@ const Main: React.FC = () => {
                 </div>
               ) : (
                 <>
-                 <div className="mb-4 flex items-center justify-between">
-  {assistants.length > 1 ? (
-    <select
-      value={selectedAssistant}
-      onChange={(e) => handleAssistantChange(e.target.value)}
-      className="w-full p-2 text-2xl font-bold border border-gray-300 rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-    >
-      {assistants.map((assistant) => (
-        <option key={assistant.id} value={assistant.id}>
-          {assistant.name}
-        </option>
-      ))}
-    </select>
-  ) : (
-    <h1 className="text-2xl font-bold dark:text-gray-200">
-      {assistantInfo.name || "Assistant Name"}
-    </h1>
-  )}
-</div>
+                  <div className="mb-4 flex items-center justify-between">
+                    {assistants.length > 1 ? (
+                      <select
+                        value={selectedAssistant}
+                        onChange={(e) => handleAssistantChange(e.target.value)}
+                        className="w-full p-2 text-2xl font-bold border border-gray-300 rounded-lg bg-white dark:bg-gray-700 dark:border-gray-600 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                      >
+                        {assistants.map((assistant) => (
+                          <option key={assistant.id} value={assistant.id}>
+                            {assistant.name}
+                          </option>
+                        ))}
+                      </select>
+                    ) : (
+                      <h1 className="text-2xl font-bold dark:text-gray-200">
+                        {assistantInfo.name || "Assistant Name"}
+                      </h1>
+                    )}
+                  </div>
                   <div className="mb-4">
                     <label className="mb-2 text-lg font-medium capitalize dark:text-gray-200" htmlFor="name">
                       Name
@@ -999,24 +1049,163 @@ const Main: React.FC = () => {
                       ))}
                     </ul>
                   </div>
-                  <div>
-                  <div className="flex items-center gap-4">
+                  
+                  <div className="mt-2 mb-4">
+                    <div className="flex flex-wrap items-center gap-4">
                       <button 
                         ref={updateButtonRef}
                         onClick={updateAssistantInfo} 
-                        className={`px-4 py-2 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary active:scale-95 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
+                        className={`px-5 py-2.5 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary/90 active:scale-95 font-medium ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
                         onFocus={handleFocus}
                         disabled={userRole === "3"}
                       >
-                        Update Assistant
+                        <span className="flex items-center">
+                          <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                          </svg>
+                          Update Assistant
+                        </span>
                       </button>
                       <Link to="/users-layout-2/builder">
-                        <Button variant="primary" className="shadow-md">
-                          Prompt Builder
+                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium">
+                          <span className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                              <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                              <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                            </svg>
+                            Prompt Builder
+                          </span>
                         </Button>
                       </Link>
+                      <a 
+                        href={`https://web.jutasoftware.co/guest-chat/${companyId}`} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                      >
+                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium">
+                          <span className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
+                            </svg>
+                            Guest Chat
+                          </span>
+                        </Button>
+                      </a>
                     </div>
                   </div>
+                  
+                  <div className="mb-5 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
+                    <div className="flex justify-between items-center mb-2">
+                      <h3 className="text-md font-medium text-blue-700 dark:text-blue-300">AI & Follow-up Tools</h3>
+                      <button 
+                        onClick={() => setIsToolsCollapsed(!isToolsCollapsed)}
+                        className="text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100 focus:outline-none"
+                        aria-label={isToolsCollapsed ? "Expand tools" : "Collapse tools"}
+                      >
+                        <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transform transition-transform duration-200 ${isToolsCollapsed ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                          <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                        </svg>
+                      </button>
+                    </div>
+                    {!isToolsCollapsed && (
+                      <>
+                        <div className="flex flex-wrap gap-3 mt-3 transition-all duration-300">
+                          <Link to="/a-i-responses">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                AI Responses
+                              </span>
+                            </Button>
+                          </Link>
+                          <Link to="/a-i-generative-responses">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                                  <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                                </svg>
+                                AI Generative Responses
+                              </span>
+                            </Button>
+                          </Link>
+                          <Link to="/follow-ups-select">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                                </svg>
+                                Follow Ups
+                              </span>
+                            </Button>
+                          </Link>
+                          {companyId === "0123" && (
+                            <Link to="/storage-pricing">
+                              <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                                <span className="flex items-center">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
+                                    <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
+                                  </svg>
+                                  Storage Pricing
+                                </span>
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                        
+                        {/* AI Settings */}
+                        <div className="mt-4 space-y-4">
+                          <h3 className="text-md font-medium text-gray-700 dark:text-gray-300">AI Response Settings</h3>
+                          
+                          <div>
+                            <label className="flex items-center space-x-2 mb-2 text-gray-700 dark:text-gray-300">
+                              <input
+                                type="checkbox"
+                                checked={aiAutoResponse}
+                                onChange={(e) => setAiAutoResponse(e.target.checked)}
+                                className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                                disabled={userRole === "3"}
+                              />
+                              <span>Enable AI Auto-Response for New Contacts</span>
+                            </label>
+                          </div>
+
+                          <div>
+                            <label className="block mb-2 text-gray-700 dark:text-gray-300">Response Delay (seconds)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              max="300"
+                              value={aiDelay}
+                              onChange={(e) => setAiDelay(Number(e.target.value))}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                              disabled={userRole === "3"}
+                            />
+                            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                              Set how long the AI should wait before responding (0-300 seconds)
+                            </p>
+                          </div>
+
+                          <div>
+                            <button
+                              onClick={handleSaveAiSettings}
+                              className="px-4 py-2 bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50 shadow-sm active:scale-95 transition-all duration-200 flex items-center gap-2"
+                              disabled={userRole === "3"}
+                            >
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                                <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                              </svg>
+                              Save AI Settings
+                            </button>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
                   {error && <div className="mt-4 text-red-500">{error}</div>}
                 </>
               )}
@@ -1159,22 +1348,151 @@ const Main: React.FC = () => {
                         ))}
                       </ul>
                     </div>
-                    <div>
-                      <button 
-                        ref={updateButtonRef}
-                        onClick={updateAssistantInfo} 
-                        className={`px-4 py-2 m-2 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary active:scale-95 ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
-                        onFocus={handleFocus}
-                        disabled={userRole === "3"}
-                      >
-                        Update Assistant
-                      </button>
-                      <Link to="builder">
-              <Button variant="primary" className="mr-2 shadow-md">
-                Prompt Builder
-              </Button>
-            </Link>
+                    
+                    <div className="mt-8 mb-4">
+                      <h3 className="text-md font-medium mb-3 text-gray-700 dark:text-gray-300">Assistant Configuration</h3>
+                      <div className="flex flex-wrap items-center gap-4">
+                        <button 
+                          ref={updateButtonRef}
+                          onClick={updateAssistantInfo} 
+                          className={`px-5 py-2.5 bg-primary text-white rounded-lg transition-transform ${isFloating ? 'fixed bottom-4 left-20' : 'relative'} hover:bg-primary/90 active:scale-95 font-medium ${userRole === "3" ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          onFocus={handleFocus}
+                          disabled={userRole === "3"}
+                        >
+                          <span className="flex items-center">
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm1-11a1 1 0 10-2 0v2H7a1 1 0 100 2h2v2a1 1 0 102 0v-2h2a1 1 0 100-2h-2V7z" clipRule="evenodd" />
+                            </svg>
+                            Update Assistant
+                          </span>
+                        </button>
+                        <Link to="builder">
+                          <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium">
+                            <span className="flex items-center">
+                              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                                <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                              </svg>
+                              Prompt Builder
+                            </span>
+                          </Button>
+                        </Link>
+                      </div>
                     </div>
+                    
+                    {/* Featured navigation buttons for mobile view */}
+                    <div className="mb-5 p-4 bg-blue-50 dark:bg-blue-900/30 rounded-lg border border-blue-100 dark:border-blue-800 shadow-sm">
+                      <div className="flex justify-between items-center mb-2">
+                        <h3 className="text-md font-medium text-blue-700 dark:text-blue-300">AI & Follow-up Tools</h3>
+                        <button 
+                          onClick={() => setIsToolsCollapsed(!isToolsCollapsed)}
+                          className="text-blue-600 dark:text-blue-300 hover:text-blue-800 dark:hover:text-blue-100 focus:outline-none"
+                          aria-label={isToolsCollapsed ? "Expand tools" : "Collapse tools"}
+                        >
+                          <svg xmlns="http://www.w3.org/2000/svg" className={`h-5 w-5 transform transition-transform duration-200 ${isToolsCollapsed ? 'rotate-180' : ''}`} viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clipRule="evenodd" />
+                          </svg>
+                        </button>
+                      </div>
+                      {!isToolsCollapsed && (
+                        <div className="flex flex-wrap gap-3 mt-3 transition-all duration-300">
+                          <Link to="/a-i-responses">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                                </svg>
+                                AI Responses
+                              </span>
+                            </Button>
+                          </Link>
+                          <Link to="/a-i-generative-responses">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
+                                  <path fillRule="evenodd" d="M2 6a2 2 0 012-2h4a1 1 0 010 2H4v10h10v-4a1 1 0 112 0v4a2 2 0 01-2 2H4a2 2 0 01-2-2V6z" clipRule="evenodd" />
+                                </svg>
+                                AI Generative Responses
+                              </span>
+                            </Button>
+                          </Link>
+                          <Link to="/follow-ups-select">
+                            <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                              <span className="flex items-center">
+                                <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                  <path d="M8 9a3 3 0 100-6 3 3 0 000 6zM8 11a6 6 0 016 6H2a6 6 0 016-6zM16 7a1 1 0 10-2 0v1h-1a1 1 0 100 2h1v1a1 1 0 102 0v-1h1a1 1 0 100-2h-1V7z" />
+                                </svg>
+                                Follow Ups
+                              </span>
+                            </Button>
+                          </Link>
+                          {companyId === "0123" && (
+                            <Link to="/storage-pricing">
+                              <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
+                                <span className="flex items-center">
+                                  <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
+                                    <path d="M4 4a2 2 0 00-2 2v1h16V6a2 2 0 00-2-2H4z" />
+                                    <path fillRule="evenodd" d="M18 9H2v5a2 2 0 002 2h12a2 2 0 002-2V9zM4 13a1 1 0 011-1h1a1 1 0 110 2H5a1 1 0 01-1-1zm5-1a1 1 0 100 2h1a1 1 0 100-2H9z" clipRule="evenodd" />
+                                  </svg>
+                                  Storage Pricing
+                                </span>
+                              </Button>
+                            </Link>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {/* AI Settings Section for mobile */}
+                    <div className="mt-8 mb-4 p-4 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 shadow-sm">
+                      <h3 className="text-md font-medium mb-3 text-gray-700 dark:text-gray-300">AI Response Settings</h3>
+                      
+                      <div className="space-y-4">
+                        <div>
+                          <label className="flex items-center space-x-2 mb-2 text-gray-700 dark:text-gray-300">
+                            <input
+                              type="checkbox"
+                              checked={aiAutoResponse}
+                              onChange={(e) => setAiAutoResponse(e.target.checked)}
+                              className="form-checkbox h-4 w-4 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+                              disabled={userRole === "3"}
+                            />
+                            <span>Enable AI Auto-Response for New Contacts</span>
+                          </label>
+                        </div>
+
+                        <div>
+                          <label className="block mb-2 text-gray-700 dark:text-gray-300">Response Delay (seconds)</label>
+                          <input
+                            type="number"
+                            min="0"
+                            max="300"
+                            value={aiDelay}
+                            onChange={(e) => setAiDelay(Number(e.target.value))}
+                            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 dark:text-gray-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                            disabled={userRole === "3"}
+                          />
+                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                            Set how long the AI should wait before responding (0-300 seconds)
+                          </p>
+                        </div>
+
+                        <div>
+                          <button
+                            onClick={handleSaveAiSettings}
+                            className="px-4 py-2 bg-white dark:bg-gray-700 text-blue-600 dark:text-blue-300 border border-blue-200 dark:border-blue-700 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/50 shadow-sm active:scale-95 transition-all duration-200 flex items-center gap-2"
+                            disabled={userRole === "3"}
+                          >
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" viewBox="0 0 20 20" fill="currentColor">
+                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                            </svg>
+                            Save AI Settings
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    
                     {error && <div className="mt-4 text-red-500">{error}</div>}
                   </>
                 )}

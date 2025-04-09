@@ -39,6 +39,7 @@ function AIResponses() {
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
+    const [currentResponseMedia, setCurrentResponseMedia] = useState<string[]>([]);
     
     console.log('[AIResponses] Component mounted');
     console.log('[AIResponses] Current state:', {
@@ -452,6 +453,16 @@ function AIResponses() {
 
     const handleVideoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = Array.from(e.target.files || []);
+        
+        // Check file sizes (20MB = 20 * 1024 * 1024 bytes)
+        const MAX_FILE_SIZE = 20 * 1024 * 1024;
+        const oversizedFiles = files.filter(file => file.size > MAX_FILE_SIZE);
+        
+        if (oversizedFiles.length > 0) {
+            toast.error(`Some files exceed the 20MB limit: ${oversizedFiles.map(f => f.name).join(', ')}`);
+            return;
+        }
+
         const urls = files.map(file => URL.createObjectURL(file));
         setSelectedVideos(files);
         setSelectedVideoUrls(urls);
@@ -564,25 +575,41 @@ function AIResponses() {
                     }
                     break;
                 case 'Image':
+                    // Handle existing images + new images
+                    let imageUrls = [...currentResponseMedia];
                     if (selectedImages.length > 0) {
                         const newImageUrls = await uploadFiles(selectedImages, 'image');
-                        updatedData.imageUrls = newImageUrls;
-                        updatedData.imageUrl = newImageUrls[0] || '';
+                        imageUrls = [...imageUrls, ...newImageUrls];
                     }
+                    updatedData.imageUrls = imageUrls;
+                    updatedData.imageUrl = imageUrls.length > 0 ? imageUrls[0] : '';
                     break;
                 case 'Voice':
+                    // Handle existing voice files + new voice files
+                    let voiceUrls = [...currentResponseMedia];
                     if (selectedAudios.length > 0) {
-                        const voiceUrls = await uploadFiles(selectedAudios, 'voice');
-                        updatedData.voiceUrls = voiceUrls;
-                        updatedData.captions = selectedAudios.map(() => '');
+                        const newVoiceUrls = await uploadFiles(selectedAudios, 'voice');
+                        voiceUrls = [...voiceUrls, ...newVoiceUrls];
                     }
+                    updatedData.voiceUrls = voiceUrls;
+                    updatedData.captions = voiceUrls.map((_, i) => {
+                        if (i < ((response as AIVoiceResponse).captions?.length || 0)) {
+                            return (response as AIVoiceResponse).captions?.[i] || '';
+                        }
+                        return '';
+                    });
                     break;
                 case 'Document':
+                    // Handle existing docs + new docs
+                    let docUrls = [...currentResponseMedia];
+                    let docNames = [...(response as AIDocumentResponse).documentNames || []];
                     if (selectedDocs.length > 0) {
-                        const docUrls = await uploadFiles(selectedDocs, 'document');
-                        updatedData.documentUrls = docUrls;
-                        updatedData.documentNames = selectedDocs.map(doc => doc.name);
+                        const newDocUrls = await uploadFiles(selectedDocs, 'document');
+                        docUrls = [...docUrls, ...newDocUrls];
+                        docNames = [...docNames, ...selectedDocs.map(doc => doc.name)];
                     }
+                    updatedData.documentUrls = docUrls;
+                    updatedData.documentNames = docNames;
                     break;
                 case 'Assign':
                     if (selectedEmployees.length > 0) {
@@ -590,17 +617,23 @@ function AIResponses() {
                     }
                     break;
                 case 'Video':
+                    // Handle existing videos + new videos
+                    let videoUrls = [...currentResponseMedia];
+                    let videoTitles = [...(response as AIVideoResponse).videoTitles || []];
                     if (selectedVideos.length > 0) {
-                        const videoUrls = await uploadFiles(selectedVideos, 'video');
-                        updatedData.videoUrls = videoUrls;
-                        updatedData.videoTitles = selectedVideos.map(video => video.name);
+                        const newVideoUrls = await uploadFiles(selectedVideos, 'video');
+                        videoUrls = [...videoUrls, ...newVideoUrls];
+                        videoTitles = [...videoTitles, ...selectedVideos.map(video => video.name)];
                     }
+                    updatedData.videoUrls = videoUrls;
+                    updatedData.videoTitles = videoTitles;
                     break;
             }
 
             await updateDoc(responseRef, updatedData);
             console.log('[AIResponses] Successfully updated response');
             setIsEditing(null);
+            setCurrentResponseMedia([]);
             resetForm();
             fetchResponses();
             toast.success('Response updated successfully');
@@ -608,6 +641,10 @@ function AIResponses() {
             console.error('[AIResponses] Error updating response:', error);
             toast.error('Error updating response');
         }
+    };
+
+    const removeExistingMedia = (index: number) => {
+        setCurrentResponseMedia(prev => prev.filter((_, i) => i !== index));
     };
 
     const resetForm = () => {
@@ -662,15 +699,18 @@ function AIResponses() {
                 break;
             case 'Image':
                 const imageResponse = response as AIImageResponse;
-                setSelectedImageUrls(imageResponse.imageUrls || []);
+                setSelectedImageUrls([]);
+                setCurrentResponseMedia(imageResponse.imageUrls || []);
                 break;
             case 'Voice':
                 const voiceResponse = response as AIVoiceResponse;
-                setSelectedAudioUrls(voiceResponse.voiceUrls || []);
+                setSelectedAudioUrls([]);
+                setCurrentResponseMedia(voiceResponse.voiceUrls || []);
                 break;
             case 'Document':
                 const docResponse = response as AIDocumentResponse;
-                setSelectedDocUrls(docResponse.documentUrls || []);
+                setSelectedDocUrls([]);
+                setCurrentResponseMedia(docResponse.documentUrls || []);
                 break;
             case 'Assign':
                 const assignResponse = response as AIAssignResponse;
@@ -678,7 +718,8 @@ function AIResponses() {
                 break;
             case 'Video':
                 const videoResponse = response as AIVideoResponse;
-                setSelectedVideoUrls(videoResponse.videoUrls || []);
+                setSelectedVideoUrls([]);
+                setCurrentResponseMedia(videoResponse.videoUrls || []);
                 break;
         }
     };
@@ -940,6 +981,32 @@ function AIResponses() {
                                                     )}
                                                     {response.type === 'Image' && (
                                                         <div>
+                                                            {/* Display existing images with delete option */}
+                                                            {currentResponseMedia.length > 0 && (
+                                                                <>
+                                                                    <div className="mb-4">
+                                                                        <FormLabel>Current Images</FormLabel>
+                                                                        <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                                                                            {currentResponseMedia.map((url, idx) => (
+                                                                                <div key={idx} className="relative">
+                                                                                    <img 
+                                                                                        src={url} 
+                                                                                        alt={`Response ${idx + 1}`}
+                                                                                        className="w-full h-40 object-cover rounded-lg"
+                                                                                    />
+                                                                                    <Button
+                                                                                        variant="danger"
+                                                                                        className="absolute top-1 right-1 w-8 h-8 p-0 rounded-full"
+                                                                                        onClick={() => removeExistingMedia(idx)}
+                                                                                    >
+                                                                                        <Lucide icon="X" className="w-4 h-4" />
+                                                                                    </Button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            )}
                                                             {/* Form to add new images */}
                                                             <ImageResponseForm
                                                                 selectedImageUrls={selectedImageUrls}
@@ -951,22 +1018,77 @@ function AIResponses() {
                                                         </div>
                                                     )}
                                                     {response.type === 'Voice' && (
-                                                        <VoiceResponseForm
-                                                            selectedAudioUrls={selectedAudioUrls}
-                                                            onAudioSelect={handleAudioSelect}
-                                                            onAudioRemove={handleAudioRemove}
-                                                            keywordSource={keywordSource}
-                                                            onKeywordSourceChange={setKeywordSource}
-                                                        />
+                                                        <div>
+                                                            {/* Display existing audio files with delete option */}
+                                                            {currentResponseMedia.length > 0 && (
+                                                                <>
+                                                                    <div className="mb-4">
+                                                                        <FormLabel>Current Audio Files</FormLabel>
+                                                                        <div className="space-y-2">
+                                                                            {currentResponseMedia.map((url, idx) => (
+                                                                                <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-darkmode-400 rounded">
+                                                                                    <audio controls className="w-full max-w-md">
+                                                                                        <source src={url} type="audio/mpeg" />
+                                                                                        Your browser does not support the audio element.
+                                                                                    </audio>
+                                                                                    <Button
+                                                                                        variant="danger"
+                                                                                        className="ml-2"
+                                                                                        onClick={() => removeExistingMedia(idx)}
+                                                                                    >
+                                                                                        <Lucide icon="X" className="w-4 h-4" />
+                                                                                    </Button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                            <VoiceResponseForm
+                                                                selectedAudioUrls={selectedAudioUrls}
+                                                                onAudioSelect={handleAudioSelect}
+                                                                onAudioRemove={handleAudioRemove}
+                                                                keywordSource={keywordSource}
+                                                                onKeywordSourceChange={setKeywordSource}
+                                                            />
+                                                        </div>
                                                     )}
                                                     {response.type === 'Document' && (
-                                                        <DocumentResponseForm
-                                                            selectedDocUrls={selectedDocUrls}
-                                                            onDocumentSelect={handleDocumentSelect}
-                                                            onDocumentRemove={handleDocumentRemove}
-                                                            keywordSource={keywordSource}
-                                                            onKeywordSourceChange={setKeywordSource}
-                                                        />
+                                                        <div>
+                                                            {/* Display existing documents with delete option */}
+                                                            {currentResponseMedia.length > 0 && (
+                                                                <>
+                                                                    <div className="mb-4">
+                                                                        <FormLabel>Current Documents</FormLabel>
+                                                                        <div className="space-y-2">
+                                                                            {currentResponseMedia.map((url, idx) => (
+                                                                                <div key={idx} className="flex items-center justify-between p-2 bg-slate-50 dark:bg-darkmode-400 rounded">
+                                                                                    <div className="flex items-center">
+                                                                                        <Lucide icon="FileText" className="w-4 h-4 mr-2" />
+                                                                                        <span>{(response as AIDocumentResponse).documentNames[idx]}</span>
+                                                                                    </div>
+                                                                                    <a 
+                                                                                        href={url}
+                                                                                        target="_blank"
+                                                                                        rel="noopener noreferrer"
+                                                                                        className="text-primary hover:underline"
+                                                                                    >
+                                                                                        <Lucide icon="Download" className="w-4 h-4" />
+                                                                                    </a>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            )}
+                                                            <DocumentResponseForm
+                                                                selectedDocUrls={selectedDocUrls}
+                                                                onDocumentSelect={handleDocumentSelect}
+                                                                onDocumentRemove={handleDocumentRemove}
+                                                                keywordSource={keywordSource}
+                                                                onKeywordSourceChange={setKeywordSource}
+                                                            />
+                                                        </div>
                                                     )}
                                                     {response.type === 'Assign' && (
                                                         <AssignResponseForm
@@ -979,6 +1101,31 @@ function AIResponses() {
                                                     )}
                                                     {response.type === 'Video' && (
                                                         <div>
+                                                            {/* Display existing videos with delete option */}
+                                                            {currentResponseMedia.length > 0 && (
+                                                                <>
+                                                                    <div className="mb-4">
+                                                                        <FormLabel>Current Videos</FormLabel>
+                                                                        <div className="space-y-4">
+                                                                            {currentResponseMedia.map((url, idx) => (
+                                                                                <div key={idx} className="relative">
+                                                                                    <video controls className="w-full rounded-lg">
+                                                                                        <source src={url} type="video/mp4" />
+                                                                                        Your browser does not support the video element.
+                                                                                    </video>
+                                                                                    <Button
+                                                                                        variant="danger"
+                                                                                        className="absolute top-2 right-2"
+                                                                                        onClick={() => removeExistingMedia(idx)}
+                                                                                    >
+                                                                                        <Lucide icon="X" className="w-4 h-4" />
+                                                                                    </Button>
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                </>
+                                                            )}
                                                             {/* Form to add new videos */}
                                                             <VideoResponseForm
                                                                 selectedVideoUrls={selectedVideoUrls}

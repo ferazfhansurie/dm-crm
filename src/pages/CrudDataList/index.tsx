@@ -282,6 +282,7 @@ function Main() {
   const itemsPerPage = 50;
   const [employeeNames, setEmployeeNames] = useState<string[]>([]);
   const [showMassDeleteModal, setShowMassDeleteModal] = useState(false);
+  const [isMassDeleting, setIsMassDeleting] = useState(false);
   const [userFilter, setUserFilter] = useState<string>("");
   const [activeTab, setActiveTab] = useState<'tags' | 'users'>('tags');
   const [selectedTagFilters, setSelectedTagFilters] = useState<string[]>([]);
@@ -718,7 +719,18 @@ const resetSort = () => {
       const q = query(contactsRef,);
   
       const querySnapshot = await getDocs(q);
-      const fetchedContacts = querySnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Contact));
+      const fetchedContacts = querySnapshot.docs.map(doc => {
+        const contactData = doc.data();
+        
+        // Filter out empty tags
+        if (contactData.tags) {
+          contactData.tags = contactData.tags.filter((tag: any) => 
+            tag && tag.trim() !== '' && tag !== null && tag !== undefined
+          );
+        }
+        
+        return { id: doc.id, ...contactData } as Contact;
+      });
       
       // Function to check if a chat_id is for an individual contact
       const isIndividual = (chat_id: string | undefined) => {
@@ -2456,10 +2468,23 @@ if (matchingTemplate) {
       toast.error("No contacts selected for deletion.");
       return;
     }
+    
+    // Set loading state and show initial notification
+    setIsMassDeleting(true);
+    toast.info(`Starting to delete ${selectedContacts.length} contacts. This may take some time...`);
+    
+    // Optimistic UI update - remove contacts immediately for better UX
+    setContacts(prevContacts => 
+      prevContacts.filter(contact => 
+        !selectedContacts.some(selected => selected.id === contact.id)
+      )
+    );
+    
     try {
       const user = auth.currentUser;
       if (!user) {
         console.error('No authenticated user');
+        setIsMassDeleting(false);
         return;
       }
   
@@ -2467,15 +2492,19 @@ if (matchingTemplate) {
       const docUserSnapshot = await getDoc(docUserRef);
       if (!docUserSnapshot.exists()) {
         console.error('No such document for user!');
+        setIsMassDeleting(false);
         return;
       }
+  
       const userData = docUserSnapshot.data();
       const companyId = userData.companyId;
       const docRef = doc(firestore, 'companies', companyId);
       const docSnapshot = await getDoc(docRef);
-      if (!docSnapshot.exists()) throw new Error('No company document found');
-      const companyData = docSnapshot.data();
-      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      if (!docSnapshot.exists()) {
+        console.error('No such document for company!');
+        setIsMassDeleting(false);
+        return;
+      }
   
       // Get all active templates once
       const templatesRef = collection(firestore, `companies/${companyId}/followUpTemplates`);
@@ -2489,9 +2518,22 @@ if (matchingTemplate) {
   
       // Create batch for contact deletion
       const batch = writeBatch(firestore);
+
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+
   
       // Process each contact
+      let contactsProcessed = 0;
+      const totalToProcess = selectedContacts.length;
+      
       for (const contact of selectedContacts) {
+        // Show progress to user
+        contactsProcessed++;
+        if (contactsProcessed % 50 === 0 || contactsProcessed === totalToProcess) {
+          toast.info(`Processing ${contactsProcessed} of ${totalToProcess} contacts...`, 
+            { autoClose: 2000, updateId: "mass-delete-progress" });
+        }
         // Remove follow-up templates
         for (const template of activeTemplates) {
           try {
@@ -2584,6 +2626,11 @@ if (matchingTemplate) {
     } catch (error) {
       console.error('Error deleting contacts:', error);
       toast.error("An error occurred while deleting the contacts and associated messages.");
+      // Refresh to get accurate data
+      fetchContacts();
+    } finally {
+      // Always reset loading state
+      setIsMassDeleting(false);
     }
   };
 
@@ -3845,9 +3892,15 @@ const resetForm = () => {
 
   const renderTags = (tags: string[] | undefined, contact: Contact) => {
     if (!tags || tags.length === 0) return null;
+    
+    // Filter out empty tags
+    const filteredTags = tags.filter(tag => tag && tag.trim() !== '');
+    
+    if (filteredTags.length === 0) return null;
+    
     return (
       <div className="flex flex-wrap gap-1 mt-1">
-        {tags.map((tag, index) => (
+        {filteredTags.map((tag, index) => (
           <span
             key={index}
             className={`px-2 py-1 text-xs font-semibold rounded-full ${
@@ -3932,6 +3985,11 @@ const resetForm = () => {
         cleaned = `+6${cleaned.substring(1)}`;
       }
       return cleaned.length >= 10 ? cleaned : null;
+    }
+    
+    // Check if the number starts with a valid country code (like 60, 65, 62, etc.)
+    if (/^(60|65|62|61|63|66|84|95|855|856|91|92|93|94|977|880|81|82|86|886|852|853|1|44|33|49|39|7|34|55|52|54|56|57|58|61|64|27|20|212|213|216|218|220|221|222|223|224|225|226|227|228|229|230|231|232|233|234|235|236|237|238|239|240|241|242|243|244|245|246|247|248|249|250|251|252|253|254|255|256|257|258|260|261|262|263|264|265|266|267|268|269|290|291|297|298|299|350|351|352|353|354|355|356|357|358|359|370|371|372|373|374|375|376|377|378|379|380|381|382|383|385|386|387|388|389|420|421|423|500|501|502|503|504|505|506|507|508|509|590|591|592|593|594|595|596|597|598|599|670|672|673|674|675|676|677|678|679|680|681|682|683|685|686|687|688|689|690|691|692|850|852|853|855|856|870|871|872|873|874|878|880|881|882|883|886|888|960|961|962|963|964|965|966|967|968|970|971|972|973|974|975|976|977|992|993|994|995|996|998)/.test(cleaned)) {
+      return cleaned.length >= 10 ? `+${cleaned}` : null;
     }
     
     // For numbers without + prefix

@@ -1103,29 +1103,29 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
       contactsSnapshot.forEach((doc) => {
         const contactData = doc.data();
         
-        if (doc.id.startsWith('+') && contactData.createdAt) {
-          // Check if the contact has the selected tag (if a tag is selected)
-          if (selectedTag !== 'all' && (!contactData.tags || !contactData.tags.includes(selectedTag))) {
-            return;
+        // Check if the contact has the selected tag (if a tag is selected)
+        if (selectedTag !== 'all') {
+          if (!contactData.tags || !contactData.tags.includes(selectedTag)) {
+            return; // Skip this contact if it doesn't have the selected tag
           }
+        }
 
-          const createdAt = contactData.createdAt.toDate ? 
-            contactData.createdAt.toDate() : 
-            new Date(contactData.createdAt);
-          
-          if (createdAt >= startDate) {
-            let dateKey;
-            if (filter === 'today') {
-              dateKey = format(createdAt, 'HH:00');
-            } else if (filter === 'all') {
-              // For "all time" view, group by month
-              dateKey = format(createdAt, 'yyyy-MM');
-            } else {
-              dateKey = format(createdAt, 'yyyy-MM-dd');
-            }
-            
-            contactCounts[dateKey] = (contactCounts[dateKey] || 0) + 1;
+        const createdAt = contactData.createdAt?.toDate ? 
+          contactData.createdAt.toDate() : 
+          new Date(contactData.createdAt || contactData.dateAdded || new Date());
+        
+        if (createdAt >= startDate) {
+          let dateKey;
+          if (filter === 'today') {
+            dateKey = format(createdAt, 'HH:00');
+          } else if (filter === 'all') {
+            // For "all time" view, group by month
+            dateKey = format(createdAt, 'yyyy-MM');
+          } else {
+            dateKey = format(createdAt, 'yyyy-MM-dd');
           }
+          
+          contactCounts[dateKey] = (contactCounts[dateKey] || 0) + 1;
         }
       });
 
@@ -1179,6 +1179,7 @@ setEngagementScore(Number(newEngagementScore.toFixed(2)));
   // Modify the existing useEffect to include selectedTag dependency
   useEffect(() => {
     if (companyId) {
+      console.log('Fetching contacts with tag:', selectedTag); // Debug log
       fetchContactsOverTime(contactsTimeFilter);
     }
   }, [companyId, contactsTimeFilter, selectedTag]); // Add selectedTag as dependency

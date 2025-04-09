@@ -47,7 +47,7 @@ export interface Contact {
   conversation_id?: string | null;
   additionalEmails?: string[] | null;
   address1?: string | null;
-  assignedTo?: string | null;
+  assignedTo?: string[] | null;
   businessId?: string | null;
   city?: string | null;
   companyName?: string | null;
@@ -238,6 +238,69 @@ type Notification = {
   type: string;
 };
 
+//testing
+interface ScheduledMessage {
+  id?: string;
+  chatIds: string[];
+  message: string;
+  messages?: Array<{
+    [x: string]: string | boolean; // Changed to allow boolean values for isMain
+    text: string 
+  }>;
+  messageDelays?: number[];
+  mediaUrl?: string;
+  documentUrl?: string;
+  mimeType?: string;
+  fileName?: string;
+  scheduledTime: Timestamp;
+  batchQuantity: number;
+  repeatInterval: number;
+  repeatUnit: 'minutes' | 'hours' | 'days';
+  additionalInfo: {
+    contactName?: string;
+    phone?: string;
+    email?: string;
+    // ... any other contact fields you want to include
+  };
+  status: 'scheduled' | 'sent' | 'failed';
+  createdAt: Timestamp;
+  sentAt?: Timestamp;
+  error?: string;
+  count?: number;
+  v2?:boolean;
+  whapiToken?:string;
+  minDelay: number;
+  maxDelay: number;
+  activateSleep: boolean;
+  sleepAfterMessages: number | null;
+  sleepDuration: number | null;
+  activeHours: {
+    start: string;
+    end: string;
+  };
+  infiniteLoop: boolean;
+  numberOfBatches: number;
+  processedMessages?: {
+    chatId: string;
+    message: string;
+    contactData?: {
+      contactName: string;
+      firstName: string;
+      lastName: string;
+      email: string;
+      phone: string;
+      vehicleNumber: string;
+      branch: string;
+      expiryDate: string;
+      ic: string;
+    };
+  }[];
+  templateData?: {
+    hasPlaceholders: boolean;
+    placeholdersUsed: string[];
+  };
+  isConsolidated?: boolean; // Added to indicate the new message structure
+}
 
 interface EditMessagePopupProps {
   editedMessageText: string;
@@ -573,15 +636,11 @@ function Main() {
   const [selectedDocumentURL, setSelectedDocumentURL] = useState<string | null>(null);
   const [documentCaption, setDocumentCaption] = useState('');
   const [isPhoneDropdownOpen, setIsPhoneDropdownOpen] = useState(false);
-
   const [showAllForwardTags, setShowAllForwardTags] = useState(false);
   const [visibleForwardTags, setVisibleForwardTags] = useState<typeof tagList>([]);
-
   const [totalContacts, setTotalContacts] = useState<number>(0);
-
   const [showReactionPicker, setShowReactionPicker] = useState(false);
   const [reactionMessage, setReactionMessage] = useState<any>(null);
-
   const [isGlobalSearchActive, setIsGlobalSearchActive] = useState(false);
   const [globalSearchResults, setGlobalSearchResults] = useState<any[]>([]);
   const [globalSearchLoading, setGlobalSearchLoading] = useState(false);
@@ -598,6 +657,12 @@ function Main() {
   const [activateSleep, setActivateSleep] = useState(false);
   const [sleepAfterMessages, setSleepAfterMessages] = useState(20);
   const [sleepDuration, setSleepDuration] = useState(5);
+
+  //testing
+  const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
+  const [currentScheduledMessage, setCurrentScheduledMessage] = useState<ScheduledMessage | null>(null);
+  const [editScheduledMessageModal, setEditScheduledMessageModal] = useState(false);
+  
 
   const [qrCodes, setQrCodes] = useState<QRCodeData[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -639,6 +704,129 @@ function Main() {
   
     fetchCategories();
   }, []);
+  
+  //testing
+  const handleSendNow = async (message: any) => {
+    try {
+      // Get user and company data
+      const user = auth.currentUser;
+      if (!user?.email) throw new Error('User not authenticated');
+  
+      const docUserRef = doc(firestore, 'user', user.email);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) throw new Error('User document not found');
+  
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+  
+      // Get company data for baseUrl
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('Company document not found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+  
+      // FIXED: Handle consolidated message structure to avoid duplicate sends
+      // Handle the new consolidated message structure
+      const isConsolidated = message.isConsolidated === true;
+      
+      // If using consolidated structure, only process the messages array
+      if (isConsolidated && Array.isArray(message.messages) && message.messages.length > 0) {
+        // Send messages to all recipients with proper structure
+        const sendPromises = message.chatIds.map(async (chatId: string) => {
+          // Only send the main message or first message from the array
+          const mainMessage = message.messages.find((msg: any) => msg.isMain === true) || message.messages[0];
+          
+          const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: mainMessage.text || '',
+              phoneIndex: message.phoneIndex || userData.phone || 0,
+              userName: userData.name || userData.email || ''
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to send message to ${chatId}`);
+          }
+        });
+
+        // Wait for all messages to be sent
+        await Promise.all(sendPromises);
+      } else {
+        // Backward compatibility: Handle the old message structure
+        // Send messages to all recipients
+        const sendPromises = message.chatIds.map(async (chatId: string) => {
+          const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              message: message.message || '',
+              phoneIndex: message.phoneIndex || userData.phone || 0,
+              userName: userData.name || userData.email || ''
+            }),
+          });
+
+          if (!response.ok) {
+            throw new Error(`Failed to send message to ${chatId}`);
+          }
+        });
+
+        // Wait for all messages to be sent
+        await Promise.all(sendPromises);
+      }
+
+      // Delete the scheduled message
+      if (message.id) {
+        await deleteDoc(doc(firestore, `companies/${companyId}/scheduledMessages/${message.id}`));
+        // Update local state to remove the message
+        setScheduledMessages(prev => prev.filter(msg => msg.id !== message.id));
+      }
+
+      toast.success('Messages sent successfully!');
+    } catch (error) {
+      console.error('Error sending messages:', error);
+      toast.error('Failed to send messages. Please try again.');
+    }
+  };
+  const handleEditScheduledMessage = (message: ScheduledMessage) => {
+    setCurrentScheduledMessage(message);
+    setBlastMessage(message.message || ''); // Set the blast message to the current message text
+    setEditScheduledMessageModal(true);
+  };
+  const handleDeleteScheduledMessage = async (messageId: string) => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      // Call the backend API to delete the scheduled message
+      const response = await axios.delete(`${baseUrl}/api/schedule-message/${companyId}/${messageId}`);
+      if (response.status === 200) {
+        setScheduledMessages(scheduledMessages.filter(msg => msg.id !== messageId));
+        toast.success("Scheduled message deleted successfully!");
+      } else {
+        throw new Error("Failed to delete scheduled message.");
+      }
+    } catch (error) {
+      console.error("Error deleting scheduled message:", error);
+      toast.error("Failed to delete scheduled message.");
+    }
+  };
+  //testing
+  
+
   useEffect(() => {
     const fetchPhoneStatuses = async () => {
       try {
@@ -680,13 +868,6 @@ function Main() {
   
     return () => clearInterval(intervalId);
 }, []);
-
-  useEffect(() => {
-    if (contextContacts.length > 0) {
-      setContacts(contextContacts as Contact[]);
-    }
-  }, [contextContacts]);
-
 
   useEffect(() => {
     let filteredResults = contacts;
@@ -732,10 +913,22 @@ function Main() {
   // Initial chat selection from URL
 
 
-  // Update this useEffect
+
+
+  // Add new useEffect to restore scroll position
   useEffect(() => {
-    setVisibleForwardTags(showAllForwardTags ? tagList : tagList.slice(0, 5));
-  }, [tagList, showAllForwardTags]);
+    // After selecting a contact or when filtered contacts change, restore the scroll position
+    const restoreScrollPosition = () => {
+      if (contactListRef.current) {
+        const savedScrollPosition = sessionStorage.getItem('chatContactListScrollPosition');
+        if (savedScrollPosition) {
+          contactListRef.current.scrollTop = parseInt(savedScrollPosition);
+        }
+      }
+    };
+  
+    restoreScrollPosition();
+  }, [selectedContact, filteredContacts]);
 
   // Update this function name
   const toggleForwardTagsVisibility = () => {
@@ -1050,7 +1243,22 @@ const ReactionPicker = ({ onSelect, onClose }: { onSelect: (emoji: string) => vo
       const q = query(contactsRef, orderBy("last_message.timestamp", "desc"));
   
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const updatedContacts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
+        const updatedContacts = snapshot.docs.map(doc => {
+          const contactData = { ...doc.data(), id: doc.id } as Contact;
+          
+          // Find the contact in the current state to check if it had a snooze tag
+          const existingContact = contacts.find(c => c.id === doc.id);
+          
+          // If the contact had a snooze tag before but doesn't have it now, add it back
+          if (existingContact?.tags?.includes('snooze') && !contactData.tags?.includes('snooze')) {
+            return {
+              ...contactData,
+              tags: [...(contactData.tags || []), 'snooze']
+            };
+          }
+          
+          return contactData;
+        });
         setContacts(updatedContacts);
       });
   
@@ -1297,7 +1505,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         
         filteredByEmployee = contactsToFilter.filter(contact => 
           viewEmployeeNames.some(empName => 
-            contact.assignedTo?.toLowerCase() === empName ||
+            contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
             contact.tags?.some(tag => tag.toLowerCase() === empName)
           )
         );
@@ -1305,7 +1513,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         // If it's an object with a name property
         const empName = userData.viewEmployee.name.toLowerCase();
         filteredByEmployee = contactsToFilter.filter(contact => 
-          contact.assignedTo?.toLowerCase() === empName ||
+          contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
           contact.tags?.some(tag => tag.toLowerCase() === empName)
         );
       } else if (typeof userData.viewEmployee === 'string') {
@@ -1314,7 +1522,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         if (employee) {
           const empName = employee.name.toLowerCase();
           filteredByEmployee = contactsToFilter.filter(contact => 
-            contact.assignedTo?.toLowerCase() === empName ||
+            contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
             contact.tags?.some(tag => tag.toLowerCase() === empName)
           );
         }
@@ -1340,7 +1548,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
     // Apply employee-based filtering if an employee is selected
     if (selectedEmployee) {
       filtered = filtered.filter(contact => 
-        contact.assignedTo === selectedEmployee
+        contact.assignedTo?.some(assignedTo => assignedTo === selectedEmployee)
       );
     }
     
@@ -1354,6 +1562,11 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
     setFilteredContacts(filtered);
   }, [userRole, userData, activeTags, filterContactsByUserRole, selectedEmployee, employeeList]);
 
+    // Update this useEffect
+    useEffect(() => {
+      filterAndSetContacts(contacts);
+    }, [contacts, filterAndSetContacts]);
+
   useEffect(() => {
     const fetchContacts = async () => {
       if (!userData?.companyId) {
@@ -1366,7 +1579,18 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
       const q = query(contactsRef, orderBy("last_message.timestamp", "desc"));
   
       const unsubscribe = onSnapshot(q, (snapshot) => {
-        const updatedContacts = snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id } as Contact));
+        const updatedContacts = snapshot.docs.map(doc => {
+          const contactData = doc.data();
+          
+          // Filter out empty tags
+          if (contactData.tags) {
+            contactData.tags = contactData.tags.filter((tag: any) => 
+              tag && tag.trim() !== '' && tag !== null && tag !== undefined
+            );
+          }
+          
+          return { ...contactData, id: doc.id } as Contact;
+        });
         
         setContacts(updatedContacts);
         filterAndSetContacts(updatedContacts);
@@ -1402,6 +1626,11 @@ useEffect(() => {
     ) {
       // loadMoreContacts();
     }
+    
+    // Store the current scroll position when user scrolls
+    if (contactListRef.current) {
+      sessionStorage.setItem('chatContactListScrollPosition', contactListRef.current.scrollTop.toString());
+    }
   };
 
   if (contactListRef.current) {
@@ -1434,22 +1663,6 @@ useEffect(() => {
     setTagsError(true);
   }
 }, [activeTags, employeeList]);
-
-// const loadMoreContacts = () => {
-//   if (initialContacts.length <= contacts.length) return;
-
-//   const nextPage = currentPage + 1;
-//   const newContacts = initialContacts.slice(
-//     contacts.length,
-//     nextPage * contactsPerPage
-//   );
-
-//   setContacts((prevContacts) => {
-//     const updatedContacts = [...prevContacts, ...newContacts];
-//     return filterContactsByUserRole(updatedContacts, userRole, userData?.name || '');
-//   });
-//   setCurrentPage(nextPage);
-// };
 
 const handleEmojiClick = (emojiObject: EmojiClickData) => {
   setNewMessage(prevMessage => prevMessage + emojiObject.emoji);
@@ -2268,8 +2481,13 @@ async function fetchConfigFromDatabase() {
  
     
     try {
+      // Save current scroll position before making any state changes
+      if (contactListRef.current) {
+        sessionStorage.setItem('chatContactListScrollPosition', contactListRef.current.scrollTop.toString());
+      }
+    
       // Permission check
-      if (userRole === "3" && contactSelect && contactSelect.assignedTo?.toLowerCase() !== userData?.name.toLowerCase()) {
+      if (userRole === "3" && contactSelect && !contactSelect.assignedTo?.some(assignedTo => assignedTo === userData?.name)) {
         
         toast.error("You don't have permission to view this chat.");
         return;
@@ -2304,6 +2522,16 @@ async function fetchConfigFromDatabase() {
       // Update URL
       const newUrl = `/chat?chatId=${chatId.replace('@c.us', '')}`;
       window.history.pushState({ path: newUrl }, '', newUrl);
+  
+      // Restore scroll position after a short delay to allow rendering
+      setTimeout(() => {
+        if (contactListRef.current) {
+          const savedScrollPosition = sessionStorage.getItem('chatContactListScrollPosition');
+          if (savedScrollPosition) {
+            contactListRef.current.scrollTop = parseInt(savedScrollPosition);
+          }
+        }
+      }, 50);
   
     } catch (error) {
       console.error('Error in selectChat:', error);
@@ -3929,45 +4157,34 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
         return;
       }
 
-      const currentTags = contactDoc.data().tags || [];
-      const oldEmployeeTag = currentTags.find((tag: string) => 
-        employeeList.some(emp => emp.name === tag)
-      );
-
-      // If contact was assigned to another employee, update their quota
-      if (oldEmployeeTag) {
-        const oldEmployee = employeeList.find(emp => emp.name === oldEmployeeTag);
-        if (oldEmployee) {
-          const oldEmployeeRef = doc(firestore, `companies/${companyId}/employee/${oldEmployee.id}`);
-          const oldEmployeeDoc = await getDoc(oldEmployeeRef);
-          
-          if (oldEmployeeDoc.exists()) {
-            const oldEmployeeData = oldEmployeeDoc.data();
-            await updateDoc(oldEmployeeRef, {
-              assignedContacts: (oldEmployeeData.assignedContacts || 1) - 1,
-              quotaLeads: (oldEmployeeData.quotaLeads || 0) + 1
-            });
-          }
-        }
+      const contactData = contactDoc.data();
+      const currentTags = contactData.tags || [];
+      const currentAssignedTo = Array.isArray(contactData.assignedTo) ? contactData.assignedTo : 
+                               contactData.assignedTo ? [contactData.assignedTo] : [];
+      
+      // Check if employee is already assigned
+      if (currentAssignedTo.includes(tagName)) {
+        toast.info(`${tagName} is already assigned to this contact`);
+        return;
       }
-
-      // Remove any existing employee tags and add new one
-      const updatedTags = [
-        ...currentTags.filter((tag: string) => !employeeList.some(emp => emp.name === tag)),
-        tagName
-      ];
-
+      
+      // Add the new employee tag to tags
+      let updatedTags = [...currentTags];
+      if (!updatedTags.includes(tagName)) {
+        updatedTags.push(tagName);
+      }
+      
       // Use batch write for atomic update
       const batch = writeBatch(firestore);
 
-      // Update contact
+      // Update contact with new assigned employee
       batch.update(contactRef, {
         tags: updatedTags,
-        assignedTo: tagName,
+        assignedTo: arrayUnion(tagName),
         lastAssignedAt: serverTimestamp()
       });
 
-      // Update new employee's quota and assigned contacts
+      // Update new employee's assigned contacts count
       batch.update(employeeRef, {
         quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1), // Prevent negative quota
         assignedContacts: (employeeData.assignedContacts || 0) + 1
@@ -3979,7 +4196,13 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       setContacts(prevContacts =>
         prevContacts.map(c =>
           c.id === contact.id
-            ? { ...c, tags: updatedTags, assignedTo: tagName }
+            ? { 
+                ...c, 
+                tags: updatedTags, 
+                assignedTo: Array.isArray(c.assignedTo) 
+                  ? [...c.assignedTo, tagName] 
+                  : c.assignedTo ? [c.assignedTo, tagName] : [tagName]
+              }
             : c
         )
       );
@@ -3989,16 +4212,10 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
           emp.id === employee.id
             ? {
                 ...emp,
-                quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1), // Prevent negative quota
+                quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1),
                 assignedContacts: (emp.assignedContacts || 0) + 1
               }
-            : oldEmployeeTag && emp.name === oldEmployeeTag
-              ? {
-                  ...emp,
-                  quotaLeads: (emp.quotaLeads || 0) + 1,
-                  assignedContacts: (emp.assignedContacts || 1) - 1
-                }
-              : emp
+            : emp
         )
       );
 
@@ -4362,6 +4579,43 @@ const sendWhatsAppMessage = async (phoneNumber: string, message: string, company
   }
 };
 
+//testing
+const fetchScheduledMessages = async (chatId: string) => {
+  try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      const scheduledMessagesRef = collection(firestore, `companies/${companyId}/scheduledMessages`);
+      const q = query(scheduledMessagesRef, where("status", "==", "scheduled"), where("chatIds", "array-contains", chatId)); // Correct usage of array-contains
+      const querySnapshot = await getDocs(q);
+
+      const messages: ScheduledMessage[] = [];
+      querySnapshot.forEach((doc) => {
+          const data = doc.data();
+          messages.push({ 
+              id: doc.id, 
+              ...data,
+              chatIds: data.chatIds || [],
+              message: data.message || '', // Ensure message is included
+          } as ScheduledMessage);
+      });
+
+      // Sort messages by scheduledTime
+      messages.sort((a, b) => a.scheduledTime.toDate().getTime() - b.scheduledTime.toDate().getTime());
+
+      return messages; // Return the messages
+  } catch (error) {
+      console.error("Error fetching scheduled messages:", error);
+      return []; // Return an empty array on error
+  }
+};
  
 const formatText = (text: string) => {
   // Split text into segments that need formatting and those that don't
@@ -4417,6 +4671,13 @@ function formatDate(timestamp: string | number | Date) {
 }
   const handleEyeClick = () => {
     setIsTabOpen(!isTabOpen);
+    const fetchAndDisplayScheduledMessages = async () => {
+      const messages = await fetchScheduledMessages(selectedContact.chat_id); // Assuming fetchScheduledMessages is modified to accept a contact ID
+      setScheduledMessages(messages|| [] );
+      console.log (messages) // Store the messages in state
+  };
+
+  fetchAndDisplayScheduledMessages();
   };
 
   
@@ -4442,97 +4703,98 @@ const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
   }
 }, [filteredContacts, paginatedContacts, activeTags]);
 
-useEffect(() => {
+// useEffect(() => {
 
-  console.log('userData', userData);
+//   console.log('userData', userData);
 
-  if(userData?.viewEmployee){
-    // Fix: Check if viewEmployee is an array or an object with name property or a string
-    if (Array.isArray(userData.viewEmployee)) {
-      // If it's an array of employee IDs, we need to find the corresponding employee names
-      const viewEmployeeNames = employeeList
-        .filter(emp => userData.viewEmployee.includes(emp.id))
-        .map(emp => emp.name.toLowerCase());
+//   if(userData?.viewEmployee){
+//     // Fix: Check if viewEmployee is an array or an object with name property or a string
+//     if (Array.isArray(userData.viewEmployee)) {
+//       // If it's an array of employee IDs, we need to find the corresponding employee names
+//       const viewEmployeeNames = employeeList
+//         .filter(emp => userData.viewEmployee.includes(emp.id))
+//         .map(emp => emp.name.toLowerCase());
       
-      setPaginatedContacts(contacts.filter(contact => 
-        viewEmployeeNames.some(empName => 
-          contact.assignedTo?.toLowerCase() === empName ||
-          contact.tags?.some(tag => tag.toLowerCase() === empName)
-        )
-      ));
-    } else if (typeof userData.viewEmployee === 'object' && userData.viewEmployee.name) {
-      // If it's an object with a name property
-      const empName = userData.viewEmployee.name.toLowerCase();
-      setPaginatedContacts(contacts.filter(contact => 
-        contact.assignedTo?.toLowerCase() === empName ||
-        contact.tags?.some(tag => tag.toLowerCase() === empName)
-      ));
-    } else if (typeof userData.viewEmployee === 'string') {
-      // If it's a single employee ID string
-      const employee = employeeList.find(emp => emp.id === userData.viewEmployee);
-      if (employee) {
-        const empName = employee.name.toLowerCase();
-        setPaginatedContacts(contacts.filter(contact => 
-          contact.assignedTo?.toLowerCase() === empName ||
-          contact.tags?.some(tag => tag.toLowerCase() === empName)
-        ));
-      }
-    }
-  } else if (selectedEmployee) {
-    setPaginatedContacts(contacts.filter(contact => 
-      contact.assignedTo?.toLowerCase() === selectedEmployee.toLowerCase()
-    ));
-  } else {
-    let filtered = contacts;
+//       setPaginatedContacts(contacts.filter(contact => 
+//         viewEmployeeNames.some(empName => 
+//           contact.assignedTo?.toLowerCase() === empName ||
+//           contact.tags?.some(tag => tag.toLowerCase() === empName)
+//         )
+//       ));
+//     } else if (typeof userData.viewEmployee === 'object' && userData.viewEmployee.name) {
+//       // If it's an object with a name property
+//       const empName = userData.viewEmployee.name.toLowerCase();
+//       setPaginatedContacts(contacts.filter(contact => 
+//         contact.assignedTo?.toLowerCase() === empName ||
+//         contact.tags?.some(tag => tag.toLowerCase() === empName)
+//       ));
+//     } else if (typeof userData.viewEmployee === 'string') {
+//       // If it's a single employee ID string
+//       const employee = employeeList.find(emp => emp.id === userData.viewEmployee);
+//       if (employee) {
+//         const empName = employee.name.toLowerCase();
+//         setPaginatedContacts(contacts.filter(contact => 
+//           contact.assignedTo?.toLowerCase() === empName ||
+//           contact.tags?.some(tag => tag.toLowerCase() === empName)
+//         ));
+//       }
+//     }
+//   } else if (selectedEmployee) {
+//     setPaginatedContacts(contacts.filter(contact => 
+//       contact.assignedTo?.toLowerCase() === selectedEmployee.toLowerCase()
+//     ));
+//   } else {
+//     let filtered = contacts;
 
-    // Apply role-based filtering
-    if (userRole === "3") {
-      filtered = filtered.filter(contact => 
-        contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
-        contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase())
-      );
-    }
+//     // Apply role-based filtering
+//     if (userRole === "3") {
+//       filtered = filtered.filter(contact => 
+//         contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+//         contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase())
+//       );
+//     }
 
-    // Apply tag filter
-    if (activeTags.length > 0) {
-      filtered = filtered.filter((contact) => {
-        if (activeTags.includes('Mine')) {
-          return contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
-                 contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase());
-        }
-        if (activeTags.includes('Unassigned')) {
-          return !contact.assignedTo && !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
-        }
-        if (activeTags.includes('All')) {
-          return true;
-        }
-        return contact.tags?.some(tag => activeTags.includes(tag));
-      });
-    }
+//     // Apply tag filter
+//     if (activeTags.length > 0) {
+//       filtered = filtered.filter((contact) => {
+//         if (activeTags.includes('Mine')) {
+//           return contact.assignedTo?.toLowerCase() === userData?.name?.toLowerCase() ||
+//                  contact.tags?.some(tag => tag.toLowerCase() === userData?.name?.toLowerCase());
+//         }
+//         if (activeTags.includes('Unassigned')) {
+//           return !contact.assignedTo && !contact.tags?.some(tag => employeeList.some(employee => employee.name.toLowerCase() === tag.toLowerCase()));
+//         }
+//         if (activeTags.includes('All')) {
+//           return true;
+//         }
+//         return contact.tags?.some(tag => activeTags.includes(tag));
+//       });
+//     }
 
-    // Apply search filter
-    if (searchQuery.trim() !== '') {
-      filtered = filtered.filter((contact) =>
-        (contact.contactName?.toLowerCase() || '')
-          .includes(searchQuery.toLowerCase()) ||
-        (contact.firstName?.toLowerCase() || '')
-          .includes(searchQuery.toLowerCase()) ||
-        (contact.phone?.toLowerCase() || '')
-          .includes(searchQuery.toLowerCase()) ||
-        (contact.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
-      );
-    }
+//     // Apply search filter
+//     if (searchQuery.trim() !== '') {
+//       filtered = filtered.filter((contact) =>
+//         (contact.contactName?.toLowerCase() || '')
+//           .includes(searchQuery.toLowerCase()) ||
+//         (contact.firstName?.toLowerCase() || '')
+//           .includes(searchQuery.toLowerCase()) ||
+//         (contact.phone?.toLowerCase() || '')
+//           .includes(searchQuery.toLowerCase()) ||
+//         (contact.tags?.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase())))
+//       );
+//     }
 
-    setFilteredContacts(filtered);
-    if (searchQuery.trim() !== '') {
-      setCurrentPage(0); // Reset to first page when searching
-    }
+//     setFilteredContacts(filtered);
+//     if (searchQuery.trim() !== '') {
+//       setCurrentPage(0); // Reset to first page when searching
+//     }
 
-    setPaginatedContacts(filtered);
-  }
-}, [contacts, searchQuery, activeTags, currentUserName, employeeList, userRole, userData, selectedEmployee]);
+//     setPaginatedContacts(filtered);
+//   }
+// }, [contacts, searchQuery, activeTags, currentUserName, employeeList, userRole, userData, selectedEmployee]);
 
 // Update the pagination logic
+
 useEffect(() => {
   const startIndex = currentPage * contactsPerPage;
   const endIndex = startIndex + contactsPerPage;
@@ -9285,6 +9547,59 @@ const toggleBot = async () => {
           </div>
           
         </div>
+        <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden">
+    <div className="bg-yellow-50 dark:bg-yellow-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
+        <h3 className="text-lg font-semibold text-gray-800 dark:text-gray-200">Scheduled Messages</h3>
+    </div>
+    <div className="p-4">
+        {scheduledMessages.length > 0 ? (
+            <div className="overflow-x-auto">
+                <div className="flex gap-3 pb-2" style={{ minWidth: 'min-content' }}>
+                    {scheduledMessages.map((message) => (
+                        <div 
+                        key={message.id} 
+                        className="flex-none w-[300px] bg-gray-50 dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600"
+                    >
+                        <div className="flex flex-col h-full">
+                            <span className="text-sm text-gray-500 dark:text-gray-400 mb-2">
+                                {message.scheduledTime.toDate().toLocaleString()}
+                            </span>
+                            <p className="text-gray-800 dark:text-gray-200 break-words flex-grow">
+                                {message.message}
+                            </p>
+                            <div className="flex gap-2 mt-4">
+                                <button
+                                    onClick={() => handleSendNow(message)}
+                                    className="flex-1 px-3 py-1 bg-green-500 text-white text-sm rounded-md hover:bg-green-600 transition duration-200"
+                                >
+                                    Send Now
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        handleEditScheduledMessage(message);
+                                        setEditScheduledMessageModal(true);
+                                    }}
+                                    className="flex-1 px-3 py-1 bg-primary text-white text-sm rounded-md hover:bg-primary-dark transition duration-200"
+                                >
+                                    Edit
+                                </button>
+                                <button
+                                    onClick={() => handleDeleteScheduledMessage(message.id!)}
+                                    className="flex-1 px-3 py-1 bg-red-500 text-white text-sm rounded-md hover:bg-red-600 transition duration-200"
+                                >
+                                    Delete
+                                </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        ) : (
+            <p className="text-gray-500 dark:text-gray-400">No scheduled messages for this contact.</p>
+        )}
+    </div>
+</div>
             {/* Add the new Notes section */}
             <div className="bg-white dark:bg-gray-700 rounded-lg shadow-md overflow-hidden ">
           <div className="bg-yellow-50 dark:bg-yellow-900 px-4 py-3 border-b border-gray-200 dark:border-gray-600">

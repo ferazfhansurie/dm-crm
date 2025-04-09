@@ -100,7 +100,7 @@ function LoadingPage() {
     setError(null);
     try {
       if (!user?.email) {
-        navigate('/login');
+       // navigate('/login');
         return;
       }
 
@@ -261,12 +261,9 @@ function LoadingPage() {
         try {
           const user = auth.currentUser;
           
-          if (!user?.email) {
-            navigate('/login');
-            return;
-          }
+        
 
-          const docUserRef = doc(firestore, 'user', user.email);
+          const docUserRef = doc(firestore, 'user', user?.email || '');
           const docUserSnapshot = await getDoc(docUserRef);
           
           if (!docUserSnapshot.exists()) {
@@ -573,7 +570,7 @@ useEffect(() => {
       }
 
       await signOut(auth);
-      navigate('/login'); // Adjust this to your login route
+   
     }    catch (error) {
       console.error("Error signing out: ", error);
       setError('Failed to log out. Please try again.');
@@ -634,7 +631,7 @@ useEffect(() => {
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setIsAuthReady(true);
       if (!user) {
-        navigate('/login');
+       // navigate('/login');
       }
     });
 

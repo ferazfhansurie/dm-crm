@@ -427,13 +427,14 @@ function Main() {
           notes: userData.notes || null,
           quotaLeads: userData.quotaLeads || 0,
           invoiceNumber: userData.invoiceNumber || null,
-          phone: 0,
+          phone: userData.phone ?? 0,
           weightage: Number(userData.weightage) || 0,
           ...(Object.keys(phoneNames).reduce((acc, index) => {
             const phoneIndex = parseInt(index);
-            if (phoneIndex > 1) {
-              const phoneField = `phone${phoneIndex}`;
-              const weightageField = `weightage${phoneIndex}`;
+            // Only process additional phones - the primary phone is already set above
+            if (phoneIndex > 0) {
+              const phoneField = `phone${phoneIndex + 1}`;
+              const weightageField = `weightage${phoneIndex + 1}`;
               acc[phoneField] = phoneIndex;
               acc[weightageField] = Number(userData[weightageField as keyof typeof userData]) || 0;
             }
@@ -903,15 +904,13 @@ function Main() {
         {currentUserRole === "1" && phoneOptions.length > 0 && (
   <>
     {Object.entries(phoneNames).map(([index, phoneName]) => {
-      // Map the field names correctly - first weightage has no number
-      const phoneField = index === '1' ? 'phone' : `phone${index}`;
-      const weightageField = index === '1' ? 'weightage' : `weightage${index}`;
-      
-       // Debug log
+      // Fix the mapping - index is 0-based but phone fields are 1-based
+      const numericIndex = parseInt(index);
+      const phoneField = numericIndex === 0 ? 'phone' : `phone${numericIndex + 1}`;
+      const weightageField = numericIndex === 0 ? 'weightage' : `weightage${numericIndex + 1}`;
       
       // Get the correct weightage value based on the field name
       const weightageValue = userData[weightageField as keyof typeof userData];
-       // Debug log
       
       return (
         <div key={index} className="grid grid-cols-2 gap-4">
@@ -931,7 +930,7 @@ function Main() {
             <input 
               type="hidden" 
               name={phoneField} 
-              value={index}
+              value={numericIndex}
             />
           </div>
         </div>

@@ -118,8 +118,10 @@ export const ConfigProvider = ({ children }: { children: ReactNode }) => {
         const currentPath = window.location.pathname;
         if (currentPath === '/register') {
           navigate('/register');
-        } else {
+        } else  if (!currentPath.includes('/guest-chat')) {
           navigate('/login');
+        } else {
+
         }
         setIsLoading(false);
       }

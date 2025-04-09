@@ -45,6 +45,7 @@ const menu: Array<Menu | "divider"> = [
       pathname: "/users-layout-2",
     },
 
+
   /* {
       icon: "Trello",
       title: "Profile",

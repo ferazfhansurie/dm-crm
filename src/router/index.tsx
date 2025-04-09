@@ -87,6 +87,7 @@ import PublicTaskForm from "../pages/PublicTaskForm";
 import Settings from "../pages/Settings";
 import ScheduledMessages from "../pages/ScheduledMessages";
 import AppointmentRequests from "../pages/AppointmentRequests";
+import GuestChat from "../pages/GuestChat";
 
 function Router() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -105,12 +106,10 @@ function Router() {
   const routes = [
     {
       path: "/",
-      element: isLoggedIn ? (
+      element:(
         <div className="h-screen flex flex-col">
           <Layout />
         </div>
-      ) : (
-        <Navigate to="/login" />
       ),
       children: [
         { path: "/", element: <Chat /> },
@@ -132,6 +131,7 @@ function Router() {
         { path: "opportunities", element: <Opportunities /> },
         { path: "appointment-requests", element: <AppointmentRequests /> },
         { path: "scheduled-messages", element: <ScheduledMessages /> },
+
         {
           path: "/database-manager",
           element: <DatabaseManager />
@@ -212,22 +212,21 @@ function Router() {
         { path: "product-grid", element: <ProductGrid /> },
       ],
     },
+    { path: "/guest-chat/:companyId", element: <GuestChat />},
     { path: "notification", element: <Notification /> },
     { path: "dashboard-overview-2", element: <DashboardOverview2 /> },
-    { path: "loading", element: isLoggedIn ? <LoadingIcon /> : <Navigate to="/login" /> },
+    { path: "loading", element:<LoadingIcon />  },
     { path: "product-list", element: <ProductList /> },
     { path: "product-grid", element: <ProductGrid /> },
-    { path: "/login", element: isLoggedIn ? <Navigate to="/loading" /> : <Login /> },
-    { path: "/register", element: isLoggedIn ? <Navigate to="/loading" /> : <Register /> },
+    { path: "/login", element: <Login /> },
+    { path: "/register", element: <Register /> },
    
     { path: "/error-page", element: <ErrorPage /> },
     { path: "*", element: <ErrorPage /> },
   ];
-
   if (isLoading) {
     return <LoadingIcon />;
   }
-
   return useRoutes(routes);
 }
 

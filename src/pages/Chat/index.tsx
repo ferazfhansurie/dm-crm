@@ -4162,6 +4162,83 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       const currentAssignedTo = Array.isArray(contactData.assignedTo) ? contactData.assignedTo : 
                                contactData.assignedTo ? [contactData.assignedTo] : [];
       
+      // Special handling for companyId 0123
+      if (companyId === '0123') {
+        // If there's an existing assignment
+        if (currentAssignedTo.length > 0) {
+          const previousEmployee = employeeList.find(emp => emp.name === currentAssignedTo[0]);
+          
+          if (previousEmployee) {
+            const previousEmployeeRef = doc(firestore, `companies/${companyId}/employee/${previousEmployee.id}`);
+            const previousEmployeeDoc = await getDoc(previousEmployeeRef);
+            
+            if (previousEmployeeDoc.exists()) {
+              const previousEmployeeData = previousEmployeeDoc.data();
+              
+              // Use batch write for atomic update
+              const batch = writeBatch(firestore);
+              
+              // Update contact with new assigned employee
+              batch.update(contactRef, {
+                tags: currentTags.filter((tag: string) => tag !== currentAssignedTo[0]).concat(tagName),
+                assignedTo: [tagName], // Replace with new employee
+                lastAssignedAt: serverTimestamp()
+              });
+
+              // Update previous employee's count
+              batch.update(previousEmployeeRef, {
+                assignedContacts: Math.max(0, (previousEmployeeData.assignedContacts || 0) - 1)
+              });
+
+              // Update new employee's count
+              batch.update(employeeRef, {
+                quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1),
+                assignedContacts: (employeeData.assignedContacts || 0) + 1
+              });
+
+              await batch.commit();
+
+              // Update local states
+              setContacts(prevContacts =>
+                prevContacts.map(c =>
+                  c.id === contact.id
+                    ? { 
+                        ...c, 
+                        tags: currentTags.filter((tag: string) => tag !== currentAssignedTo[0]).concat(tagName),
+                        assignedTo: [tagName]
+                      }
+                    : c
+                )
+              );
+
+              setEmployeeList(prevList =>
+                prevList.map(emp => {
+                  if (emp.id === previousEmployee.id) {
+                    return {
+                      ...emp,
+                      assignedContacts: Math.max(0, (emp.assignedContacts || 0) - 1)
+                    };
+                  }
+                  if (emp.id === employee.id) {
+                    return {
+                      ...emp,
+                      quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1),
+                      assignedContacts: (emp.assignedContacts || 0) + 1
+                    };
+                  }
+                  return emp;
+                })
+              );
+
+              toast.success(`Contact reassigned from ${currentAssignedTo[0]} to ${tagName}`);
+              await sendAssignmentNotification(tagName, contact);
+              return;
+            }
+          }
+        }
+      }
+
+      // Regular handling for other companies or when no previous assignment exists
       // Check if employee is already assigned
       if (currentAssignedTo.includes(tagName)) {
         toast.info(`${tagName} is already assigned to this contact`);
@@ -4186,7 +4263,7 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
 
       // Update new employee's assigned contacts count
       batch.update(employeeRef, {
-        quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1), // Prevent negative quota
+        quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1),
         assignedContacts: (employeeData.assignedContacts || 0) + 1
       });
 
@@ -4228,7 +4305,6 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
     const docRef = doc(firestore, 'companies', companyId);
     const docSnapshot = await getDoc(docRef);
     if (!docSnapshot.exists()) {
-      
       return;
     }
     const data2 = docSnapshot.data();

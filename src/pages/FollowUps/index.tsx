@@ -196,7 +196,7 @@ const FollowUpsPage: React.FC = () => {
         
         return (
             <Button
-                onClick={() => navigate('/users-layout-2/follow-ups-select')}
+                onClick={() => navigate('/inbox')}
                 className="mr-4"
             >
                 ← Back
@@ -997,7 +997,7 @@ const FollowUpsPage: React.FC = () => {
                                         </label>
                                         <input
                                             type="number"
-                                            className="w-full px-4 py-2 border rounded-lg"
+                                            className="w-full px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                             placeholder="Day #"
                                             value={newMessage.dayNumber}
                                             onChange={(e) => setNewMessage({
@@ -1012,7 +1012,7 @@ const FollowUpsPage: React.FC = () => {
                                         </label>
                                         <input
                                             type="number"
-                                            className="w-full px-4 py-2 border rounded-lg"
+                                            className="w-full px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                             placeholder="Sequence #"
                                             value={newMessage.sequence}
                                             onChange={(e) => setNewMessage({
@@ -1036,7 +1036,7 @@ const FollowUpsPage: React.FC = () => {
                                         Message Content
                                     </label>
                                     <textarea
-                                        className="w-full px-4 py-3 border rounded-lg resize-none min-h-[100px]"
+                                        className="w-full px-4 py-3 border rounded-lg resize-none min-h-[100px] text-gray-900 dark:text-gray-900"
                                         placeholder="Enter your message here..."
                                         value={newMessage.message}
                                         onChange={(e) => setNewMessage({
@@ -1074,7 +1074,7 @@ const FollowUpsPage: React.FC = () => {
                                     {!newMessage.useScheduledTime && (
                                         <div className="flex items-center gap-2 mt-2">
                                             <select
-                                                className="flex-1 px-4 py-2 border rounded-lg"
+                                                className="flex-1 px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                                 value={`${newMessage.delayAfter.value}_${newMessage.delayAfter.unit}`}
                                                 onChange={(e) => {
                                                     const [value, unit] = e.target.value.split('_');
@@ -1101,7 +1101,7 @@ const FollowUpsPage: React.FC = () => {
                                     {newMessage.useScheduledTime && (
                                         <div className="flex items-center gap-2 mt-2">
                                             <select
-                                                className="flex-1 px-4 py-2 border rounded-lg"
+                                                className="flex-1 px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                                 value={newMessage.scheduledTime}
                                                 onChange={(e) => setNewMessage({
                                                     ...newMessage,
@@ -1121,7 +1121,7 @@ const FollowUpsPage: React.FC = () => {
 
                                 {/* Tag Management */}
                                 <div className="mb-4 border-t border-gray-200 dark:border-gray-700 pt-4 mt-4">
-                                    <h4 className="text-md font-semibold mb-3">Tag Management</h4>
+                                    <h4 className="text-md font-semibold mb-3 text-gray-800 dark:text-gray-200">Tag Management</h4>
                                     
                                     {/* Add Tags */}
                                     <div className="mb-3">
@@ -1142,8 +1142,81 @@ const FollowUpsPage: React.FC = () => {
                                             placeholder="Select tags to add..."
                                             className="basic-multi-select"
                                             classNamePrefix="select"
+                                            styles={{
+                                                control: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-primary, white)',
+                                                    borderColor: 'var(--color-border, #e2e8f0)',
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                menu: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-primary, white)',
+                                                    zIndex: 9999,
+                                                }),
+                                                option: (base, state) => ({
+                                                    ...base,
+                                                    backgroundColor: state.isFocused 
+                                                        ? 'var(--color-bg-highlight, #4299e1)' 
+                                                        : 'var(--color-bg-primary, white)',
+                                                    color: state.isFocused
+                                                        ? 'white'
+                                                        : 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                multiValue: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-tag, #4299e1)',
+                                                }),
+                                                multiValueLabel: (base) => ({
+                                                    ...base,
+                                                    color: 'white',
+                                                }),
+                                                multiValueRemove: (base) => ({
+                                                    ...base,
+                                                    color: 'white',
+                                                    ':hover': {
+                                                        backgroundColor: '#3182ce',
+                                                        color: 'white',
+                                                    },
+                                                }),
+                                                input: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                placeholder: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-secondary, #718096)',
+                                                }),
+                                                singleValue: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                            }}
+                                            theme={(theme) => ({
+                                                ...theme,
+                                                colors: {
+                                                    ...theme.colors,
+                                                    primary: '#4299e1',
+                                                    primary75: '#63b3ed',
+                                                    primary50: '#90cdf4',
+                                                    primary25: '#bee3f8',
+                                                    danger: '#e53e3e',
+                                                    dangerLight: '#feb2b2',
+                                                    neutral0: 'var(--color-bg-primary, white)',
+                                                    neutral5: 'var(--color-bg-secondary, #f7fafc)',
+                                                    neutral10: 'var(--color-bg-secondary, #edf2f7)',
+                                                    neutral20: 'var(--color-border, #e2e8f0)',
+                                                    neutral30: 'var(--color-border-hover, #cbd5e0)',
+                                                    neutral40: 'var(--color-text-secondary, #718096)',
+                                                    neutral50: 'var(--color-text-secondary, #718096)',
+                                                    neutral60: 'var(--color-text-secondary, #4a5568)',
+                                                    neutral70: 'var(--color-text-primary, #2d3748)',
+                                                    neutral80: 'var(--color-text-primary, #1a202c)',
+                                                    neutral90: 'var(--color-text-primary, #171923)',
+                                                },
+                                            })}
                                         />
-                                        <p className="mt-1 text-xs text-gray-500">
+                                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                             These tags will be added to the contact when this message is sent
                                         </p>
                                     </div>
@@ -1167,8 +1240,81 @@ const FollowUpsPage: React.FC = () => {
                                             placeholder="Select tags to remove..."
                                             className="basic-multi-select"
                                             classNamePrefix="select"
+                                            styles={{
+                                                control: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-primary, white)',
+                                                    borderColor: 'var(--color-border, #e2e8f0)',
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                menu: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-primary, white)',
+                                                    zIndex: 9999,
+                                                }),
+                                                option: (base, state) => ({
+                                                    ...base,
+                                                    backgroundColor: state.isFocused 
+                                                        ? 'var(--color-bg-highlight, #4299e1)' 
+                                                        : 'var(--color-bg-primary, white)',
+                                                    color: state.isFocused
+                                                        ? 'white'
+                                                        : 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                multiValue: (base) => ({
+                                                    ...base,
+                                                    backgroundColor: 'var(--color-bg-tag, #fc8181)',
+                                                }),
+                                                multiValueLabel: (base) => ({
+                                                    ...base,
+                                                    color: 'white',
+                                                }),
+                                                multiValueRemove: (base) => ({
+                                                    ...base,
+                                                    color: 'white',
+                                                    ':hover': {
+                                                        backgroundColor: '#f56565',
+                                                        color: 'white',
+                                                    },
+                                                }),
+                                                input: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                                placeholder: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-secondary, #718096)',
+                                                }),
+                                                singleValue: (base) => ({
+                                                    ...base,
+                                                    color: 'var(--color-text-primary, #1a202c)',
+                                                }),
+                                            }}
+                                            theme={(theme) => ({
+                                                ...theme,
+                                                colors: {
+                                                    ...theme.colors,
+                                                    primary: '#4299e1',
+                                                    primary75: '#63b3ed',
+                                                    primary50: '#90cdf4',
+                                                    primary25: '#bee3f8',
+                                                    danger: '#e53e3e',
+                                                    dangerLight: '#feb2b2',
+                                                    neutral0: 'var(--color-bg-primary, white)',
+                                                    neutral5: 'var(--color-bg-secondary, #f7fafc)',
+                                                    neutral10: 'var(--color-bg-secondary, #edf2f7)',
+                                                    neutral20: 'var(--color-border, #e2e8f0)',
+                                                    neutral30: 'var(--color-border-hover, #cbd5e0)',
+                                                    neutral40: 'var(--color-text-secondary, #718096)',
+                                                    neutral50: 'var(--color-text-secondary, #718096)',
+                                                    neutral60: 'var(--color-text-secondary, #4a5568)',
+                                                    neutral70: 'var(--color-text-primary, #2d3748)',
+                                                    neutral80: 'var(--color-text-primary, #1a202c)',
+                                                    neutral90: 'var(--color-text-primary, #171923)',
+                                                },
+                                            })}
                                         />
-                                        <p className="mt-1 text-xs text-gray-500">
+                                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                                             These tags will be removed from the contact when this message is sent
                                         </p>
                                     </div>
@@ -1182,7 +1328,7 @@ const FollowUpsPage: React.FC = () => {
                                         </label>
                                         <input
                                             type="file"
-                                            className="w-full px-4 py-2 border rounded-lg"
+                                            className="w-full px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                             onChange={(e) => {
                                                 if (e.target.files && e.target.files[0]) {
                                                     setSelectedDocument(e.target.files[0]);
@@ -1208,7 +1354,7 @@ const FollowUpsPage: React.FC = () => {
                                         <input
                                             type="file"
                                             accept="image/*"
-                                            className="w-full px-4 py-2 border rounded-lg"
+                                            className="w-full px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
                                             onChange={(e) => {
                                                 if (e.target.files && e.target.files[0]) {
                                                     setSelectedImage(e.target.files[0]);

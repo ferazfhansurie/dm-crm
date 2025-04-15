@@ -269,6 +269,7 @@ function Main() {
   const [showCsvImportModal, setShowCsvImportModal] = useState(false);
   const [selectedCsvFile, setSelectedCsvFile] = useState<File | null>(null);
   const [showSyncConfirmationModal, setShowSyncConfirmationModal] = useState(false);
+  const [showSyncNamesConfirmationModal, setShowSyncNamesConfirmationModal] = useState(false);
   const [isScheduling, setIsScheduling] = useState(false);
   const [scheduledMessages, setScheduledMessages] = useState<ScheduledMessage[]>([]);
   const [editScheduledMessageModal, setEditScheduledMessageModal] = useState(false);
@@ -2010,9 +2011,70 @@ if (matchingTemplate) {
     }
   };
 
+  const handleSyncNamesConfirmation = () => {
+    if (!isSyncing) {
+      setShowSyncNamesConfirmationModal(true);
+    }
+  };
+
   const handleConfirmSync = async () => {
     setShowSyncConfirmationModal(false);
     await handleSyncContact();
+  };
+
+  const handleConfirmSyncNames = async () => {
+    setShowSyncNamesConfirmationModal(false);
+    await handleSyncContactNames();
+  };
+
+  const handleSyncContactNames = async () => {
+    try {
+      setFetching(true);
+      const user = auth.currentUser;
+      if (!user) {
+        setFetching(false);
+        toast.error("User not authenticated");
+        return;
+      }
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) {
+        setFetching(false);
+        toast.error("User document not found");
+        return;
+      }
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData?.companyId;
+      const docRef = doc(firestore, 'companies', companyId);
+      const docSnapshot = await getDoc(docRef);
+      if (!docSnapshot.exists()) throw new Error('No company document found');
+      const companyData = docSnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      if (!companyId) {
+        setFetching(false);
+        toast.error("Company ID not found");
+        return;
+      }
+
+      // Call the new API endpoint for contact names sync
+      const response = await axios.post(`${baseUrl}/api/sync-contact-names/${companyId}`);
+
+      if (response.status === 200 && response.data.success) {
+        toast.success("Contact names synchronization started successfully");
+        // You might want to add some UI indication that sync is in progress
+      } else {
+        console.error('Failed to start contact names synchronization:', response.data.error);
+        throw new Error(response.data.error || "Failed to start contact names synchronization");
+      }
+
+    } catch (error) {
+      console.error('Error syncing contact names:', error);
+      toast.error("An error occurred while syncing contact names: " + (error instanceof Error ? error.message : String(error)));
+    } finally {
+      setFetching(false);
+    }
   };
 
   const handleSyncContact = async () => {
@@ -4694,6 +4756,26 @@ const getFilteredScheduledMessages = () => {
                         {isSyncing ? 'Syncing...' : 'Sync Database'}
                       </span>
                     </button>
+                    <button 
+                      className={`flex items-center justify-start p-2 !box ${
+                        isSyncing || userRole === "3"
+                          ? 'bg-gray-300 dark:bg-gray-600 cursor-not-allowed' 
+                          : 'bg-white dark:bg-gray-800 hover:bg-gray-100 dark:hover:bg-gray-700'
+                      } text-gray-700 dark:text-gray-300`}
+                      onClick={() => {
+                        if (userRole !== "3") {
+                          handleSyncNamesConfirmation();
+                        } else {
+                          toast.error("You don't have permission to sync the database.");
+                        }
+                      }}
+                      disabled={isSyncing || userRole === "3"}
+                    >
+                      <Lucide icon="FolderSync" className="w-5 h-5 mr-2" />
+                      <span className="font-medium">
+                        {isSyncing ? 'Syncing...' : 'Sync Contact Names'}
+                      </span>
+                    </button>
 
                     <button 
                       className={`flex items-center justify-start p-2 !box ${
@@ -7032,6 +7114,33 @@ const getFilteredScheduledMessages = () => {
                 <button
                   className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
                   onClick={handleConfirmSync}
+                >
+                  Confirm Sync
+                </button>
+              </div>
+            </Dialog.Panel>
+          </div>
+        </Dialog>
+        <Dialog open={showSyncNamesConfirmationModal} onClose={() => setShowSyncNamesConfirmationModal(false)}>
+          <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+            <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-md text-gray-900 dark:text-white mt-20">
+              <div className="p-5 text-center">
+                <Lucide icon="AlertTriangle" className="w-16 h-16 mx-auto mt-3 text-warning" />
+                <div className="mt-5 text-3xl text-gray-900 dark:text-white">Are you sure?</div>
+                <div className="mt-2 text-gray-600 dark:text-gray-400">
+                  Do you really want to sync the contact names? This action may take some time and affect your current data.
+                </div>
+              </div>
+              <div className="px-5 pb-8 text-center">
+                <button
+                  className="px-4 py-2 mr-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-200 dark:bg-gray-700 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600"
+                  onClick={() => setShowSyncNamesConfirmationModal(false)}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                  onClick={handleConfirmSyncNames}
                 >
                   Confirm Sync
                 </button>

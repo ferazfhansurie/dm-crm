@@ -1067,7 +1067,7 @@ const Main: React.FC = () => {
                         </span>
                       </button>
                       <Link to="/users-layout-2/builder">
-                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium">
+                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:hover:bg-gray-700">
                           <span className="flex items-center">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
                               <path d="M17.414 2.586a2 2 0 00-2.828 0L7 10.172V13h2.828l7.586-7.586a2 2 0 000-2.828z" />
@@ -1082,7 +1082,7 @@ const Main: React.FC = () => {
                         target="_blank" 
                         rel="noopener noreferrer"
                       >
-                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium">
+                        <Button variant="outline-primary" className="shadow-sm px-4 py-2.5 font-medium dark:bg-gray-800 dark:border-gray-700 dark:text-white dark:hover:bg-gray-700">
                           <span className="flex items-center">
                             <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">
                               <path fillRule="evenodd" d="M18 10c0 3.866-3.582 7-8 7a8.841 8.841 0 01-4.083-.98L2 17l1.338-3.123C2.493 12.767 2 11.434 2 10c0-3.866 3.582-7 8-7s8 3.134 8 7zM7 9H5v2h2V9zm8 0h-2v2h2V9zM9 9h2v2H9V9z" clipRule="evenodd" />
@@ -1131,7 +1131,7 @@ const Main: React.FC = () => {
                               </span>
                             </Button>
                           </Link>
-                          <Link to="/follow-ups-select">
+                          <Link to="/follow-ups">
                             <Button variant="secondary" className="shadow-sm bg-white dark:bg-gray-700 border-blue-200 dark:border-blue-700 text-blue-600 dark:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/50 px-4 py-2">
                               <span className="flex items-center">
                                 <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4 mr-2" viewBox="0 0 20 20" fill="currentColor">

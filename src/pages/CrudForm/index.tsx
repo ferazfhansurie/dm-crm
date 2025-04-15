@@ -258,7 +258,7 @@ function Main() {
       
       // Reset phone to -1 if role is not "2" (Sales)
       if (name === 'role' && value !== "2") {
-        newData.phone = -1;
+        newData.phone = 0;
       }
       
       return newData;

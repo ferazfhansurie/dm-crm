@@ -8418,7 +8418,7 @@ const toggleBot = async () => {
                             }}
                           />
                             {message.image?.caption && (
-                              <p className="mt-2 text-sm text-white dark:text-gray-200">{message.image.caption}</p>
+                              <p className="mt-2 text-sm text-black dark:text-gray-200">{message.image.caption}</p>
                             )}
                         </div>
                       )}

@@ -284,7 +284,7 @@ const FollowUpsPage: React.FC = () => {
         },
         useScheduledTime: false,
         scheduledTime: '',
-        templateId: undefined,  // Add this (optional)
+        templateId: undefined,
         addTags: [],
         removeTags: []
     });
@@ -765,7 +765,11 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
-                delayAfter: newMessage.useScheduledTime ? null : {
+                delayAfter: newMessage.useScheduledTime ? {
+                    value: 0,
+                    unit: 'minutes',
+                    isInstantaneous: false
+                } : {
                     value: newMessage.delayAfter.value,
                     unit: newMessage.delayAfter.unit,
                     isInstantaneous: newMessage.delayAfter.isInstantaneous
@@ -775,7 +779,7 @@ const FollowUpsPage: React.FC = () => {
                     numbers: newMessage.specificNumbers.numbers // Make sure this array is included
                 },
                 useScheduledTime: newMessage.useScheduledTime,
-                scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : null,
+                scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : '',
                 addTags: newMessage.addTags || [],
                 removeTags: newMessage.removeTags || []
             };
@@ -955,7 +959,7 @@ const FollowUpsPage: React.FC = () => {
                                         {/* Actions */}
                                         <div className="flex gap-2 ml-4">
                                             <Button
-                                                onClick={(e) => {
+                                                onClick={(e: React.MouseEvent) => {
                                                     e.stopPropagation();
                                                     setIsEditingTemplate(template.id);
                                                     setEditingTemplate(template);
@@ -965,7 +969,7 @@ const FollowUpsPage: React.FC = () => {
                                                 Edit
                                             </Button>
                                             <Button
-                                                onClick={(e) => {
+                                                onClick={(e: React.MouseEvent) => {
                                                     e.stopPropagation();
                                                     if (window.confirm('Are you sure you want to delete this template?')) {
                                                         deleteTemplate(template.id);
@@ -1094,8 +1098,17 @@ const FollowUpsPage: React.FC = () => {
                                                     </option>
                                                 ))}
                                             </select>
-                                            <span className="text-sm text-gray-600 dark:text-gray-400">after previous message</span>
+                                            <span className="text-sm text-gray-600 dark:text-gray-400">
+                                                {newMessage.dayNumber === 1 && newMessage.sequence === 1 
+                                                    ? "after template starts" 
+                                                    : "after previous message"}
+                                            </span>
                                         </div>
+                                    )}
+                                    {!newMessage.useScheduledTime && newMessage.dayNumber === 1 && newMessage.sequence === 1 && (
+                                        <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                            For the first message, this delay will be applied after the template is triggered.
+                                        </p>
                                     )}
 
                                     {newMessage.useScheduledTime && (
@@ -1465,7 +1478,8 @@ const FollowUpsPage: React.FC = () => {
                                                                 </p>
                                                                 <div className="flex gap-2">
                                                                     <Button
-                                                                        onClick={() => {
+                                                                        onClick={(e: React.MouseEvent) => {
+                                                                            e.stopPropagation();
                                                                             setIsEditingMessage(message.id);
                                                                             setEditingMessage(message);
                                                                         }}
@@ -1474,7 +1488,8 @@ const FollowUpsPage: React.FC = () => {
                                                                         Edit
                                                                     </Button>
                                                                     <Button 
-                                                                        onClick={() => {    
+                                                                        onClick={(e: React.MouseEvent) => {    
+                                                                            e.stopPropagation();
                                                                             if (window.confirm('Are you sure you want to delete this message?')) {
                                                                                 deleteMessage(message.id);
                                                                             }
@@ -1604,8 +1619,17 @@ const FollowUpsPage: React.FC = () => {
                                                                                         </option>
                                                                                     ))}
                                                                                 </select>
-                                                                                <span className="text-sm text-gray-600 dark:text-gray-400">after previous message</span>
+                                                                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                                                                    {editingMessage?.dayNumber === 1 && editingMessage?.sequence === 1 
+                                                                                        ? "after template starts" 
+                                                                                        : "after previous message"}
+                                                                                </span>
                                                                             </div>
+                                                                        )}
+                                                                        {!editingMessage?.useScheduledTime && editingMessage?.dayNumber === 1 && editingMessage?.sequence === 1 && (
+                                                                            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                                                                                For the first message, this delay will be applied after the template is triggered.
+                                                                            </p>
                                                                         )}
 
                                                                         {editingMessage?.useScheduledTime && (
@@ -1741,7 +1765,8 @@ const FollowUpsPage: React.FC = () => {
                                                                     {/* Action Buttons */}
                                                                     <div className="flex justify-end gap-2">
                                                                         <Button
-                                                                            onClick={() => {
+                                                                            onClick={(e: React.MouseEvent) => {
+                                                                                e.stopPropagation();
                                                                                 setIsEditingMessage(null);
                                                                                 setEditingMessage(null);
                                                                                 setSelectedDocument(null);
@@ -1752,7 +1777,7 @@ const FollowUpsPage: React.FC = () => {
                                                                             Cancel
                                                                         </Button>
                                                                         <Button
-                                                                            onClick={() => updateMessage(message.id)}
+                                                                            onClick={(e: React.MouseEvent) => updateMessage(message.id)}
                                                                             className="bg-primary hover:bg-primary-dark text-white"
                                                                             disabled={!editingMessage || !editingMessage.message || editingMessage.message.trim() === ''}
                                                                         >
@@ -1892,7 +1917,7 @@ const FollowUpsPage: React.FC = () => {
                                     }}
                                 />
                                 <Button
-                                    onClick={() => {
+                                    onClick={(e: React.MouseEvent) => {
                                         if (newNumber.trim()) {
                                             setEditingTemplate({
                                                 ...editingTemplate,
@@ -1915,7 +1940,8 @@ const FollowUpsPage: React.FC = () => {
                                     >
                                         <span>{keyword}</span>
                                         <button
-                                            onClick={() => {
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
                                                 setEditingTemplate({
                                                     ...editingTemplate,
                                                     triggerKeywords: editingTemplate.triggerKeywords?.filter((_, i) => i !== index)
@@ -2134,7 +2160,8 @@ const FollowUpsPage: React.FC = () => {
                         {/* Action Buttons */}
                         <div className="flex justify-end gap-2">
                             <Button 
-                                onClick={() => {
+                                onClick={(e: React.MouseEvent) => {
+                                    e.stopPropagation();
                                     setIsEditingTemplate(null);
                                     setEditingTemplate(null);
                                 }}
@@ -2143,7 +2170,7 @@ const FollowUpsPage: React.FC = () => {
                                 Cancel
                             </Button>
                             <Button 
-                                onClick={() => editTemplate(editingTemplate.id)}
+                                onClick={(e: React.MouseEvent) => editTemplate(editingTemplate.id)}
                                 disabled={!editingTemplate.name.trim()}
                                 className="text-white bg-primary hover:bg-primary-dark"
                             >
@@ -2219,7 +2246,7 @@ const FollowUpsPage: React.FC = () => {
                                     }}
                                 />
                                 <Button
-                                    onClick={() => {
+                                    onClick={(e: React.MouseEvent) => {
                                         if (newNumber.trim()) {
                                             setNewTemplate(prev => ({
                                                 ...prev,
@@ -2242,7 +2269,8 @@ const FollowUpsPage: React.FC = () => {
                                     >
                                         <span>{keyword}</span>
                                         <button
-                                            onClick={() => {
+                                            onClick={(e: React.MouseEvent) => {
+                                                e.stopPropagation();
                                                 setNewTemplate(prev => ({
                                                     ...prev,
                                                     triggerKeywords: prev.triggerKeywords.filter((_, i) => i !== index)
@@ -2507,7 +2535,8 @@ const FollowUpsPage: React.FC = () => {
                         {/* Action Buttons */}
                         <div className="flex justify-end gap-2 mt-4">
                             <Button 
-                                onClick={() => {
+                                onClick={(e: React.MouseEvent) => {
+                                    e.stopPropagation();
                                     setIsAddingTemplate(false);
                                     setNewTemplate({
                                         name: '',
@@ -2522,11 +2551,11 @@ const FollowUpsPage: React.FC = () => {
                                 Cancel
                             </Button>
                             <Button 
-                                onClick={addTemplate}
+                                onClick={(e: React.MouseEvent) => addTemplate()}
                                 disabled={!newTemplate.name.trim()}
                                 className="text-white bg-primary hover:bg-primary-dark"
                             >
-                                Create Template
+                                Add Template
                             </Button>
                         </div>
                     </div>

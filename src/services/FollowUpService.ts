@@ -121,6 +121,8 @@ class FollowUpService {
             ...doc.data()
         })) as FollowUpMessage[];
 
+        console.log(`Scheduling ${messages.length} messages for contact ${contact.id} with template ${template.id}`);
+
         // Schedule each message
         let previousScheduledTime: Date | null = null;
         
@@ -135,28 +137,28 @@ class FollowUpService {
                 const [hours, minutes] = message.scheduledTime.split(':');
                 scheduledTime = new Date(baseDate);
                 scheduledTime.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+                console.log(`Message ${message.id} (day ${message.dayNumber}, seq ${message.sequence}) - Using scheduled time: ${scheduledTime.toLocaleString()}`);
             } else {
                 // Calculate based on previous message time plus delay
                 if (!previousScheduledTime) {
                     // First message uses template start time
                     if (template.isCustomStartTime && template.startTime) {
                         scheduledTime = new Date(template.startTime);
+                        console.log(`First message ${message.id} - Using custom template start time: ${scheduledTime.toLocaleString()}`);
                     } else {
                         scheduledTime = new Date();
                         if (template.startType === 'delayed') {
                             scheduledTime.setHours(scheduledTime.getHours() + 24);
+                            console.log(`First message ${message.id} - Using delayed start (24h): ${scheduledTime.toLocaleString()}`);
+                        } else {
+                            console.log(`First message ${message.id} - Using immediate start: ${scheduledTime.toLocaleString()}`);
                         }
                     }
-                } else {
-                    // Subsequent messages use delay from previous
-                    scheduledTime = new Date(previousScheduledTime);
-                    
-                    if (message.delayAfter?.isInstantaneous) {
-                        // Add a small delay (1 minute) for "instantaneous" messages
-                        scheduledTime.setMinutes(scheduledTime.getMinutes() + 1);
-                    } else {
-                        // Add the specified delay
-                        const { value, unit } = message.delayAfter || { value: 5, unit: 'minutes' };
+
+                    // Apply delay for first message if it's not instantaneous
+                    if (message.delayAfter && !message.delayAfter.isInstantaneous) {
+                        const { value, unit } = message.delayAfter;
+                        const originalTime = new Date(scheduledTime);
                         
                         switch (unit) {
                             case 'minutes':
@@ -169,6 +171,35 @@ class FollowUpService {
                                 scheduledTime.setDate(scheduledTime.getDate() + value);
                                 break;
                         }
+                        console.log(`First message ${message.id} - Applied delay of ${value} ${unit}: ${originalTime.toLocaleString()} → ${scheduledTime.toLocaleString()}`);
+                    }
+                } else {
+                    // Subsequent messages use delay from previous
+                    scheduledTime = new Date(previousScheduledTime);
+                    console.log(`Message ${message.id} (day ${message.dayNumber}, seq ${message.sequence}) - Starting from previous scheduled time: ${scheduledTime.toLocaleString()}`);
+                    
+                    if (message.delayAfter?.isInstantaneous) {
+                        // Add a small delay (1 minute) for "instantaneous" messages
+                        const originalTime = new Date(scheduledTime);
+                        scheduledTime.setMinutes(scheduledTime.getMinutes() + 1);
+                        console.log(`Message ${message.id} - Using instantaneous delay (1 min): ${originalTime.toLocaleString()} → ${scheduledTime.toLocaleString()}`);
+                    } else {
+                        // Add the specified delay
+                        const { value, unit } = message.delayAfter || { value: 5, unit: 'minutes' };
+                        const originalTime = new Date(scheduledTime);
+                        
+                        switch (unit) {
+                            case 'minutes':
+                                scheduledTime.setMinutes(scheduledTime.getMinutes() + value);
+                                break;
+                            case 'hours':
+                                scheduledTime.setHours(scheduledTime.getHours() + value);
+                                break;
+                            case 'days':
+                                scheduledTime.setDate(scheduledTime.getDate() + value);
+                                break;
+                        }
+                        console.log(`Message ${message.id} - Applied delay of ${value} ${unit}: ${originalTime.toLocaleString()} → ${scheduledTime.toLocaleString()}`);
                     }
                 }
             }
@@ -177,7 +208,9 @@ class FollowUpService {
             if (template.batchSettings) {
                 // Add delay based on batch settings
                 const delay = this.calculateBatchDelay(template.batchSettings);
+                const originalTime = new Date(scheduledTime);
                 scheduledTime.setMinutes(scheduledTime.getMinutes() + delay);
+                console.log(`Message ${message.id} - Applied batch delay of ${delay} minutes: ${originalTime.toLocaleString()} → ${scheduledTime.toLocaleString()}`);
             }
 
             // Only schedule if the time is in the future
@@ -194,6 +227,9 @@ class FollowUpService {
                     image: message.image,
                     createdAt: serverTimestamp()
                 });
+                console.log(`Message ${message.id} - Successfully scheduled for ${scheduledTime.toLocaleString()}`);
+            } else {
+                console.log(`Message ${message.id} - Not scheduled because time is in the past: ${scheduledTime.toLocaleString()}`);
             }
             
             // Update for next message

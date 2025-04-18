@@ -125,7 +125,12 @@ function AIResponses() {
 
                 switch (responseType) {
                     case 'Tag':
-                        return { ...baseResponse, type: 'Tag', tags: data.tags || [] } as AITagResponse;
+                        return { 
+                            ...baseResponse, 
+                            type: 'Tag', 
+                            tags: data.tags || [],
+                            tagActionMode: data.tagActionMode || 'add'
+                        } as AITagResponse;
                     case 'Image':
                         return { 
                             ...baseResponse, 
@@ -147,12 +152,12 @@ function AIResponses() {
                             documentUrls: data.documentUrls || [],
                             documentNames: data.documentNames || []
                         } as AIDocumentResponse;
-                        case 'Assign':
-                            return {
-                                ...baseResponse,
-                                type: 'Assign',
-                                assignedEmployees: data.assignedEmployees || []
-                            } as AIAssignResponse;
+                    case 'Assign':
+                        return {
+                            ...baseResponse,
+                            type: 'Assign',
+                            assignedEmployees: data.assignedEmployees || []
+                        } as AIAssignResponse;
                     case 'Video':
                         return {
                             ...baseResponse,
@@ -333,15 +338,15 @@ function AIResponses() {
                         documentNames: selectedDocs.map(doc => doc.name)
                     };
                     break;
-                    case 'Assign':
-                        if (selectedEmployees.length === 0) {
-                            toast.error('Please select at least one employee');
-                            return;
-                        }
-                        additionalData = {
-                            assignedEmployees: selectedEmployees
-                        };
-                        break;
+                case 'Assign':
+                    if (selectedEmployees.length === 0) {
+                        toast.error('Please select at least one employee');
+                        return;
+                    }
+                    additionalData = {
+                        assignedEmployees: selectedEmployees
+                    };
+                    break;
                 case 'Video':
                     if (selectedVideos.length === 0) {
                         toast.error('Please select at least one video');
@@ -541,11 +546,11 @@ function AIResponses() {
                 status: response.status,
                 keyword: response.keywords[0],
                 keywordSource: keywordSource,
-                tagActionMode: tagActionMode
             };
 
             switch (responseType) {
                 case 'Tag':
+                    updatedData.tagActionMode = tagActionMode;
                     if (selectedTags.length > 0) {
                         const existingTags = (response as AITagResponse).tags || [];
                         let updatedTags: string[];
@@ -696,6 +701,7 @@ function AIResponses() {
                     .map(tagName => availableTags.find(t => t.name === tagName)?.id)
                     .filter((id): id is string => id !== undefined);
                 setSelectedTags(selectedTagIds);
+                setTagActionMode(tagResponse.tagActionMode || 'add');
                 break;
             case 'Image':
                 const imageResponse = response as AIImageResponse;
@@ -1195,6 +1201,9 @@ function AIResponses() {
                                                                     Description: {response.description}
                                                                 </div>
                                                             )}
+                                                            <div className="text-slate-500">
+                                                                Action: {(response as AITagResponse).tagActionMode === 'delete' ? 'Remove Tags' : 'Add Tags'}
+                                                            </div>
                                                         </div>
                                                         <div className="flex space-x-2">
                                                             <Button variant="primary" onClick={() => startEditing(response)}>

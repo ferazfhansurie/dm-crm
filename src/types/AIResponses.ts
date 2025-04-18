@@ -6,12 +6,13 @@ export interface BaseAIResponse {
   createdAt: Date;
   status: 'active' | 'inactive';
   description?: string;
-  keywordSource: 'user' | 'bot';
+  keywordSource: 'user' | 'bot' | 'own';
 }
 
 export interface AITagResponse extends BaseAIResponse {
   type: 'Tag';
   tags: string[];
+  tagActionMode?: 'add' | 'delete';
 }
 
 export interface AIImageResponse extends BaseAIResponse {

@@ -550,34 +550,19 @@ function AIResponses() {
 
             switch (responseType) {
                 case 'Tag':
-                    updatedData.tagActionMode = tagActionMode;
-                    if (selectedTags.length > 0) {
-                        const existingTags = (response as AITagResponse).tags || [];
-                        let updatedTags: string[];
-
-                        if (tagActionMode === 'add') {
-                            // Add new tags
-                            const newTags = selectedTags.map(tagId => {
-                                const tag = availableTags.find(t => t.id === tagId);
-                                return tag ? tag.name : '';
-                            }).filter(name => name !== '');
-                            updatedTags = [...new Set([...existingTags, ...newTags])];
-                        } else {
-                            // Remove selected tags
-                            const tagsToRemove = selectedTags.map(tagId => {
-                                const tag = availableTags.find(t => t.id === tagId);
-                                return tag ? tag.name : '';
-                            }).filter(name => name !== '');
-                            updatedTags = existingTags.filter(tag => !tagsToRemove.includes(tag));
-                        }
-
-                        if (updatedTags.length === 0) {
-                            toast.error('Cannot remove all tags. At least one tag must remain.');
-                            return;
-                        }
-
-                        updatedData.tags = updatedTags;
+                    // Simplify tag handling - selectedTags directly represents the final tag selection
+                    const tagNames = selectedTags.map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        return tag ? tag.name : '';
+                    }).filter(name => name !== '');
+                    
+                    if (tagNames.length === 0) {
+                        toast.error('Cannot have zero tags. Please select at least one tag.');
+                        return;
                     }
+                    
+                    updatedData.tags = tagNames;
+                    updatedData.tagActionMode = tagActionMode; // Keep this for backwards compatibility
                     break;
                 case 'Image':
                     // Handle existing images + new images
@@ -697,10 +682,12 @@ function AIResponses() {
             case 'Tag':
                 const tagResponse = response as AITagResponse;
                 console.log('[AIResponses] Setting selected tags:', tagResponse.tags);
+                // Map tag names to tag IDs for the selected tags
                 const selectedTagIds = tagResponse.tags
                     .map(tagName => availableTags.find(t => t.name === tagName)?.id)
                     .filter((id): id is string => id !== undefined);
                 setSelectedTags(selectedTagIds);
+                // Keep this for UI consistency
                 setTagActionMode(tagResponse.tagActionMode || 'add');
                 break;
             case 'Image':
@@ -899,7 +886,7 @@ function AIResponses() {
                                             darkMode ? "bg-darkmode-600" : "bg-white"
                                         )}>
                                             {isEditing === response.id ? (
-                                                <div className="space-y-4">
+                                                <div className="space-y-4" data-editing="true">
                                                     {/* Keywords Edit */}
                                                     <div>
                                                         <FormLabel>Keywords</FormLabel>

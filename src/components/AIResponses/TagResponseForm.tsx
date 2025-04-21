@@ -22,6 +22,8 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
     tagActionMode,
     onTagActionModeChange
 }) => {
+    const isEditing = window.location.href.includes('edit') || document.querySelector('[data-editing="true"]') !== null;
+    
     return (
         <div className="mb-4">
             <KeywordSourceSelector 
@@ -51,10 +53,15 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
                         <span className="ml-2 dark:text-slate-200">Remove Tags</span>
                     </label>
                 </div>
+                {isEditing && (
+                    <div className="mt-2 text-slate-500 text-sm italic">
+                        When editing, simply check tags you want and uncheck tags you don't want.
+                    </div>
+                )}
             </div>
 
             <FormLabel className="dark:text-slate-200">
-                {tagActionMode === 'add' ? 'Select Tags to Add' : 'Select Tags to Remove'}
+                {isEditing ? 'Select Tags' : (tagActionMode === 'add' ? 'Select Tags to Add' : 'Select Tags to Remove')}
             </FormLabel>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
                 {availableTags.map((tag) => (

@@ -692,6 +692,7 @@ const resetSort = () => {
       toast.error('Failed to remove tags and follow-ups');
     }
   };
+  
   const fetchContacts = useCallback(async () => {
     setLoading(true);
     try {
@@ -5038,21 +5039,21 @@ const getFilteredScheduledMessages = () => {
                     <Lucide icon={showScheduledMessages ? "ChevronUp" : "ChevronDown"} className="w-6 h-6 ml-2 mb-1 text-gray-700 dark:text-gray-300" />
                   </button>
                   {selectedScheduledMessages.length > 0 && (
-        <div className="mb-4 flex gap-2">
-          <button
-            onClick={handleSendSelectedNow}
-            className="text-sm bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
-          >
-            Send Selected ({selectedScheduledMessages.length})
-          </button>
-          <button
-            onClick={handleDeleteSelected}
-            className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
-          >
-            Delete Selected ({selectedScheduledMessages.length})
-          </button>
-        </div>
-      )}
+                    <div className="mb-4 flex gap-2">
+                      <button
+                        onClick={handleSendSelectedNow}
+                        className="text-sm bg-green-600 hover:bg-green-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
+                      >
+                        Send Selected ({selectedScheduledMessages.length})
+                      </button>
+                      <button
+                        onClick={handleDeleteSelected}
+                        className="text-sm bg-red-600 hover:bg-red-700 text-white font-medium py-2 px-4 rounded-md shadow-sm transition-colors duration-200"
+                      >
+                        Delete Selected ({selectedScheduledMessages.length})
+                      </button>
+                    </div>
+                  )}
                 </div>
                 {showScheduledMessages && (
                   getFilteredScheduledMessages().length > 0 ? (

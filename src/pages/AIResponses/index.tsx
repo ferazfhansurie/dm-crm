@@ -1,10 +1,10 @@
 import React, { useState, useEffect } from "react";
 import { getAuth } from "firebase/auth";
-import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy, serverTimestamp } from "firebase/firestore";
+import { getFirestore, collection, doc, getDoc, getDocs, addDoc, updateDoc, deleteDoc, query, orderBy, serverTimestamp, setDoc } from "firebase/firestore";
 import { ToastContainer, toast } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
 import Button from "@/components/Base/Button";
-import { FormInput, FormLabel, FormSelect, FormTextarea } from "@/components/Base/Form";
+import { FormInput, FormLabel, FormSelect, FormTextarea, FormSwitch } from "@/components/Base/Form";
 import Lucide from "@/components/Base/Lucide";
 import { useAppSelector } from "@/stores/hooks";
 import { selectDarkMode } from "@/stores/darkModeSlice";
@@ -72,6 +72,15 @@ function AIResponses() {
 
     const [tagActionMode, setTagActionMode] = useState<'add' | 'delete'>('add');
 
+    const [statusAIResponses, setStatusAIResponses] = useState({
+        aiAssign: false,
+        aiDocument: false,
+        aiImage: false,
+        aiTag: false,
+        aiVideo: false,
+        aiVoice: false
+    });
+
     const firestore = getFirestore();
     const auth = getAuth();
     const darkMode = useAppSelector(selectDarkMode);
@@ -86,6 +95,40 @@ function AIResponses() {
             fetchEmployees();
         }
     }, [responseType]);
+
+    useEffect(() => {
+        const fetchStatusAIResponses = async () => {
+            try {
+                const user = auth.currentUser;
+                if (!user) return;
+
+                const userRef = doc(firestore, 'user', user.email!);
+                const userSnapshot = await getDoc(userRef);
+                if (!userSnapshot.exists()) return;
+                const companyId = userSnapshot.data().companyId;
+
+                const companyRef = doc(firestore, 'companies', companyId);
+                const companyDoc = await getDoc(companyRef);
+                
+                if (companyDoc.exists()) {
+                    const statusAIResponses = companyDoc.data().statusAIResponses || {
+                        aiAssign: false,
+                        aiDocument: false,
+                        aiImage: false,
+                        aiTag: false,
+                        aiVideo: false,
+                        aiVoice: false
+                    };
+                    setStatusAIResponses(statusAIResponses);
+                }
+            } catch (error) {
+                console.error('Error fetching status:', error);
+                toast.error('Error fetching AI response settings');
+            }
+        };
+
+        fetchStatusAIResponses();
+    }, []);
 
     const fetchResponses = async () => {
         try {
@@ -717,22 +760,95 @@ function AIResponses() {
         }
     };
 
+    const handleToggleStatus = async (response: AIResponse) => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userSnapshot = await getDoc(userRef);
+            if (!userSnapshot.exists()) return;
+            const companyId = userSnapshot.data().companyId;
+
+            const responseRef = doc(firestore, `companies/${companyId}/ai${response.type}Responses`, response.id);
+            const newStatus = response.status === 'active' ? 'inactive' : 'active' as const;
+            
+            await updateDoc(responseRef, {
+                status: newStatus
+            });
+
+            // Update local state with proper typing
+            const updatedResponses = responses.map(r =>
+                r.id === response.id ? { ...r, status: newStatus as 'active' | 'inactive' } : r
+            ) as AIResponse[];
+            setResponses(updatedResponses);
+            
+            toast.success(`Response ${newStatus === 'active' ? 'activated' : 'deactivated'} successfully`);
+        } catch (error) {
+            console.error('Error toggling response status:', error);
+            toast.error('Error updating response status');
+        }
+    };
+
+    const handleStatusToggle = async (key: keyof typeof statusAIResponses) => {
+        try {
+            const user = auth.currentUser;
+            if (!user) return;
+
+            const userRef = doc(firestore, 'user', user.email!);
+            const userSnapshot = await getDoc(userRef);
+            if (!userSnapshot.exists()) return;
+            const companyId = userSnapshot.data().companyId;
+
+            const companyRef = doc(firestore, 'companies', companyId);
+            
+            const newStatus = {
+                ...statusAIResponses,
+                [key]: !statusAIResponses[key]
+            };
+
+            await updateDoc(companyRef, {
+                statusAIResponses: newStatus
+            });
+
+            setStatusAIResponses(newStatus);
+            toast.success(`${key} ${newStatus[key] ? 'enabled' : 'disabled'} successfully`);
+        } catch (error) {
+            console.error('Error updating status:', error);
+            toast.error('Error updating AI response settings');
+        }
+    };
+
     return (
         <div className="h-screen overflow-y-auto pb-10">
-            <div className="mt-10 ml-2 justify-between items-center intro-y">
+            <div className="mt-10 ml-2 flex items-center gap-4 intro-y">
                 <h2 className="text-lg font-medium">AI Responses</h2>
-                <FormSelect
-                    value={responseType}
-                    onChange={(e) => setResponseType(e.target.value as AIResponseType)}
-                    className="w-48"
-                >
-                    <option value="Tag">Tag Responses</option>
-                    <option value="Image">Image Responses</option>
-                    <option value="Voice">Voice Responses</option>
-                    <option value="Document">Document Responses</option>
-                    <option value="Assign">Assign Responses</option>
-                    <option value="Video">Video Responses</option>
-                </FormSelect>
+                <div className="flex items-center gap-4">
+                    <FormSelect
+                        value={responseType}
+                        onChange={(e) => setResponseType(e.target.value as AIResponseType)}
+                        className="w-48"
+                    >
+                        <option value="Tag">Tag Responses</option>
+                        <option value="Image">Image Responses</option>
+                        <option value="Voice">Voice Responses</option>
+                        <option value="Document">Document Responses</option>
+                        <option value="Assign">Assign Responses</option>
+                        <option value="Video">Video Responses</option>
+                    </FormSelect>
+
+                    {/* Dynamic toggle based on selected response type */}
+                    <div className="flex items-center gap-2">
+                        <FormSwitch>
+                            <FormSwitch.Input
+                                type="checkbox"
+                                checked={statusAIResponses[`ai${responseType}` as keyof typeof statusAIResponses]}
+                                onChange={() => handleStatusToggle(`ai${responseType}` as keyof typeof statusAIResponses)}
+                            />
+                            <FormSwitch.Label>Enable {responseType} Responses</FormSwitch.Label>
+                        </FormSwitch>
+                    </div>
+                </div>
             </div>
 
             <div className="grid grid-cols-12 gap-6 mt-5">
@@ -1133,20 +1249,24 @@ function AIResponses() {
                                                     {/* Status Edit */}
                                                     <div>
                                                         <FormLabel>Status</FormLabel>
-                                                        <FormSelect
-                                                            value={response.status}
-                                                            onChange={(e) => {
-                                                                const updatedResponses = responses.map(r =>
-                                                                    r.id === response.id
-                                                                        ? { ...r, status: e.target.value as 'active' | 'inactive' }
-                                                                        : r
-                                                                );
-                                                                setResponses(updatedResponses);
-                                                            }}
-                                                        >
-                                                            <option value="active">Active</option>
-                                                            <option value="inactive">Inactive</option>
-                                                        </FormSelect>
+                                                        <div className="text-slate-500">
+                                                            <div className="flex items-center gap-2">
+                                                                Status: 
+                                                                <FormSwitch>
+                                                                    <FormSwitch.Input
+                                                                        type="checkbox"
+                                                                        checked={response.status === 'active'}
+                                                                        onChange={() => handleToggleStatus(response)}
+                                                                    />
+                                                                </FormSwitch>
+                                                                <span className={clsx(
+                                                                    "ml-2",
+                                                                    response.status === 'active' ? 'text-success' : 'text-danger'
+                                                                )}>
+                                                                    {response.status}
+                                                                </span>
+                                                            </div>
+                                                        </div>
                                                     </div>
 
                                                     {/* Action Buttons */}
@@ -1178,7 +1298,22 @@ function AIResponses() {
                                                                     response.keywords || 'No keywords'}
                                                             </div>
                                                             <div className="text-slate-500">
-                                                                Status: {response.status}
+                                                                <div className="flex items-center gap-2">
+                                                                    Status: 
+                                                                    <FormSwitch>
+                                                                        <FormSwitch.Input
+                                                                            type="checkbox"
+                                                                            checked={response.status === 'active'}
+                                                                            onChange={() => handleToggleStatus(response)}
+                                                                        />
+                                                                    </FormSwitch>
+                                                                    <span className={clsx(
+                                                                        "ml-2",
+                                                                        response.status === 'active' ? 'text-success' : 'text-danger'
+                                                                    )}>
+                                                                        {response.status}
+                                                                    </span>
+                                                                </div>
                                                             </div>
                                                             <div className="text-slate-500">
                                                                 Created: {response.createdAt.toLocaleDateString()}

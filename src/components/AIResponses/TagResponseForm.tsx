@@ -53,11 +53,6 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
                         <span className="ml-2 dark:text-slate-200">Remove Tags</span>
                     </label>
                 </div>
-                {isEditing && (
-                    <div className="mt-2 text-slate-500 text-sm italic">
-                        When editing, simply check tags you want and uncheck tags you don't want.
-                    </div>
-                )}
             </div>
 
             <FormLabel className="dark:text-slate-200">

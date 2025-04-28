@@ -1584,7 +1584,7 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
             backgroundColor: statusColor.text,
             display: 'inline-block'
           }}></span>
-          {startTime} - {endTime}
+          {event.title}
         </div>
         <div style={{ 
           fontWeight: 500,
@@ -1592,6 +1592,16 @@ Bagi tujuan menambahbaik 😊 perkidmatan, kami ingin bertanya adakah cik perpua
           overflow: 'hidden',
           textOverflow: 'ellipsis',
           color: statusColor.text
+        }}>
+          {startTime} - {endTime}
+        </div>
+        <div style={{ 
+          fontWeight: 500,
+          whiteSpace: 'nowrap',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          color: statusColor.text,
+          fontSize: '11px'
         }}>
           {contacts.map((c: any) => c.name).join(', ')}
         </div>

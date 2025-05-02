@@ -37,6 +37,7 @@ function AIResponses() {
     const [responseType, setResponseType] = useState<AIResponseType>('Tag');
     const [availableTags, setAvailableTags] = useState<Tag[]>([]);
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
+    const [selectedRemoveTags, setSelectedRemoveTags] = useState<string[]>([]);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [searchQuery, setSearchQuery] = useState('');
     const [currentResponseMedia, setCurrentResponseMedia] = useState<string[]>([]);
@@ -333,8 +334,11 @@ function AIResponses() {
             // Handle different response types
             switch (responseType) {
                 case 'Tag':
-                    if (selectedTags.length === 0) {
-                        toast.error('Please select at least one tag');
+                    if (selectedTags.length === 0 && (tagActionMode === 'add' || selectedRemoveTags.length === 0)) {
+                        toast.error(tagActionMode === 'add' 
+                            ? 'Please select at least one tag to add' 
+                            : 'Please select at least one tag to remove'
+                        );
                         return;
                     }
                     const tagNames = selectedTags.map(tagId => {
@@ -342,10 +346,16 @@ function AIResponses() {
                         return tag ? tag.name : '';
                     }).filter(name => name !== '');
 
+                    const removeTagNames = selectedRemoveTags.map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        return tag ? tag.name : '';
+                    }).filter(name => name !== '');
+
                     additionalData = {
                         tags: tagNames,
                         keywordSource: keywordSource,
-                        tagActionMode: tagActionMode
+                        tagActionMode: tagActionMode,
+                        removeTags: removeTagNames
                     };
                     break;
                 case 'Image':
@@ -423,6 +433,7 @@ function AIResponses() {
                 status: 'active'
             });
             setSelectedTags([]);
+            setSelectedRemoveTags([]);
             setSelectedImages([]);
             setSelectedImageUrls([]);
             setSelectedAudios([]);
@@ -485,6 +496,14 @@ function AIResponses() {
 
     const handleTagSelection = (tagId: string) => {
         setSelectedTags(prev => 
+            prev.includes(tagId) 
+                ? prev.filter(id => id !== tagId) 
+                : [...prev, tagId]
+        );
+    };
+
+    const handleRemoveTagSelection = (tagId: string) => {
+        setSelectedRemoveTags(prev => 
             prev.includes(tagId) 
                 ? prev.filter(id => id !== tagId) 
                 : [...prev, tagId]
@@ -599,13 +618,22 @@ function AIResponses() {
                         return tag ? tag.name : '';
                     }).filter(name => name !== '');
                     
-                    if (tagNames.length === 0) {
-                        toast.error('Cannot have zero tags. Please select at least one tag.');
+                    const removeTagNames = selectedRemoveTags.map(tagId => {
+                        const tag = availableTags.find(t => t.id === tagId);
+                        return tag ? tag.name : '';
+                    }).filter(name => name !== '');
+                    
+                    if (tagActionMode === 'add' && tagNames.length === 0 && removeTagNames.length === 0) {
+                        toast.error('Please select at least one tag to add or remove.');
+                        return;
+                    } else if (tagActionMode === 'delete' && tagNames.length === 0) {
+                        toast.error('Please select at least one tag to remove.');
                         return;
                     }
                     
                     updatedData.tags = tagNames;
-                    updatedData.tagActionMode = tagActionMode; // Keep this for backwards compatibility
+                    updatedData.tagActionMode = tagActionMode;
+                    updatedData.removeTags = removeTagNames;
                     break;
                 case 'Image':
                     // Handle existing images + new images
@@ -687,6 +715,7 @@ function AIResponses() {
             status: 'active'
         });
         setSelectedTags([]);
+        setSelectedRemoveTags([]);
         setSelectedImages([]);
         setSelectedImageUrls([]);
         setSelectedAudios([]);
@@ -730,6 +759,15 @@ function AIResponses() {
                     .map(tagName => availableTags.find(t => t.name === tagName)?.id)
                     .filter((id): id is string => id !== undefined);
                 setSelectedTags(selectedTagIds);
+                
+                // Set removeTags if they exist
+                const selectedRemoveTagIds = tagResponse.removeTags
+                    ? tagResponse.removeTags
+                        .map(tagName => availableTags.find(t => t.name === tagName)?.id)
+                        .filter((id): id is string => id !== undefined)
+                    : [];
+                setSelectedRemoveTags(selectedRemoveTagIds);
+                
                 // Keep this for UI consistency
                 setTagActionMode(tagResponse.tagActionMode || 'add');
                 break;
@@ -907,6 +945,8 @@ function AIResponses() {
                                     onKeywordSourceChange={setKeywordSource}
                                     tagActionMode={tagActionMode}
                                     onTagActionModeChange={setTagActionMode}
+                                    removeTags={selectedRemoveTags}
+                                    onRemoveTagSelection={handleRemoveTagSelection}
                                 />
                             )}
                             {responseType === 'Image' && (
@@ -1086,6 +1126,8 @@ function AIResponses() {
                                                             onKeywordSourceChange={setKeywordSource}
                                                             tagActionMode={tagActionMode}
                                                             onTagActionModeChange={setTagActionMode}
+                                                            removeTags={selectedRemoveTags}
+                                                            onRemoveTagSelection={handleRemoveTagSelection}
                                                         />
                                                     )}
                                                     {response.type === 'Image' && (
@@ -1325,6 +1367,8 @@ function AIResponses() {
                                                             )}
                                                             <div className="text-slate-500">
                                                                 Action: {(response as AITagResponse).tagActionMode === 'delete' ? 'Remove Tags' : 'Add Tags'}
+                                                                {(response as AITagResponse).removeTags && (response as AITagResponse).removeTags!.length > 0 && 
+                                                                    ` (with ${(response as AITagResponse).removeTags!.length} tags to remove)`}
                                                             </div>
                                                         </div>
                                                         <div className="flex space-x-2">
@@ -1338,12 +1382,26 @@ function AIResponses() {
                                                     </div>
                                                     <div className="rounded-md border border-slate-200/60 dark:border-darkmode-400 p-4">
                                                         {response.type === 'Tag' && (
-                                                            <div className="flex flex-wrap gap-2">
-                                                                {(response as AITagResponse).tags.map((tag, index) => (
-                                                                    <span key={index} className="inline-block bg-slate-100 dark:bg-darkmode-400 rounded px-2 py-1">
-                                                                        {tag}
-                                                                    </span>
-                                                                ))}
+                                                            <div>
+                                                                <div className="flex flex-wrap gap-2">
+                                                                    {(response as AITagResponse).tags.map((tag, index) => (
+                                                                        <span key={index} className="inline-block bg-slate-100 dark:bg-darkmode-400 rounded px-2 py-1">
+                                                                            {tag}
+                                                                        </span>
+                                                                    ))}
+                                                                </div>
+                                                                {(response as AITagResponse).removeTags && (response as AITagResponse).removeTags!.length > 0 && (
+                                                                    <div className="mt-2">
+                                                                        <div className="text-slate-500 font-medium mb-1">Tags to remove:</div>
+                                                                        <div className="flex flex-wrap gap-2">
+                                                                            {(response as AITagResponse).removeTags!.map((tag, index) => (
+                                                                                <span key={index} className="inline-block bg-rose-100 dark:bg-red-900 rounded px-2 py-1">
+                                                                                    {tag}
+                                                                                </span>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                         {response.type === 'Image' && (

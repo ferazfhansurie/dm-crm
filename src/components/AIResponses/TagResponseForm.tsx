@@ -11,6 +11,8 @@ interface TagResponseFormProps {
     onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
     tagActionMode: 'add' | 'delete';
     onTagActionModeChange: (mode: 'add' | 'delete') => void;
+    removeTags?: string[];
+    onRemoveTagSelection?: (tagId: string) => void;
 }
 
 const TagResponseForm: React.FC<TagResponseFormProps> = ({ 
@@ -20,7 +22,9 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
     keywordSource,
     onKeywordSourceChange,
     tagActionMode,
-    onTagActionModeChange
+    onTagActionModeChange,
+    removeTags = [],
+    onRemoveTagSelection
 }) => {
     const isEditing = window.location.href.includes('edit') || document.querySelector('[data-editing="true"]') !== null;
     
@@ -84,6 +88,39 @@ const TagResponseForm: React.FC<TagResponseFormProps> = ({
             <div className="mt-2 text-slate-500 text-sm">
                 {selectedTags.length} tags selected
             </div>
+
+            {/* Only show Remove Tags section when the action mode is 'add' */}
+            {tagActionMode === 'add' && onRemoveTagSelection && (
+                <div className="mt-4">
+                    <FormLabel className="dark:text-slate-200">Select Tags to Remove</FormLabel>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-h-[300px] overflow-y-auto p-4 border rounded-lg dark:border-darkmode-400">
+                        {availableTags.map((tag) => (
+                            <div 
+                                key={`remove-${tag.id}`}
+                                className={clsx(
+                                    "flex items-center space-x-2 p-2 rounded transition-colors",
+                                    "hover:bg-slate-100 dark:hover:bg-darkmode-400",
+                                    removeTags.includes(tag.id) && "bg-rose-100 dark:bg-red-900"
+                                )}
+                            >
+                                <label className="flex items-center space-x-2 cursor-pointer flex-1">
+                                    <input
+                                        type="checkbox"
+                                        checked={removeTags.includes(tag.id)}
+                                        onChange={() => onRemoveTagSelection(tag.id)}
+                                        className="form-checkbox h-5 w-5 text-danger border-slate-300 rounded 
+                                                dark:border-darkmode-400 dark:bg-darkmode-800"
+                                    />
+                                    <span className="dark:text-slate-200">{tag.name}</span>
+                                </label>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="mt-2 text-slate-500 text-sm">
+                        {removeTags.length} tags selected for removal
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

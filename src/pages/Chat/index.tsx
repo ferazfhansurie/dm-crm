@@ -7047,10 +7047,10 @@ const toggleBot = async () => {
                             <span>{phoneName}</span>
                             <span className={`text-xs px-2 py-1 rounded-full ${
                               isConnected 
-                                ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                                : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
+                                ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
+                                : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
                             }`}>
-                              {isConnected ? 'Connected' : 'Not Connected'}
+                              {isConnected ? 'Not Connected' : 'Connected'}
                             </span>
                           </button>
                         )}

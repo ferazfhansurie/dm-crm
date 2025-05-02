@@ -327,6 +327,7 @@ function Main() {
     branch: true,
     points: true,
     notes: true,
+    createdAt: true,
     actions: true
   };
 
@@ -341,6 +342,7 @@ function Main() {
     'branch',
     'points',
     'notes',
+    'createdAt',
     'actions'
   ];
 
@@ -5767,6 +5769,20 @@ const getFilteredScheduledMessages = () => {
                                     )}
                                   </div>
                                 )}
+                                {columnId === 'createdAt' && (
+                                  <div 
+                                    className="flex items-center"
+                                    onClick={() => handleSort('createdAt')}
+                                  >
+                                    Created At
+                                    {sortField === 'createdAt' && (
+                                      <Lucide 
+                                        icon={sortDirection === 'asc' ? 'ChevronUp' : 'ChevronDown'} 
+                                        className="w-4 h-4 ml-1"
+                                      />
+                                    )}
+                                  </div>
+                                )}
                                 {columnId === 'actions' && (
                                   <div className="flex items-center">
                                     Actions
@@ -5882,6 +5898,41 @@ const getFilteredScheduledMessages = () => {
                           {columnId === 'notes' && (
                             <span className="text-gray-600 dark:text-gray-400">
                               {contact.notes || '-'}
+                            </span>
+                          )}
+                          {columnId === 'createdAt' && (
+                            <span className="text-gray-600 dark:text-gray-400">
+                              {contact.createdAt 
+                                ? (() => {
+                                    try {
+                                      // Handle both Firestore timestamp objects and string formats
+                                      let dateValue = contact.createdAt;
+                                      
+                                      // If it's a Firestore timestamp object with seconds and nanoseconds
+                                      if (typeof dateValue === 'object' && dateValue !== null && 
+                                        'seconds' in dateValue && 'nanoseconds' in dateValue) {
+                                      return new Date((dateValue as any).seconds * 1000).toLocaleDateString('en-US', {
+                                        year: 'numeric',
+                                        month: 'short',
+                                        day: 'numeric'
+                                      });
+                                      }
+                                      
+                                      // If it's a string (ISO format or other format)
+                                      const date = new Date(dateValue);
+                                      return isNaN(date.getTime())
+                                        ? 'Invalid Date'
+                                        : date.toLocaleDateString('en-US', {
+                                            year: 'numeric',
+                                            month: 'short',
+                                            day: 'numeric'
+                                          });
+                                    } catch (e) {
+                                      console.error("Error formatting date:", e, contact.createdAt);
+                                      return 'Invalid Date';
+                                    }
+                                  })()
+                                : '-'}
                             </span>
                           )}
                           {columnId === 'actions' && (

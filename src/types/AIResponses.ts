@@ -13,6 +13,7 @@ export interface AITagResponse extends BaseAIResponse {
   type: 'Tag';
   tags: string[];
   tagActionMode?: 'add' | 'delete';
+  removeTags?: string[];
 }
 
 export interface AIImageResponse extends BaseAIResponse {

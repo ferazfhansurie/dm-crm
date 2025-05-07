@@ -705,7 +705,26 @@ function AIResponses() {
     };
 
     const removeExistingMedia = (index: number) => {
-        setCurrentResponseMedia(prev => prev.filter((_, i) => i !== index));
+        const response = responses.find(r => r.id === isEditing);
+        if (!response) return;
+
+        if (response.type === 'Document') {
+            const docResponse = response as AIDocumentResponse;
+            // Update both URLs and names
+            const updatedUrls = currentResponseMedia.filter((_, i) => i !== index);
+            const updatedNames = docResponse.documentNames.filter((_, i) => i !== index);
+            
+            // Update the response in the responses array
+            const updatedResponses = responses.map(r => 
+                r.id === isEditing 
+                    ? { ...r, documentUrls: updatedUrls, documentNames: updatedNames } 
+                    : r
+            );
+            setResponses(updatedResponses);
+            setCurrentResponseMedia(updatedUrls);
+        } else {
+            setCurrentResponseMedia(prev => prev.filter((_, i) => i !== index));
+        }
     };
 
     const resetForm = () => {
@@ -974,6 +993,7 @@ function AIResponses() {
                                     onDocumentRemove={handleDocumentRemove}
                                     keywordSource={keywordSource}
                                     onKeywordSourceChange={setKeywordSource}
+                                    selectedDocs={selectedDocs}
                                 />
                             )}
                             {responseType === 'Assign' && (
@@ -1218,14 +1238,23 @@ function AIResponses() {
                                                                                         <Lucide icon="FileText" className="w-4 h-4 mr-2" />
                                                                                         <span>{(response as AIDocumentResponse).documentNames[idx]}</span>
                                                                                     </div>
-                                                                                    <a 
-                                                                                        href={url}
-                                                                                        target="_blank"
-                                                                                        rel="noopener noreferrer"
-                                                                                        className="text-primary hover:underline"
-                                                                                    >
-                                                                                        <Lucide icon="Download" className="w-4 h-4" />
-                                                                                    </a>
+                                                                                    <div className="flex items-center gap-2">
+                                                                                        <a 
+                                                                                            href={url}
+                                                                                            target="_blank"
+                                                                                            rel="noopener noreferrer"
+                                                                                            className="text-primary hover:underline"
+                                                                                        >
+                                                                                            <Lucide icon="Download" className="w-4 h-4" />
+                                                                                        </a>
+                                                                                        <Button
+                                                                                            variant="danger"
+                                                                                            className="p-1"
+                                                                                            onClick={() => removeExistingMedia(idx)}
+                                                                                        >
+                                                                                            <Lucide icon="X" className="w-4 h-4" />
+                                                                                        </Button>
+                                                                                    </div>
                                                                                 </div>
                                                                             ))}
                                                                         </div>
@@ -1238,6 +1267,7 @@ function AIResponses() {
                                                                 onDocumentRemove={handleDocumentRemove}
                                                                 keywordSource={keywordSource}
                                                                 onKeywordSourceChange={setKeywordSource}
+                                                                selectedDocs={selectedDocs}
                                                             />
                                                         </div>
                                                     )}

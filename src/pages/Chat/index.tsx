@@ -7044,14 +7044,29 @@ const toggleBot = async () => {
                               active ? 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white' : 'text-gray-700 dark:text-gray-200'
                             } block w-full text-left px-4 py-2 text-sm flex items-center justify-between`}
                           >
-                            <span>{phoneName}</span>
-                            <span className={`text-xs px-2 py-1 rounded-full ${
-                              isConnected 
-                                ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
-                                : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
-                            }`}>
-                              {isConnected ? 'Not Connected' : 'Connected'}
-                            </span>
+                            {userData?.companyId === '0123' ? (
+                              <>
+                              <span>{phoneName}</span>
+                                <span className={`text-xs px-2 py-1 rounded-full ${
+                                  isConnected 
+                                    ? 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                    : 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
+                                }`}>
+                                  {isConnected ? 'Connected' : 'Not Connected'}
+                                </span>
+                              </>
+                            ) : (
+                              <>
+                                <span>{phoneName}</span>
+                                <span className={`text-xs px-2 py-1 rounded-full ${
+                                  isConnected 
+                                    ? 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-200'
+                                    : 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-200'
+                                }`}>
+                                  {isConnected ? 'Not Connected' : 'Connected'}
+                                </span>
+                              </>
+                            )}
                           </button>
                         )}
                       </Menu.Item>

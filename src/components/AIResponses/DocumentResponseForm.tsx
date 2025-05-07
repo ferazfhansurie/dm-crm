@@ -2,6 +2,7 @@ import React from 'react';
 import { FormLabel, FormInput } from "@/components/Base/Form";
 import Lucide from "@/components/Base/Lucide";
 import KeywordSourceSelector from './KeywordSourceSelector';
+import Button from "@/components/Base/Button";
 
 interface DocumentResponseFormProps {
     selectedDocUrls: string[];
@@ -9,6 +10,7 @@ interface DocumentResponseFormProps {
     onDocumentRemove: (index: number) => void;
     keywordSource: 'user' | 'bot' | 'own';
     onKeywordSourceChange: (source: 'user' | 'bot' | 'own') => void;
+    selectedDocs?: File[];
 }
 
 const DocumentResponseForm: React.FC<DocumentResponseFormProps> = ({
@@ -16,7 +18,8 @@ const DocumentResponseForm: React.FC<DocumentResponseFormProps> = ({
     onDocumentSelect,
     onDocumentRemove,
     keywordSource,
-    onKeywordSourceChange
+    onKeywordSourceChange,
+    selectedDocs = []
 }) => {
     return (
         <div className="mb-4">
@@ -29,17 +32,30 @@ const DocumentResponseForm: React.FC<DocumentResponseFormProps> = ({
             <div className="border-2 border-dashed dark:border-darkmode-400 rounded-md pt-4">
                 <div className="px-4 pb-4">
                     {selectedDocUrls.map((url, index) => (
-                        <div key={index} className="mb-3 flex items-center justify-between">
+                        <div key={index} className="mb-3 flex items-center justify-between p-2 bg-slate-50 dark:bg-darkmode-400 rounded">
                             <div className="flex items-center">
                                 <Lucide icon="FileText" className="w-4 h-4 mr-2" />
-                                <span className="truncate max-w-xs">Document {index + 1}</span>
+                                <span className="truncate max-w-xs">
+                                    {selectedDocs[index]?.name || `Document ${index + 1}`}
+                                </span>
                             </div>
-                            <button
-                                className="ml-2 bg-danger text-white rounded-full p-1"
-                                onClick={() => onDocumentRemove(index)}
-                            >
-                                <Lucide icon="X" className="w-4 h-4" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                                <a 
+                                    href={url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="text-primary hover:underline"
+                                >
+                                    <Lucide icon="Download" className="w-4 h-4" />
+                                </a>
+                                <Button
+                                    variant="danger"
+                                    className="p-1"
+                                    onClick={() => onDocumentRemove(index)}
+                                >
+                                    <Lucide icon="X" className="w-4 h-4" />
+                                </Button>
+                            </div>
                         </div>
                     ))}
                 </div>
@@ -55,6 +71,11 @@ const DocumentResponseForm: React.FC<DocumentResponseFormProps> = ({
                     />
                 </div>
             </div>
+            {selectedDocUrls.length > 0 && (
+                <div className="mt-2 text-slate-500 text-sm">
+                    {selectedDocUrls.length} document{selectedDocUrls.length !== 1 ? 's' : ''} selected
+                </div>
+            )}
         </div>
     );
 };

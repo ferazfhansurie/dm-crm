@@ -39,6 +39,7 @@ interface FollowUp {
     createdAt: Date;
     document?: string | null;
     image?: string | null;
+    video?: string | null;
 }
 
 
@@ -51,6 +52,7 @@ interface FollowUpMessage {
     createdAt: Date;
     document?: string | null;
     image?: string | null;
+    video?: string | null;
     delayAfter?: {
         value: number;
         unit: 'minutes' | 'hours' | 'days';
@@ -151,6 +153,7 @@ const FollowUpsPage: React.FC = () => {
     const [followUps, setFollowUps] = useState<FollowUp[]>([]);
     const [selectedDocument, setSelectedDocument] = useState<File | null>(null);
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
+    const [selectedVideo, setSelectedVideo] = useState<File | null>(null);
     const [isEditing, setIsEditing] = useState<string | null>(null);
     const [isEditingMessage, setIsEditingMessage] = useState<string | null>(null);
     const [editingMessage, setEditingMessage] = useState<FollowUpMessage | null>(null);
@@ -334,6 +337,7 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: doc.data().createdAt.toDate(),
                 document: doc.data().document || null,
                 image: doc.data().image || null,
+                video: doc.data().video || null,
             }));
 
             setFollowUps(fetchedFollowUps);
@@ -350,6 +354,12 @@ const FollowUpsPage: React.FC = () => {
 
     const uploadImage = async (file: File): Promise<string> => {
         const storageRef = ref(storage, `images/${file.name}`);
+        await uploadBytes(storageRef, file);
+        return await getDownloadURL(storageRef);
+    };
+
+    const uploadVideo = async (file: File): Promise<string> => {
+        const storageRef = ref(storage, `videos/${file.name}`);
         await uploadBytes(storageRef, file);
         return await getDownloadURL(storageRef);
     };
@@ -382,6 +392,7 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                video: selectedVideo ? await uploadVideo(selectedVideo) : null,
             };
 
             const followUpRef = collection(firestore, `companies/${companyId}/followUps`);
@@ -397,6 +408,7 @@ const FollowUpsPage: React.FC = () => {
             });
             setSelectedDocument(null);
             setSelectedImage(null);
+            setSelectedVideo(null);
             fetchFollowUps();
         } catch (error) {
             console.error('Error adding follow up:', error);
@@ -440,10 +452,16 @@ const FollowUpsPage: React.FC = () => {
                 updatedData.image = await uploadImage(selectedImage);
             }
 
+            // Handle video upload if a new video is selected
+            if (selectedVideo) {
+                updatedData.video = await uploadVideo(selectedVideo);
+            }
+
             await updateDoc(followUpRef, updatedData);
             setIsEditing(null);
             setSelectedDocument(null);
             setSelectedImage(null);
+            setSelectedVideo(null);
             fetchFollowUps();
         } catch (error) {
             console.error('Error updating follow up:', error);
@@ -594,6 +612,11 @@ const FollowUpsPage: React.FC = () => {
                 updateData.image = await uploadImage(selectedImage);
             }
 
+            // Handle video upload if a new video is selected
+            if (selectedVideo) {
+                updateData.video = await uploadVideo(selectedVideo);
+            }
+
             // Update the message in Firestore
             await updateDoc(messageRef, updateData);
             
@@ -602,6 +625,7 @@ const FollowUpsPage: React.FC = () => {
             setEditingMessage(null);
             setSelectedDocument(null);
             setSelectedImage(null);
+            setSelectedVideo(null);
             
             // Fetch updated messages
             await fetchMessages(selectedTemplate);
@@ -765,6 +789,7 @@ const FollowUpsPage: React.FC = () => {
                 createdAt: serverTimestamp(),
                 document: selectedDocument ? await uploadDocument(selectedDocument) : null,
                 image: selectedImage ? await uploadImage(selectedImage) : null,
+                video: selectedVideo ? await uploadVideo(selectedVideo) : null,
                 delayAfter: newMessage.useScheduledTime ? {
                     value: 0,
                     unit: 'minutes',
@@ -776,7 +801,7 @@ const FollowUpsPage: React.FC = () => {
                 },
                 specificNumbers: {
                     enabled: newMessage.specificNumbers.enabled,
-                    numbers: newMessage.specificNumbers.numbers // Make sure this array is included
+                    numbers: newMessage.specificNumbers.numbers
                 },
                 useScheduledTime: newMessage.useScheduledTime,
                 scheduledTime: newMessage.useScheduledTime ? newMessage.scheduledTime : '',
@@ -787,9 +812,6 @@ const FollowUpsPage: React.FC = () => {
             const messagesRef = collection(firestore, 
                 `companies/${userData.companyId}/followUpTemplates/${selectedTemplate}/messages`
             );
-            
-            // Log the data being saved for debugging
-            
             
             await addDoc(messagesRef, messageData);
             
@@ -817,6 +839,7 @@ const FollowUpsPage: React.FC = () => {
             setNewNumber('');
             setSelectedDocument(null);
             setSelectedImage(null);
+            setSelectedVideo(null);
             
             fetchMessages(selectedTemplate);
             toast.success('Message added successfully');
@@ -1334,7 +1357,7 @@ const FollowUpsPage: React.FC = () => {
                                 </div>
 
                                 {/* File Attachments */}
-                                <div className="grid grid-cols-2 gap-4 mb-4">
+                                <div className="grid grid-cols-3 gap-4 mb-4">
                                     <div>
                                         <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                                             Attach Document
@@ -1386,6 +1409,32 @@ const FollowUpsPage: React.FC = () => {
                                             </div>
                                         )}
                                     </div>
+                                    <div>
+                                        <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                            Attach Video
+                                        </label>
+                                        <input
+                                            type="file"
+                                            accept="video/*"
+                                            className="w-full px-4 py-2 border rounded-lg text-gray-900 dark:text-gray-900"
+                                            onChange={(e) => {
+                                                if (e.target.files && e.target.files[0]) {
+                                                    setSelectedVideo(e.target.files[0]);
+                                                }
+                                            }}
+                                        />
+                                        {selectedVideo && (
+                                            <div className="mt-2 text-sm text-gray-600">
+                                                Selected: {selectedVideo.name}
+                                                <button 
+                                                    className="ml-2 text-red-500"
+                                                    onClick={() => setSelectedVideo(null)}
+                                                >
+                                                    ×
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
 
                                 {/* Preview Section */}
@@ -1395,6 +1444,7 @@ const FollowUpsPage: React.FC = () => {
                                         message={newMessage.message}
                                         document={null}
                                         image={null}
+                                        video={null}
                                         timestamp={
                                             newMessage.useScheduledTime
                                                 ? `Scheduled: ${formatTime(newMessage.scheduledTime)}`
@@ -1723,6 +1773,7 @@ const FollowUpsPage: React.FC = () => {
                                                                             message={editingMessage?.message || ''}
                                                                             document={editingMessage?.document}
                                                                             image={editingMessage?.image}
+                                                                            video={editingMessage?.video}
                                                                             timestamp={
                                                                                 editingMessage?.useScheduledTime
                                                                                     ? `Scheduled: ${formatTime(editingMessage.scheduledTime)}`
@@ -1771,6 +1822,7 @@ const FollowUpsPage: React.FC = () => {
                                                                                 setEditingMessage(null);
                                                                                 setSelectedDocument(null);
                                                                                 setSelectedImage(null);
+                                                                                setSelectedVideo(null);
                                                                             }}
                                                                             className="bg-gray-500 hover:bg-gray-600 text-white"
                                                                         >
@@ -1791,6 +1843,7 @@ const FollowUpsPage: React.FC = () => {
                                                                         message={message.message}
                                                                         document={message.document}
                                                                         image={message.image}
+                                                                        video={message.video}
                                                                         timestamp={
                                                                             message.useScheduledTime
                                                                                 ? `Scheduled: ${formatTime(message.scheduledTime)}`

@@ -347,7 +347,7 @@ const GuestChat: React.FC = () => {
       const errorMessage: ChatMessage = {
         from_me: false,
         type: 'text',
-        text: "Sorry, I'm having trouble responding right now. Please try again later.",
+        text: "Please hold on ya.",
         createdAt: new Date().toISOString(),
       };
       

@@ -5,6 +5,7 @@ interface MessagePreviewProps {
     message: string;
     document?: string | null;
     image?: string | null;
+    video?: string | null;
     isSender?: boolean;
     timestamp?: string;
 }
@@ -12,7 +13,8 @@ interface MessagePreviewProps {
 const MessagePreview: React.FC<MessagePreviewProps> = ({ 
     message, 
     document, 
-    image, 
+    image,
+    video,
     isSender = true,
     timestamp 
 }) => {
@@ -103,6 +105,18 @@ const MessagePreview: React.FC<MessagePreviewProps> = ({
                             alt="Message attachment"
                             className="w-full max-h-48 object-contain cursor-zoom-in transition-transform hover:scale-[1.02]"
                             onClick={() => window.open(image, '_blank')}
+                        />
+                    </div>
+                )}
+
+                {/* Video attachment */}
+                {video && (
+                    <div className="mt-2 rounded-lg overflow-hidden">
+                        <video
+                            src={video}
+                            controls
+                            className="w-full max-h-48 object-contain"
+                            onClick={(e) => e.stopPropagation()}
                         />
                     </div>
                 )}

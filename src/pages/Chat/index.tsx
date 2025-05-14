@@ -4178,9 +4178,14 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
               // Use batch write for atomic update
               const batch = writeBatch(firestore);
               
+              // Filter out any existing employee tags and add the new one
+              const updatedTags = currentTags.filter((tag: string) => 
+                !employeeList.some(emp => emp.name === tag)
+              ).concat(tagName);
+              
               // Update contact with new assigned employee
               batch.update(contactRef, {
-                tags: currentTags.filter((tag: string) => tag !== currentAssignedTo[0]).concat(tagName),
+                tags: updatedTags,
                 assignedTo: [tagName], // Replace with new employee
                 lastAssignedAt: serverTimestamp()
               });

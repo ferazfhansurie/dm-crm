@@ -174,6 +174,7 @@ function Main() {
         branch: string;
         expiryDate: string;
         ic: string;
+        customFields?: { [key: string]: string };
       };
     }[];
     templateData?: {
@@ -2977,7 +2978,11 @@ const sendBlastMessage = async () => {
     // FIXED: Restructured to avoid duplicate message sends
     // Instead of having both 'message' and 'messages', we'll only use 'messages'
     // and make sure the server only processes this array
-    const allMessages = [];
+    const allMessages: Array<{
+      text: string;
+      isMain: boolean;
+      delayAfter: number;
+    }> = [];
     
     // Add first message to the array, which was previously in 'message' field
     if (messages.length > 0 && messages[0].text.trim()) {
@@ -3001,6 +3006,80 @@ const sendBlastMessage = async () => {
       });
     }
 
+    // Process messages for each contact to replace placeholders
+    const processedMessages = await Promise.all(
+      selectedContacts.map(async (contact) => {
+        // Create contact data with all standard fields
+        const contactData: {
+          contactName: string;
+          firstName: string;
+          lastName: string;
+          email: string;
+          phone: string;
+          vehicleNumber: string;
+          branch: string;
+          expiryDate: string;
+          ic: string;
+          customFields?: { [key: string]: string };
+        } = {
+          contactName: contact.contactName || '',
+          firstName: contact.contactName?.split(' ')[0] || '',
+          lastName: contact.lastName || '',
+          email: contact.email || '',
+          phone: contact.phone || '',
+          vehicleNumber: contact.vehicleNumber || '',
+          branch: contact.branch || '',
+          expiryDate: contact.expiryDate || '',
+          ic: contact.ic || '',
+        };
+        
+        // Add custom fields
+        if (contact.customFields) {
+          contactData.customFields = contact.customFields;
+        }
+        
+        // Get chatId from phone number
+        const phoneNumber = contact.phone?.replace(/\D/g, '');
+        const chatId = phoneNumber ? phoneNumber + "@c.us" : null;
+        if (!chatId) return null;
+        
+        // Process main message with contact data (first message in allMessages array)
+        const mainMessageText = allMessages.length > 0 && allMessages[0] && allMessages[0].text 
+          ? allMessages[0].text 
+          : '';
+        
+        // Process message with contact data
+        let processedMessage = mainMessageText
+          .replace(/@{contactName}/g, contactData.contactName)
+          .replace(/@{firstName}/g, contactData.firstName)
+          .replace(/@{lastName}/g, contactData.lastName)
+          .replace(/@{email}/g, contactData.email)
+          .replace(/@{phone}/g, contactData.phone)
+          .replace(/@{vehicleNumber}/g, contactData.vehicleNumber)
+          .replace(/@{branch}/g, contactData.branch)
+          .replace(/@{expiryDate}/g, contactData.expiryDate)
+          .replace(/@{ic}/g, contactData.ic);
+          
+        // Process custom fields placeholders
+        if (contact.customFields) {
+          Object.entries(contact.customFields).forEach(([fieldName, value]) => {
+            const placeholder = new RegExp(`@{${fieldName}}`, 'g');
+            processedMessage = processedMessage.replace(placeholder, value || '');
+          });
+        }
+
+        return {
+          chatId,
+          contactData,
+          message: processedMessage
+        };
+      })
+    ).then(results => results.filter((item): item is {
+      chatId: string;
+      contactData: any;
+      message: string;
+    } => item !== null));
+    
     const scheduledMessageData = {
       chatIds,
       phoneIndex,
@@ -3034,7 +3113,8 @@ const sendBlastMessage = async () => {
       infiniteLoop,
       numberOfBatches: 1,
       // Flag to indicate the new message structure to avoid duplicates
-      isConsolidated: true
+      isConsolidated: true,
+      processedMessages
     };
 
     // If there's media, send it first
@@ -3307,12 +3387,31 @@ const resetForm = () => {
       const phoneNumber = id.split('+')[1];
       const chat_id = phoneNumber + "@s.whatsapp.net";
       
+      // Process message with contact data to replace placeholders
+      let processedMessage = blastMessage
+        .replace(/@{contactName}/g, contact.contactName || '')
+        .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
+        .replace(/@{lastName}/g, contact.lastName || '')
+        .replace(/@{email}/g, contact.email || '')
+        .replace(/@{phone}/g, contact.phone || '')
+        .replace(/@{vehicleNumber}/g, contact.vehicleNumber || '')
+        .replace(/@{branch}/g, contact.branch || '')
+        .replace(/@{expiryDate}/g, contact.expiryDate || '')
+        .replace(/@{ic}/g, contact.ic || '');
+      
+      // Process custom fields placeholders
+      if (contact.customFields) {
+        Object.entries(contact.customFields).forEach(([fieldName, value]) => {
+          const placeholder = new RegExp(`@{${fieldName}}`, 'g');
+          processedMessage = processedMessage.replace(placeholder, value || '');
+        });
+      }
 
       if (companyData.v2) {
         // Handle v2 users
         const messagesRef = collection(firestore, `companies/${companyId}/contacts/${contact.phone}/messages`);
         await addDoc(messagesRef, {
-          message: blastMessage,
+          message: processedMessage,
           timestamp: new Date(),
           from_me: true,
           chat_id: chat_id,
@@ -3327,11 +3426,11 @@ const resetForm = () => {
           `${baseUrl}/api/messages/text/${chat_id}/${whapiToken}`,
           {
             contactId: id,
-            message: blastMessage,
+            message: processedMessage,
             additionalInfo: { ...contact },
             method: 'POST',
             body: JSON.stringify({
-              message: blastMessage,
+              message: processedMessage,
             }),
             headers: { 'Content-Type': 'application/json' }
           },
@@ -3354,14 +3453,10 @@ const resetForm = () => {
             chat_id: chat_id,
             type: 'chat',
             from_me: true,
-            text: { body: blastMessage },
+            text: { body: processedMessage },
           });
         }
-
-        
       }
-
-      
     } catch (error) {
       console.error('Error sending message:', error);
       throw error;
@@ -3478,37 +3573,119 @@ const resetForm = () => {
       
       // If using consolidated structure, only process the messages array
       if (isConsolidated && Array.isArray(message.messages) && message.messages.length > 0) {
-        // Send messages to all recipients with proper structure
+        // Check if processedMessages with contactData is available
+        if (Array.isArray(message.processedMessages) && message.processedMessages.length > 0) {
+          // Use processedMessages which includes contact data with customFields
+          const sendPromises = message.processedMessages.map(async (processedMsg: any) => {
+            const { chatId, message: processedMessage, contactData } = processedMsg;
+            
+            const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: processedMessage || '',
+                phoneIndex: message.phoneIndex || userData.phone || 0,
+                userName: userData.name || userData.email || '',
+                // Include additional contact data
+                contactData: contactData || {}
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to send message to ${chatId}`);
+            }
+          });
+
+          // Wait for all messages to be sent
+          await Promise.all(sendPromises);
+        } else {
+          // Process messages for each contact on the fly
+          const sendPromises = message.chatIds.map(async (chatId: string) => {
+            // Only send the main message or first message from the array
+            const mainMessage = message.messages.find((msg: any) => msg.isMain === true) || message.messages[0];
+            const phoneNumber = chatId.split('@')[0];
+            const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+            
+            // Process message with contact data and custom fields
+            let processedMessage = mainMessage.text || '';
+            
+            if (contact) {
+              // Replace standard placeholders
+              processedMessage = processedMessage
+                .replace(/@{contactName}/g, contact.contactName || '')
+                .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
+                .replace(/@{lastName}/g, contact.lastName || '')
+                .replace(/@{email}/g, contact.email || '')
+                .replace(/@{phone}/g, contact.phone || '')
+                .replace(/@{vehicleNumber}/g, contact.vehicleNumber || '')
+                .replace(/@{branch}/g, contact.branch || '')
+                .replace(/@{expiryDate}/g, contact.expiryDate || '')
+                .replace(/@{ic}/g, contact.ic || '');
+              
+              // Process custom fields placeholders
+              if (contact.customFields) {
+                Object.entries(contact.customFields).forEach(([fieldName, value]) => {
+                  const placeholder = new RegExp(`@{${fieldName}}`, 'g');
+                  processedMessage = processedMessage.replace(placeholder, value || '');
+                });
+              }
+            }
+            
+            const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                message: processedMessage,
+                phoneIndex: message.phoneIndex || userData.phone || 0,
+                userName: userData.name || userData.email || ''
+              }),
+            });
+
+            if (!response.ok) {
+              throw new Error(`Failed to send message to ${chatId}`);
+            }
+          });
+
+          // Wait for all messages to be sent
+          await Promise.all(sendPromises);
+        }
+      } else {
+        // Backward compatibility: Handle the old message structure
+        // Send messages to all recipients
         const sendPromises = message.chatIds.map(async (chatId: string) => {
-          // Only send the main message or first message from the array
-          const mainMessage = message.messages.find((msg: any) => msg.isMain === true) || message.messages[0];
+          const phoneNumber = chatId.split('@')[0];
+          const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
+          
+          // Process message with contact data and custom fields
+          let processedMessage = message.message || '';
+          
+          if (contact) {
+            // Replace standard placeholders
+            processedMessage = processedMessage
+              .replace(/@{contactName}/g, contact.contactName || '')
+              .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
+              .replace(/@{lastName}/g, contact.lastName || '')
+              .replace(/@{email}/g, contact.email || '')
+              .replace(/@{phone}/g, contact.phone || '')
+              .replace(/@{vehicleNumber}/g, contact.vehicleNumber || '')
+              .replace(/@{branch}/g, contact.branch || '')
+              .replace(/@{expiryDate}/g, contact.expiryDate || '')
+              .replace(/@{ic}/g, contact.ic || '');
+            
+            // Process custom fields placeholders
+            if (contact.customFields) {
+              Object.entries(contact.customFields).forEach(([fieldName, value]) => {
+                const placeholder = new RegExp(`@{${fieldName}}`, 'g');
+                processedMessage = processedMessage.replace(placeholder, value || '');
+              });
+            }
+          }
           
           const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              message: mainMessage.text || '',
-              phoneIndex: message.phoneIndex || userData.phone || 0,
-              userName: userData.name || userData.email || ''
-            }),
-          });
-
-          if (!response.ok) {
-            throw new Error(`Failed to send message to ${chatId}`);
-          }
-        });
-
-        // Wait for all messages to be sent
-        await Promise.all(sendPromises);
-      } else {
-        // Backward compatibility: Handle the old message structure
-        // Send messages to all recipients
-        const sendPromises = message.chatIds.map(async (chatId: string) => {
-          const response = await fetch(`${baseUrl}/api/v2/messages/text/${companyId}/${chatId}`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              message: message.message || '',
+              message: processedMessage,
               phoneIndex: message.phoneIndex || userData.phone || 0,
               userName: userData.name || userData.email || ''
             }),
@@ -3698,24 +3875,58 @@ const resetForm = () => {
           
           if (!contact) {
             console.warn(`No contact found for chatId: ${chatId}`);
-            return { text: blastMessage, type: 'text' };
+            return null;
+          }
+
+          // Create contact data structure
+          const contactData = {
+            contactName: contact.contactName || '',
+            firstName: contact.contactName?.split(' ')[0] || '',
+            lastName: contact.lastName || '',
+            email: contact.email || '',
+            phone: contact.phone || '',
+            vehicleNumber: contact.vehicleNumber || '',
+            branch: contact.branch || '',
+            expiryDate: contact.expiryDate || '',
+            ic: contact.ic || ''
+          };
+          
+          // Add custom fields if they exist
+          if (contact.customFields) {
+            (contactData as any).customFields = contact.customFields;
           }
 
           // Process message with contact data
           let processedMessage = blastMessage
-            .replace(/@{contactName}/g, contact.contactName || '')
-            .replace(/@{firstName}/g, contact.contactName?.split(' ')[0] || '')
-            .replace(/@{lastName}/g, contact.lastName || '')
-            .replace(/@{email}/g, contact.email || '')
-            .replace(/@{phone}/g, contact.phone || '')
-            .replace(/@{vehicleNumber}/g, contact.vehicleNumber || '')
-            .replace(/@{branch}/g, contact.branch || '')
-            .replace(/@{expiryDate}/g, contact.expiryDate || '')
-            .replace(/@{ic}/g, contact.ic || '');
+            .replace(/@{contactName}/g, contactData.contactName)
+            .replace(/@{firstName}/g, contactData.firstName)
+            .replace(/@{lastName}/g, contactData.lastName)
+            .replace(/@{email}/g, contactData.email)
+            .replace(/@{phone}/g, contactData.phone)
+            .replace(/@{vehicleNumber}/g, contactData.vehicleNumber)
+            .replace(/@{branch}/g, contactData.branch)
+            .replace(/@{expiryDate}/g, contactData.expiryDate)
+            .replace(/@{ic}/g, contactData.ic);
+            
+          // Process custom fields placeholders
+          if (contact.customFields) {
+            Object.entries(contact.customFields).forEach(([fieldName, value]) => {
+              const placeholder = new RegExp(`@{${fieldName}}`, 'g');
+              processedMessage = processedMessage.replace(placeholder, value || '');
+            });
+          }
 
-          return { text: processedMessage, type: 'text' };
+          return {
+            chatId,
+            message: processedMessage,
+            contactData
+          };
         })
-      );
+      ).then(results => results.filter((item): item is {
+        chatId: string;
+        message: string;
+        contactData: any;
+      } => item !== null));
 
       // FIXED: Create a consolidated messages array
       const consolidatedMessages = [];
@@ -3804,7 +4015,8 @@ const resetForm = () => {
         infiniteLoop: currentScheduledMessage.infiniteLoop || false,
         numberOfBatches: currentScheduledMessage.numberOfBatches || 1,
         chatIds: currentScheduledMessage.chatIds,
-        isConsolidated: true // Add the flag to indicate this is using the new structure
+        isConsolidated: true, // Add the flag to indicate this is using the new structure
+        processedMessages
       };
 
       // Send PUT request to update the scheduled message
@@ -4053,7 +4265,7 @@ const resetForm = () => {
     }
     
     // Check if the number starts with a valid country code (like 60, 65, 62, etc.)
-    if (/^(60|65|62|61|63|66|84|95|855|856|91|92|93|94|977|880|81|82|86|886|852|853|1|44|33|49|39|7|34|55|52|54|56|57|58|61|64|27|20|212|213|216|218|220|221|222|223|224|225|226|227|228|229|230|231|232|233|234|235|236|237|238|239|240|241|242|243|244|245|246|247|248|249|250|251|252|253|254|255|256|257|258|260|261|262|263|264|265|266|267|268|269|290|291|297|298|299|350|351|352|353|354|355|356|357|358|359|370|371|372|373|374|375|376|377|378|379|380|381|382|383|385|386|387|388|389|420|421|423|500|501|502|503|504|505|506|507|508|509|590|591|592|593|594|595|596|597|598|599|670|672|673|674|675|676|677|678|679|680|681|682|683|685|686|687|688|689|690|691|692|850|852|853|855|856|870|871|872|873|874|878|880|881|882|883|886|888|960|961|962|963|964|965|966|967|968|970|971|972|973|974|975|976|977|992|993|994|995|996|998)/.test(cleaned)) {
+    if (/^(60|65|62|61|63|66|84|95|855|856|91|92|93|94|977|880|81|82|86|886|852|853|1|44|33|49|39|7|34|55|52|54|56|57|58|61|64|27|20|212|213|216|218|220|221|222|223|224|225|226|227|228|229|230|231|232|233|234|235|236|237|238|239|240|241|242|243|244|245|246|247|248|249|250|251|252|253|254|255|256|257|258|260|261|262|263|264|265|266|267|268|269|290|291|297|298|299|350|351|352|353|354|355|356|357|358|359|370|371|372|373|374|375|376|377|378|379|380|381|382|383|385|386|387|388|389|420|421|423|500|501|502|503|504|505|506|507|508|509|590|591|592|593|594|595|596|597|598|599|670|672|673|674|675|676|677|678|679|680|681|682|683|685|686|687|688|689|690|691|692|850|852|853|855|856|870|871|872|873|874|878|880|881|882|883|886|888|960|961|962|963|964|965|966|967|968|970|971|972|973|974|975|976|992|993|994|995|996|998)/.test(cleaned)) {
       return cleaned.length >= 10 ? `+${cleaned}` : null;
     }
     
@@ -4192,7 +4404,7 @@ const resetForm = () => {
           const headerLower = header.toLowerCase().trim();
           
           // Debug logging
-          console.log('Processing header:', header, 'with value:', value);
+          console.log('Processing header:', header, 'with value:', value); // Debug logging
           
           // Check if the header is a tag column (tag 1 through tag 10)
           const tagMatch = headerLower.match(/^tag\s*(\d+)$/);
@@ -5252,6 +5464,67 @@ const getFilteredScheduledMessages = () => {
                               @{'{'}${field}{'}'}
                             </button>
                           ))}
+                          {/* Custom Fields Placeholders */}
+                          {(() => {
+                            // Get all unique custom field keys from selected contacts
+                            const allCustomFields = new Set<string>();
+                            
+                            // First check selectedContacts for custom fields
+                            if (selectedContacts && selectedContacts.length > 0) {
+                              selectedContacts.forEach(contact => {
+                                if (contact.customFields) {
+                                  Object.keys(contact.customFields).forEach(key => allCustomFields.add(key));
+                                }
+                              });
+                            }
+                            
+                            // If no custom fields found, fall back to checking all contacts
+                            if (allCustomFields.size === 0 && contacts && contacts.length > 0) {
+                              contacts.forEach(contact => {
+                                if (contact.customFields) {
+                                  Object.keys(contact.customFields).forEach(key => allCustomFields.add(key));
+                                }
+                              });
+                            }
+                            
+                            if (allCustomFields.size > 0) {
+                              return (
+                                <>
+                                  <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Custom Fields:</p>
+                                  {Array.from(allCustomFields).map(field => (
+                                    <button
+                                      key={field}
+                                      type="button"
+                                      className="mr-2 mb-2 px-2 py-1 text-xs bg-green-200 dark:bg-green-700 rounded-md hover:bg-green-300 dark:hover:bg-green-600"
+                                      onClick={() => {
+                                        const placeholder = `@{${field}}`;
+                                        const newMessages = [...messages];
+                                        if (newMessages.length > 0) {
+                                          const currentText = newMessages[focusedMessageIndex].text;
+                                          const newText = 
+                                            currentText.slice(0, cursorPosition) + 
+                                            placeholder + 
+                                            currentText.slice(cursorPosition);
+                                          
+                                          newMessages[focusedMessageIndex] = {
+                                            ...newMessages[focusedMessageIndex],
+                                            text: newText
+                                          };
+                                          setMessages(newMessages);
+                                          
+                                          // Update cursor position after insertion
+                                          setCursorPosition(cursorPosition + placeholder.length);
+                                        }
+                                      }}
+                                    >
+                                      @{'{'}${field}{'}'}
+                                    </button>
+                                  ))}
+                                </>
+                              );
+                            }
+                            return null;
+                          })()}
                         </div>
                       )}
                     </div>
@@ -6685,6 +6958,67 @@ const getFilteredScheduledMessages = () => {
           @{'{'}${field}{'}'}
         </button>
       ))}
+                {/* Custom Fields Placeholders */}
+                {(() => {
+                  // Get all unique custom field keys from selected contacts
+                  const allCustomFields = new Set<string>();
+                  
+                  // First check selectedContacts for custom fields
+                  if (selectedContacts && selectedContacts.length > 0) {
+                    selectedContacts.forEach(contact => {
+                      if (contact.customFields) {
+                        Object.keys(contact.customFields).forEach(key => allCustomFields.add(key));
+                      }
+                    });
+                  }
+                  
+                  // If no custom fields found, fall back to checking all contacts
+                  if (allCustomFields.size === 0 && contacts && contacts.length > 0) {
+                    contacts.forEach(contact => {
+                      if (contact.customFields) {
+                        Object.keys(contact.customFields).forEach(key => allCustomFields.add(key));
+                      }
+                    });
+                  }
+                  
+                  if (allCustomFields.size > 0) {
+                    return (
+                      <>
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-2">Custom Fields:</p>
+                        {Array.from(allCustomFields).map(field => (
+                          <button
+                            key={field}
+                            type="button"
+                            className="mr-2 mb-2 px-2 py-1 text-xs bg-green-200 dark:bg-green-700 rounded-md hover:bg-green-300 dark:hover:bg-green-600"
+                            onClick={() => {
+                              const placeholder = `@{${field}}`;
+                              const newMessages = [...messages];
+                              if (newMessages.length > 0) {
+                                const currentText = newMessages[focusedMessageIndex].text;
+                                const newText = 
+                                  currentText.slice(0, cursorPosition) + 
+                                  placeholder + 
+                                  currentText.slice(cursorPosition);
+                                
+                                newMessages[focusedMessageIndex] = {
+                                  ...newMessages[focusedMessageIndex],
+                                  text: newText
+                                };
+                                setMessages(newMessages);
+                                
+                                // Update cursor position after insertion
+                                setCursorPosition(cursorPosition + placeholder.length);
+                              }
+                            }}
+                          >
+                            @{'{'}${field}{'}'}
+                          </button>
+                        ))}
+                      </>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             )}
           </div>

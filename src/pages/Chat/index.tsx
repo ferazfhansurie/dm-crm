@@ -4164,83 +4164,61 @@ const handleAddTagToSelectedContacts = async (tagName: string, contact: Contact)
       
       // Special handling for companyId 0123
       if (companyId === '0123') {
-        // If there's an existing assignment
-        if (currentAssignedTo.length > 0) {
-          const previousEmployee = employeeList.find(emp => emp.name === currentAssignedTo[0]);
-          
-          if (previousEmployee) {
-            const previousEmployeeRef = doc(firestore, `companies/${companyId}/employee/${previousEmployee.id}`);
-            const previousEmployeeDoc = await getDoc(previousEmployeeRef);
-            
-            if (previousEmployeeDoc.exists()) {
-              const previousEmployeeData = previousEmployeeDoc.data();
-              
-              // Use batch write for atomic update
-              const batch = writeBatch(firestore);
-              
-              // Filter out any existing employee tags and add the new one
-              const updatedTags = currentTags.filter((tag: string) => 
-                !employeeList.some(emp => emp.name === tag)
-              ).concat(tagName);
-              
-              // Update contact with new assigned employee
-              batch.update(contactRef, {
-                tags: updatedTags,
-                assignedTo: [tagName], // Replace with new employee
-                lastAssignedAt: serverTimestamp()
-              });
-
-              // Update previous employee's count
-              batch.update(previousEmployeeRef, {
-                assignedContacts: Math.max(0, (previousEmployeeData.assignedContacts || 0) - 1)
-              });
-
-              // Update new employee's count
-              batch.update(employeeRef, {
-                quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1),
-                assignedContacts: (employeeData.assignedContacts || 0) + 1
-              });
-
-              await batch.commit();
-
-              // Update local states
-              setContacts(prevContacts =>
-                prevContacts.map(c =>
-                  c.id === contact.id
-                    ? { 
-                        ...c, 
-                        tags: currentTags.filter((tag: string) => tag !== currentAssignedTo[0]).concat(tagName),
-                        assignedTo: [tagName]
-                      }
-                    : c
-                )
-              );
-
-              setEmployeeList(prevList =>
-                prevList.map(emp => {
-                  if (emp.id === previousEmployee.id) {
-                    return {
-                      ...emp,
-                      assignedContacts: Math.max(0, (emp.assignedContacts || 0) - 1)
-                    };
-                  }
-                  if (emp.id === employee.id) {
-                    return {
-                      ...emp,
-                      quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1),
-                      assignedContacts: (emp.assignedContacts || 0) + 1
-                    };
-                  }
-                  return emp;
-                })
-              );
-
-              toast.success(`Contact reassigned from ${currentAssignedTo[0]} to ${tagName}`);
-              await sendAssignmentNotification(tagName, contact);
-              return;
-            }
-          }
+        // Assignment fields mapping
+        const assignmentFields = ['assignedRevotrend', 'assignedStoreGuru', 'assignedShipGuru'];
+        let phoneIndex = 0;
+        if (typeof contact.phoneIndex === 'number' && contact.phoneIndex >= 0 && contact.phoneIndex < assignmentFields.length) {
+          phoneIndex = contact.phoneIndex;
         }
+        const assignmentField = assignmentFields[phoneIndex];
+
+        // Use batch write for atomic update
+        const batch = writeBatch(firestore);
+        // Filter out any existing employee tags and add the new one
+        const updatedTags = currentTags.filter((tag: string) => 
+          !employeeList.some(emp => emp.name === tag)
+        ).concat(tagName);
+        // Overwrite the assignment field and assignedTo (only for current phoneIndex)
+        const newAssignedTo = [employee.name];
+        batch.update(contactRef, {
+          tags: updatedTags,
+          [assignmentField]: employee.name,
+          assignedTo: newAssignedTo,
+          lastAssignedAt: serverTimestamp()
+        });
+        // Update new employee's count
+        batch.update(employeeRef, {
+          quotaLeads: Math.max(0, (employeeData.quotaLeads || 0) - 1),
+          assignedContacts: (employeeData.assignedContacts || 0) + 1
+        });
+        await batch.commit();
+        // Update local states
+        setContacts(prevContacts =>
+          prevContacts.map(c =>
+            c.id === contact.id
+              ? {
+                  ...c,
+                  tags: updatedTags,
+                  [assignmentField]: employee.name,
+                  assignedTo: newAssignedTo
+                }
+              : c
+          )
+        );
+        setEmployeeList(prevList =>
+          prevList.map(emp =>
+            emp.id === employee.id
+              ? {
+                  ...emp,
+                  quotaLeads: Math.max(0, (emp.quotaLeads || 0) - 1),
+                  assignedContacts: (emp.assignedContacts || 0) + 1
+                }
+              : emp
+          )
+        );
+        toast.success(`Contact assigned to ${tagName} for ${assignmentField}`);
+        await sendAssignmentNotification(tagName, contact);
+        return;
       }
 
       // Regular handling for other companies or when no previous assignment exists
@@ -4795,7 +4773,7 @@ const [paginatedContacts, setPaginatedContacts] = useState<Contact[]>([]);
 //       const viewEmployeeNames = employeeList
 //         .filter(emp => userData.viewEmployee.includes(emp.id))
 //         .map(emp => emp.name.toLowerCase());
-      
+//       
 //       setPaginatedContacts(contacts.filter(contact => 
 //         viewEmployeeNames.some(empName => 
 //           contact.assignedTo?.toLowerCase() === empName ||

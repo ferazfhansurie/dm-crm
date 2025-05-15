@@ -2846,10 +2846,20 @@ const filteredContactsSearch = useMemo(() => {
     const name = (contact.contactName || '').toLowerCase();
     const phone = (contact.phone || '').toLowerCase();
     const tags = (contact.tags || []).map(tag => tag.toLowerCase());
+    const searchTerm = searchQuery.toLowerCase();
     
-    const matchesSearch = name.includes(searchQuery.toLowerCase()) || 
-                          phone.includes(searchQuery.toLowerCase()) || 
-                          tags.some(tag => tag.includes(searchQuery.toLowerCase()));
+    // Check basic fields
+    const basicFieldMatch = name.includes(searchTerm) || 
+                          phone.includes(searchTerm) || 
+                          tags.some(tag => tag.includes(searchTerm));
+
+    // Check custom fields
+    const customFieldMatch = contact.customFields ? 
+      Object.entries(contact.customFields).some(([key, value]) => 
+        value?.toLowerCase().includes(searchTerm)
+      ) : false;
+
+    const matchesSearch = basicFieldMatch || customFieldMatch;
 
     const matchesTagFilters = selectedTagFilters.length === 0 || 
                               selectedTagFilters.every(filter => tags.includes(filter.toLowerCase()));

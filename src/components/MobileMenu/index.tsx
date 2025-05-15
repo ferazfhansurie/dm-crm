@@ -12,6 +12,7 @@ import Lucide from "@/components/Base/Lucide";
 import logoUrl from "@/assets/images/logo.png";
 import clsx from "clsx";
 import SimpleBar from "simplebar";
+import "simplebar/dist/simplebar.min.css";
 
 function Main() {
   const navigate = useNavigate();

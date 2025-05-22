@@ -237,6 +237,11 @@ function Main() {
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [exportModalOpen, setExportModalOpen] = useState(false);
   const [showColumnsModal, setShowColumnsModal] = useState(false);
+  const [showDateFilterModal, setShowDateFilterModal] = useState(false);
+  const [dateFilterField, setDateFilterField] = useState<string>("createdAt"); // Changed default to createdAt
+  const [dateFilterStart, setDateFilterStart] = useState<string>("");
+  const [dateFilterEnd, setDateFilterEnd] = useState<string>("");
+  const [activeDateFilter, setActiveDateFilter] = useState<{ field: string; start: string; end: string } | null>(null);
   const [exportModalContent, setExportModalContent] = useState<React.ReactNode | null>(null);
   const [focusedMessageIndex, setFocusedMessageIndex] = useState<number>(0);
   const [cursorPosition, setCursorPosition] = useState<number>(0);
@@ -546,14 +551,23 @@ const getDisplayedContacts = () => {
       aValue = Number(a.points || 0);
       bValue = Number(b.points || 0);
       return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
+    } else if (sortField === 'createdAt' || sortField === 'dateAdded' || sortField === 'dateUpdated' || sortField === 'expiryDate') {
+      // Sort chronologically for date fields
+      aValue = aValue ? new Date(aValue).getTime() : 0;
+      bValue = bValue ? new Date(bValue).getTime() : 0;
+      return sortDirection === 'asc' ? aValue - bValue : bValue - aValue;
     } else if (sortField.startsWith('customField_')) {
       const fieldName = sortField.replace('customField_', '');
       aValue = a.customFields?.[fieldName] || '';
       bValue = b.customFields?.[fieldName] || '';
     }
 
-    // Convert to strings for comparison (except for points which is handled above)
-    if (sortField !== 'points') {
+    // Convert to strings for comparison (except for points and dates which are handled above)
+    if (sortField !== 'points' && 
+        sortField !== 'createdAt' && 
+        sortField !== 'dateAdded' && 
+        sortField !== 'dateUpdated' && 
+        sortField !== 'expiryDate') {
       aValue = String(aValue || '').toLowerCase();
       bValue = String(bValue || '').toLowerCase();
       return sortDirection === 'asc' 
@@ -561,7 +575,7 @@ const getDisplayedContacts = () => {
         : bValue.localeCompare(aValue);
     }
 
-    return 0; // Fallback return for points sorting
+    return 0; // Fallback return for points and date sorting
   });
 };
 
@@ -2839,9 +2853,79 @@ const clearAllFilters = () => {
   setSelectedTagFilters([]);
   setSelectedUserFilters([]);
   setExcludedTags([]);
+  setActiveDateFilter(null);
+};
+
+const applyDateFilter = () => {
+  if (dateFilterStart || dateFilterEnd) {
+    // Validate dates
+    let isValid = true;
+    let errorMessage = "";
+    
+    if (dateFilterStart && dateFilterEnd) {
+      const startDate = new Date(dateFilterStart);
+      startDate.setHours(0, 0, 0, 0);
+      
+      const endDate = new Date(dateFilterEnd);
+      endDate.setHours(23, 59, 59, 999);
+      
+      if (startDate > endDate) {
+        isValid = false;
+        errorMessage = "Start date cannot be after end date";
+      }
+    }
+    
+    if (isValid) {
+      const filterData = {
+        field: "createdAt", // Always use createdAt field
+        start: dateFilterStart,
+        end: dateFilterEnd
+      };
+      
+      // Log the filter being applied for debugging
+      console.log('Applying date filter:', filterData);
+      
+      // Set the filter and also sort by date
+      setActiveDateFilter(filterData);
+      setSortField("createdAt");
+      setSortDirection("desc"); // Most recent first
+      setShowDateFilterModal(false);
+      
+      // Format message for user feedback
+      let message = `Filtering and sorting contacts by creation date`;
+      if (dateFilterStart) {
+        message += ` from ${new Date(dateFilterStart).toLocaleDateString()}`;
+      }
+      if (dateFilterEnd) {
+        message += ` to ${new Date(dateFilterEnd).toLocaleDateString()}`;
+      }
+      
+      toast.success(message);
+    } else {
+      toast.error(errorMessage);
+    }
+  } else {
+    toast.error("Please select at least one date for filtering");
+  }
+};
+
+const clearDateFilter = () => {
+  setActiveDateFilter(null);
+  setDateFilterStart("");
+  setDateFilterEnd("");
+  // Also clear the sorting if it was set by the date filter
+  if (sortField === "createdAt") {
+    setSortField(null);
+    setSortDirection('asc');
+  }
 };
 
 const filteredContactsSearch = useMemo(() => {
+  // Log the active date filter for debugging
+  if (activeDateFilter) {
+    console.log('Active date filter:', activeDateFilter);
+  }
+  
   return contacts.filter((contact) => {
     const name = (contact.contactName || '').toLowerCase();
     const phone = (contact.phone || '').toLowerCase();
@@ -2866,10 +2950,71 @@ const filteredContactsSearch = useMemo(() => {
     const matchesUserFilters = selectedUserFilters.length === 0 || 
                                selectedUserFilters.some(filter => tags.includes(filter.toLowerCase()));
     const notExcluded = !excludedTags.some(tag => tags.includes(tag.toLowerCase()));
+    
+    // Date filter logic
+    let matchesDateFilter = true;
+    
+    if (activeDateFilter) {
+      const { field, start, end } = activeDateFilter;
+      const contactDate = contact[field as keyof Contact];
+      
+      if (!contactDate) {
+        // If the contact doesn't have the date field we're filtering by
+        matchesDateFilter = false;
+      } else {
+        try {
+          // Handle both Timestamp objects and string dates
+          let date: Date;
+          
+          if (typeof contactDate === 'string') {
+            // Handle string dates
+            date = new Date(contactDate);
+          } else if (contactDate && typeof contactDate === 'object' && 'seconds' in contactDate) {
+            // Handle Firestore Timestamp objects
+            const timestamp = contactDate as { seconds: number; nanoseconds: number };
+            date = new Date(timestamp.seconds * 1000);
+          } else {
+            // Unknown format
+            console.log(`Invalid date format for contact ${contact.id}: ${JSON.stringify(contactDate)}`);
+            matchesDateFilter = false;
+            return matchesSearch && matchesTagFilters && matchesUserFilters && notExcluded && matchesDateFilter;
+          }
+          
+          // Check if the date is valid
+          if (isNaN(date.getTime())) {
+            console.log(`Invalid date for contact ${contact.id}: ${JSON.stringify(contactDate)}`);
+            matchesDateFilter = false;
+          } else {
+            // Format dates for comparison - strip time components for consistent comparison
+            const contactDateStr = date.toISOString().split('T')[0];
+            
+            if (start && end) {
+              // Both start and end dates provided
+              const startDateStr = new Date(start).toISOString().split('T')[0];
+              const endDateStr = new Date(end).toISOString().split('T')[0];
+              
+              // Compare dates as strings in YYYY-MM-DD format for accurate date-only comparison
+              matchesDateFilter = contactDateStr >= startDateStr && contactDateStr <= endDateStr;
+            } else if (start) {
+              // Only start date
+              const startDateStr = new Date(start).toISOString().split('T')[0];
+              matchesDateFilter = contactDateStr >= startDateStr;
+            } else if (end) {
+              // Only end date
+              const endDateStr = new Date(end).toISOString().split('T')[0];
+              matchesDateFilter = contactDateStr <= endDateStr;
+            }
+          }
+        } catch (error) {
+          console.error(`Error parsing date for contact ${contact.id}:`, contactDate, error);
+          matchesDateFilter = false;
+        }
+      }
+    }
 
-    return matchesSearch && matchesTagFilters && matchesUserFilters && notExcluded;
+    return matchesSearch && matchesTagFilters && matchesUserFilters && notExcluded && matchesDateFilter;
   });
-}, [contacts, searchQuery, selectedTagFilters, selectedUserFilters, excludedTags]);
+}, [contacts, searchQuery, selectedTagFilters, selectedUserFilters, excludedTags, activeDateFilter]);
 
 const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
   setSearchQuery(e.target.value);
@@ -3880,7 +4025,7 @@ const resetForm = () => {
       // Process messages for each contact
       const processedMessages = await Promise.all(
         currentScheduledMessage.chatIds.map(async (chatId) => {
-          const phoneNumber = chatId.split('@')[0];
+          const phoneNumber = chatId && typeof chatId === 'string' ? chatId.split('@')[0] : '';
           const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
           
           if (!contact) {
@@ -4275,7 +4420,7 @@ const resetForm = () => {
     }
     
     // Check if the number starts with a valid country code (like 60, 65, 62, etc.)
-    if (/^(60|65|62|61|63|66|84|95|855|856|91|92|93|94|977|880|81|82|86|886|852|853|1|44|33|49|39|7|34|55|52|54|56|57|58|61|64|27|20|212|213|216|218|220|221|222|223|224|225|226|227|228|229|230|231|232|233|234|235|236|237|238|239|240|241|242|243|244|245|246|247|248|249|250|251|252|253|254|255|256|257|258|260|261|262|263|264|265|266|267|268|269|290|291|297|298|299|350|351|352|353|354|355|356|357|358|359|370|371|372|373|374|375|376|377|378|379|380|381|382|383|385|386|387|388|389|420|421|423|500|501|502|503|504|505|506|507|508|509|590|591|592|593|594|595|596|597|598|599|670|672|673|674|675|676|677|678|679|680|681|682|683|685|686|687|688|689|690|691|692|850|852|853|855|856|870|871|872|873|874|878|880|881|882|883|886|888|960|961|962|963|964|965|966|967|968|970|971|972|973|974|975|976|992|993|994|995|996|998)/.test(cleaned)) {
+    if (/^(60|65|62|61|63|66|84|95|855|856|91|92|93|94|977|880|881|882|883|886|888|960|961|962|963|964|965|966|967|968|970|971|972|973|974|975|976|992|993|994|995|996|998)/.test(cleaned)) {
       return cleaned.length >= 10 ? `+${cleaned}` : null;
     }
     
@@ -5381,7 +5526,7 @@ const getFilteredScheduledMessages = () => {
                               <Lucide icon="Users" className="w-4 h-4 mr-1" />
                               <div className="ml-5 max-h-20 overflow-y-auto">
                                 {message.chatIds.map(chatId => {
-                                  const phoneNumber = chatId.split('@')[0];
+                                  const phoneNumber = chatId && typeof chatId === 'string' ? chatId.split('@')[0] : '';
                                   const contact = contacts.find(c => c.phone?.replace(/\D/g, '') === phoneNumber);
                                   return (
                                     <div key={chatId} className="truncate">
@@ -5734,113 +5879,196 @@ const getFilteredScheduledMessages = () => {
                         </button>
                       </span>
                     ))}
-                    
                   </div>
-                         {/* Add this Menu component */}
-                         <button 
-  onClick={() => setShowColumnsModal(true)}
-  className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
->
-  <Lucide icon="Grid2x2" className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" />
-  <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
-    Show/Hide Columns
-  </span>
-</button>
-<Dialog open={showColumnsModal} onClose={() => setShowColumnsModal(false)}>
-  <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
-    <Dialog.Panel className="w-full max-w-sm p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
-      <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
-        Manage Columns
-      </Dialog.Title>
-      
-      <div className="space-y-3">
-        {Object.entries(visibleColumns).map(([column, isVisible]) => {
-          // Check if this is a custom field
-          const isCustomField = column.startsWith('customField_');
-          const displayName = isCustomField ? 
-            column.replace('customField_', '') : 
-            column;
-
-          // Don't allow deletion of essential columns
-          const isEssentialColumn = ['checkbox', 'contact', 'phone', 'actions'].includes(column);
-
-          return (
-            <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
-              <label className="flex items-center text-left w-full">
-                <input
-                  type="checkbox"
-                  checked={isVisible}
-                  onChange={() => {
-                    setVisibleColumns(prev => ({
-                      ...prev,
-                      [column]: !isVisible
-                    }));
-                  }}
-                  className="mr-2 rounded-sm"
-                />
-                <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
-                  {isCustomField ? `${displayName} (Custom)` : displayName}
-                </span>
-              </label>
-              <div className="flex items-center ml-auto">
-                {!isEssentialColumn && (
-                  <button
-                    onClick={() => {
-                      setVisibleColumns(prev => {
-                        const newColumns = { ...prev };
-                        delete newColumns[column];
-                        return newColumns;
-                      });
-                    }}
-                    className="ml-2 p-1 text-red-500 hover:text-red-700 focus:outline-none"
-                    title="Delete column"
+                  {/* Add this Menu component */}
+                  <button 
+                    onClick={() => setShowColumnsModal(true)}
+                    className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
                   >
-                    <Lucide icon="Trash2" className="w-4 h-4" />
+                    <Lucide icon="Grid2x2" className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" />
+                    <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                      Show/Hide Columns
+                    </span>
                   </button>
-                )}
-                {isEssentialColumn && (
-                  <span className="text-xs text-gray-500 italic">Required</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
+                  
+                  {/* Add Date Filter Button */}
+                  <button 
+                    onClick={() => setShowDateFilterModal(true)}
+                    className="inline-flex items-center p-2 bg-gray-200 dark:bg-gray-700 hover:bg-gray-300 dark:hover:bg-gray-600 rounded-lg cursor-pointer transition-colors duration-200"
+                  >
+                    <Lucide icon="Calendar" className="w-4 h-4 mr-1 text-gray-600 dark:text-gray-300" />
+                    <span className="text-xs text-gray-700 dark:text-gray-300 whitespace-nowrap font-medium">
+                      Filter by Date
+                    </span>
+                  </button>
 
-      <div className="mt-6 flex justify-end space-x-3">
-        <button
-          onClick={() => setShowColumnsModal(false)}
-          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500"
-        >
-          Close
-        </button>
-        <button
-          onClick={() => {
-            // Show confirmation dialog before resetting
-            if (window.confirm('This will restore all default columns. Are you sure?')) {
-              // Reset to default columns
-              setVisibleColumns({
-                checkbox: true,
-                contact: true,
-                phone: true,
-                tags: true,
-                ic: true,
-                expiryDate: true,
-                vehicleNumber: true,
-                branch: true,
-                notes: true,
-                // Add any other default columns you want to include
-              });
-            }
-          }}
-          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
-        >
-          Reset to Default
-        </button>
-      </div>
-    </Dialog.Panel>
-  </div>
-</Dialog>
+                  {activeDateFilter && (
+                      <span className="px-2 py-2 text-sm font-semibold rounded-lg bg-purple-100 text-purple-800 dark:bg-purple-800 dark:text-purple-200">
+                        Created At
+                        {activeDateFilter.start ? ` from ${new Date(activeDateFilter.start).toLocaleDateString(undefined, {
+                          year: 'numeric', month: 'short', day: 'numeric'
+                        })}` : ''}
+                        {activeDateFilter.end ? ` to ${new Date(activeDateFilter.end).toLocaleDateString(undefined, {
+                          year: 'numeric', month: 'short', day: 'numeric'
+                        })}` : ''}
+                        <button
+                          className="ml-1 text-purple-600 hover:text-purple-800"
+                          onClick={clearDateFilter}
+                        >
+                          ×
+                        </button>
+                      </span>
+                    )}
+                  
+                  {/* Date Filter Modal */}
+                  <Dialog open={showDateFilterModal} onClose={() => setShowDateFilterModal(false)}>
+                    <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+                      <Dialog.Panel className="w-full max-w-md p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+                        <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                          Filter Contacts by Creation Date
+                        </Dialog.Title>
+                        
+                        <div className="space-y-4">
+                          <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                              Date Range
+                            </label>
+                            <div className="grid grid-cols-2 gap-4">
+                              <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">From</label>
+                                <input
+                                  type="date"
+                                  value={dateFilterStart}
+                                  onChange={(e) => setDateFilterStart(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                              <div>
+                                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">To</label>
+                                <input
+                                  type="date"
+                                  value={dateFilterEnd}
+                                  onChange={(e) => setDateFilterEnd(e.target.value)}
+                                  className="w-full px-3 py-2 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                                />
+                              </div>
+                            </div>
+                          </div>
+                          
+                          <div className="flex justify-end space-x-2">
+                            <button
+                              onClick={() => setShowDateFilterModal(false)}
+                              className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-200 rounded-md hover:bg-gray-300 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-gray-500"
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              onClick={applyDateFilter}
+                              className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
+                            >
+                              Apply Filter
+                            </button>
+                          </div>
+                        </div>
+                      </Dialog.Panel>
+                    </div>
+                  </Dialog>
+                  
+                <Dialog open={showColumnsModal} onClose={() => setShowColumnsModal(false)}>
+                  <div className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50">
+                    <Dialog.Panel className="w-full max-w-sm p-6 bg-white dark:bg-gray-800 rounded-lg shadow-xl">
+                      <Dialog.Title className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+                        Manage Columns
+                      </Dialog.Title>
+                      
+                      <div className="space-y-3">
+                        {Object.entries(visibleColumns).map(([column, isVisible]) => {
+                          // Check if this is a custom field
+                          const isCustomField = column.startsWith('customField_');
+                          const displayName = isCustomField ? 
+                            column.replace('customField_', '') : 
+                            column;
+
+                          // Don't allow deletion of essential columns
+                          const isEssentialColumn = ['checkbox', 'contact', 'phone', 'actions'].includes(column);
+
+                          return (
+                            <div key={column} className="flex items-center px-3 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-md">
+                              <label className="flex items-center text-left w-full">
+                                <input
+                                  type="checkbox"
+                                  checked={isVisible}
+                                  onChange={() => {
+                                    setVisibleColumns(prev => ({
+                                      ...prev,
+                                      [column]: !isVisible
+                                    }));
+                                  }}
+                                  className="mr-2 rounded-sm"
+                                />
+                                <span className="text-sm capitalize text-gray-700 dark:text-gray-300">
+                                  {isCustomField ? `${displayName} (Custom)` : displayName}
+                                </span>
+                              </label>
+                              <div className="flex items-center ml-auto">
+                                {!isEssentialColumn && (
+                                  <button
+                                    onClick={() => {
+                                      setVisibleColumns(prev => {
+                                        const newColumns = { ...prev };
+                                        delete newColumns[column];
+                                        return newColumns;
+                                      });
+                                    }}
+                                    className="ml-2 p-1 text-red-500 hover:text-red-700 focus:outline-none"
+                                    title="Delete column"
+                                  >
+                                    <Lucide icon="Trash2" className="w-4 h-4" />
+                                  </button>
+                                )}
+                                {isEssentialColumn && (
+                                  <span className="text-xs text-gray-500 italic">Required</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+
+                      <div className="mt-6 flex justify-end space-x-3">
+                        <button
+                          onClick={() => setShowColumnsModal(false)}
+                          className="px-4 py-2 text-sm font-medium text-gray-700 bg-gray-100 rounded-md hover:bg-gray-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-gray-500"
+                        >
+                          Close
+                        </button>
+                        <button
+                          onClick={() => {
+                            // Show confirmation dialog before resetting
+                            if (window.confirm('This will restore all default columns. Are you sure?')) {
+                              // Reset to default columns
+                              setVisibleColumns({
+                                checkbox: true,
+                                contact: true,
+                                phone: true,
+                                tags: true,
+                                ic: true,
+                                expiryDate: true,
+                                vehicleNumber: true,
+                                branch: true,
+                                notes: true,
+                                // Add any other default columns you want to include
+                              });
+                            }
+                          }}
+                          className="px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-blue-500"
+                        >
+                          Reset to Default
+                        </button>
+                      </div>
+                    </Dialog.Panel>
+                  </div>
+                </Dialog>
                 </div>
               </div>
               {showMassDeleteModal && (

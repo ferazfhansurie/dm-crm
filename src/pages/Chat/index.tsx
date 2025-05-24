@@ -1505,7 +1505,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         
         filteredByEmployee = contactsToFilter.filter(contact => 
           viewEmployeeNames.some(empName => 
-            contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
+            (Array.isArray(contact.assignedTo) && contact.assignedTo.some(assignedTo => assignedTo.toLowerCase() === empName)) ||
             contact.tags?.some(tag => tag.toLowerCase() === empName)
           )
         );
@@ -1513,7 +1513,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         // If it's an object with a name property
         const empName = userData.viewEmployee.name.toLowerCase();
         filteredByEmployee = contactsToFilter.filter(contact => 
-          contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
+          (Array.isArray(contact.assignedTo) && contact.assignedTo.some(assignedTo => assignedTo.toLowerCase() === empName)) ||
           contact.tags?.some(tag => tag.toLowerCase() === empName)
         );
       } else if (typeof userData.viewEmployee === 'string') {
@@ -1522,7 +1522,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
         if (employee) {
           const empName = employee.name.toLowerCase();
           filteredByEmployee = contactsToFilter.filter(contact => 
-            contact.assignedTo?.some(assignedTo => assignedTo.toLowerCase() === empName) ||
+            (Array.isArray(contact.assignedTo) && contact.assignedTo.some(assignedTo => assignedTo.toLowerCase() === empName)) ||
             contact.tags?.some(tag => tag.toLowerCase() === empName)
           );
         }
@@ -1548,7 +1548,7 @@ const handlePhoneChange = async (newPhoneIndex: number) => {
     // Apply employee-based filtering if an employee is selected
     if (selectedEmployee) {
       filtered = filtered.filter(contact => 
-        contact.assignedTo?.some(assignedTo => assignedTo === selectedEmployee)
+        Array.isArray(contact.assignedTo) && contact.assignedTo.some(assignedTo => assignedTo === selectedEmployee)
       );
     }
     
@@ -2487,7 +2487,7 @@ async function fetchConfigFromDatabase() {
       }
     
       // Permission check
-      if (userRole === "3" && contactSelect && !contactSelect.assignedTo?.some(assignedTo => assignedTo === userData?.name)) {
+      if (userRole === "3" && contactSelect && !(Array.isArray(contactSelect.assignedTo) && contactSelect.assignedTo.some(assignedTo => assignedTo.toLowerCase() === userData?.name?.toLowerCase()))) {
         
         toast.error("You don't have permission to view this chat.");
         return;

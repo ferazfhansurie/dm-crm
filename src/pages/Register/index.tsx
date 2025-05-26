@@ -185,6 +185,7 @@ function Main() {
       await setDoc(doc(firestore, "companies", newCompanyId), {
         id: newCompanyId,
         name: companyName,
+        apiUrl: "https://juta.ngrok.app",
         whapiToken: "", // Initialize with any default values you need
         trialStartDate: trialStartDate,
         trialEndDate: trialEndDate,

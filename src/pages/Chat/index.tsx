@@ -190,6 +190,14 @@ interface QuickReply {
     lastModified: number;
   }[] | null;
   images?: string[] | null;
+  videos?: {
+    name: string;
+    type: string;
+    size: number;
+    url: string;
+    lastModified: number;
+    thumbnail?: string;
+  }[] | null;
 }
 interface Category {
   id: string;
@@ -1887,6 +1895,7 @@ const closePDFModal = () => {
           category: doc.data().category || '',
           documents: doc.data().documents || [],
           images: doc.data().images || [],
+          videos: doc.data().videos || [],
         })),
         ...userSnapshot.docs.map(doc => ({
           id: doc.id,
@@ -1896,6 +1905,7 @@ const closePDFModal = () => {
           category: doc.data().category || '',
           documents: doc.data().documents || [],
           images: doc.data().images || [],
+          videos: doc.data().videos || [],
         }))
       ];
   
@@ -2038,41 +2048,54 @@ const fetchFileFromURL = async (url: string): Promise<File | null> => {
 
   const handleQRClick = async (reply: QuickReply) => {
     try {
-      // Handle images one at a time
-      if (reply.images?.length) {
+      // Handle videos first
+      if (reply.videos?.length) {
+        reply.videos.forEach((video) => {
+          fetch(video.url)
+            .then(response => response.blob())
+            .then(blob => {
+              const videoFile = new File([blob], video.name, { 
+                type: video.type,
+                lastModified: video.lastModified 
+              });
+              setSelectedVideo(videoFile);
+              setVideoModalOpen(true);
+              setDocumentCaption(reply.text || '');
+            })
+            .catch(error => {
+              console.error('Error handling video:', error);
+              toast.error('Failed to load video');
+            });
+        });
+      }
+      // Handle images
+      else if (reply.images?.length) {
         setPastedImageUrl(reply.images);
         setDocumentCaption(reply.text || '');
         setImageModalOpen2(true);
       }
-
-      // Handle documents one at a time
-      if (reply.documents?.length) {
-        for (const doc of reply.documents) {
-          try {
-            const response = await fetch(doc.url);
-            const blob = await response.blob();
-            const documentFile = new File([blob], doc.name, {
-              type: doc.type,
-              lastModified: doc.lastModified
+      // Handle documents
+      else if (reply.documents?.length) {
+        reply.documents.forEach((doc) => {
+          fetch(doc.url)
+            .then(response => response.blob())
+            .then(blob => {
+              const documentFile = new File([blob], doc.name, { 
+                type: doc.type,
+                lastModified: doc.lastModified 
+              });
+              setSelectedDocument(documentFile);
+              setDocumentModalOpen(true);
+              setDocumentCaption(reply.text || '');
+            })
+            .catch(error => {
+              console.error('Error handling document:', error);
+              toast.error('Failed to load document');
             });
-            setSelectedDocument(documentFile);
-            setDocumentModalOpen(true);
-            await new Promise<void>(resolve => {
-              const interval = setInterval(() => {
-                if (!documentModalOpen) {
-                  clearInterval(interval);
-                  resolve();
-                }
-              }, 100);
-            });
-          } catch (error) {
-            console.error('Error handling document:', error);
-            toast.error(`Failed to process document: ${doc.name}`);
-          }
-        }
+        });
       }
-
-      if (reply.text) {
+      // Handle text-only replies
+      else if (!reply.images?.length && !reply.documents?.length && !reply.videos?.length) {
         setNewMessage(reply.text);
       }
       setIsQuickRepliesOpen(false);
@@ -6252,6 +6275,37 @@ interface Template {
   }, [contacts]);
 
   const [companyStopBot, setCompanyStopBot] = useState(false);
+  const [companyBaseUrl, setCompanyBaseUrl] = useState<string>('');
+
+// Fetch company base URL on component mount
+useEffect(() => {
+  const fetchCompanyBaseUrl = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      const docUserRef = doc(firestore, 'user', user.email!);
+      const docUserSnapshot = await getDoc(docUserRef);
+      if (!docUserSnapshot.exists()) return;
+
+      const userData = docUserSnapshot.data();
+      const companyId = userData.companyId;
+
+      const companyRef = doc(firestore, 'companies', companyId);
+      const companySnapshot = await getDoc(companyRef);
+      if (!companySnapshot.exists()) return;
+
+      const companyData = companySnapshot.data();
+      const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+      setCompanyBaseUrl(baseUrl);
+    } catch (error) {
+      console.error('Error fetching company base URL:', error);
+      setCompanyBaseUrl('https://mighty-dane-newly.ngrok-free.app'); // Fallback
+    }
+  };
+
+  fetchCompanyBaseUrl();
+}, []);
 
 // Update the useEffect that fetches company stop bot status
 useEffect(() => {
@@ -6362,6 +6416,23 @@ const getCompanyData = async () => {
     companyData: companySnapshot.data(),
     currentPhoneIndex,
   };
+};
+
+// Helper function to construct full image URL
+const getFullImageUrl = (imageUrl: string): string => {
+  // If it's already a full URL (starts with http/https), return as is
+  if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://') || imageUrl.startsWith('data:')) {
+    return imageUrl;
+  }
+  
+  // If it's a relative URL, combine with base URL
+  if (imageUrl.startsWith('/') && companyBaseUrl) {
+    return `${companyBaseUrl}${imageUrl}`;
+  }
+  
+  // Fallback to default base URL if companyBaseUrl is not set
+  const defaultBaseUrl = 'https://mighty-dane-newly.ngrok-free.app';
+  return imageUrl.startsWith('/') ? `${defaultBaseUrl}${imageUrl}` : imageUrl;
 };
 
 const toggleBot = async () => {
@@ -8390,14 +8461,40 @@ const toggleBot = async () => {
                       {message.type === 'image' && message.image && (
                         <div className="p-0 message-content image-message">
                           <img
-                            src={message.image.data ? `data:${message.image.mimetype};base64,${message.image.data}` : message.image.link || ''}
+                            src={(() => {
+                              // Priority: base64 data > url > link
+                              if (message.image.data && message.image.mimetype) {
+                                return `data:${message.image.mimetype};base64,${message.image.data}`;
+                              }
+                              if (message.image.url) {
+                                return getFullImageUrl(message.image.url);
+                              }
+                              if (message.image.link) {
+                                return getFullImageUrl(message.image.link);
+                              }
+                              console.warn("No valid image source found:", message.image);
+                              return logoImage; // Fallback to placeholder
+                            })()}
                             alt="Image"
                             className="rounded-lg message-image cursor-pointer"
                             style={{ maxWidth: 'auto', maxHeight: 'auto', objectFit: 'contain' }}
-                            onClick={() => openImageModal(message.image?.data ? `data:${message.image.mimetype};base64,${message.image.data}` : message.image?.link || '')}
+                            onClick={() => {
+                              const imageUrl = message.image?.data && message.image?.mimetype 
+                                ? `data:${message.image.mimetype};base64,${message.image.data}`
+                                : message.image?.url ? getFullImageUrl(message.image.url)
+                                : message.image?.link ? getFullImageUrl(message.image.link) : '';
+                              if (imageUrl) {
+                                openImageModal(imageUrl);
+                              }
+                            }}
                             onError={(e) => {
-                              console.error("Error loading image:", e.currentTarget.src);
-                              e.currentTarget.src = logoImage; // Replace with your fallback image path
+                              const originalSrc = e.currentTarget.src;
+                              console.error("Error loading image:", originalSrc);
+                              console.error("Image object:", message.image);
+                              // Prevent infinite loop by checking if we're already showing the fallback
+                              if (originalSrc !== logoImage) {
+                                e.currentTarget.src = logoImage;
+                              }
                             }}
                           />
                             {message.image?.caption && (
@@ -8413,8 +8510,12 @@ const toggleBot = async () => {
                               alt="Order"
                               className="w-12 h-12 rounded-lg object-cover"
                               onError={(e) => {
-                                console.error("Error loading order image:", e.currentTarget.src);
-                                e.currentTarget.src = logoImage;
+                                const originalSrc = e.currentTarget.src;
+                                console.error("Error loading order image:", originalSrc);
+                                // Prevent infinite loop by checking if we're already showing the fallback
+                                if (originalSrc !== logoImage) {
+                                  e.currentTarget.src = logoImage;
+                                }
                               }}
                             />
                             <div className="text-white">
@@ -8655,7 +8756,7 @@ const toggleBot = async () => {
                                   />
                                 )}
                                 {message.from_me && message.createdAt && new Date().getTime() - new Date(message.createdAt).getTime() < 15 * 60 * 1000 && userRole !== "3" && (
-                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><Lucide icon="Pencil" className="w-5 h-5" /></button>
+                                  <button className="ml-2 mr-2 text-white hover:text-blue-500 dark:text-white dark:hover:text-blue-300 transition-colors duration-200" onClick={() => openEditMessage(message)}><Lucide icon="PencilLine" className="w-5 h-5" /></button>
                                 )}
                                 <input type="checkbox" className="mr-2 form-checkbox h-5 w-5 text-blue-500 transition duration-150 ease-in-out rounded-full" checked={selectedMessages.includes(message)} onChange={() => handleSelectMessage(message)} />
                               </>
@@ -9016,20 +9117,32 @@ const toggleBot = async () => {
             disabled={userRole === "3"}
           />
   {isQuickRepliesOpen && (
-  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-    <div className="bg-white dark:bg-gray-800 rounded-lg p-6 w-[90%] max-w-4xl max-h-[90vh] overflow-hidden">
-      <div className="flex justify-between items-center mb-4">
-        <h3 className="text-lg font-semibold">Quick Replies</h3>
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200">
+    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl w-[95%] max-w-6xl max-h-[95vh] overflow-hidden animate-in zoom-in-95 duration-200">
+      {/* Header */}
+      <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+        <div className="flex items-center space-x-3">
+          <div className="p-2 bg-primary/10 rounded-lg">
+            <Lucide icon="MessageSquare" className="w-6 h-6 text-primary" />
+          </div>
+          <div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Quick Replies</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Select a quick reply to send</p>
+          </div>
+        </div>
         <button
           onClick={() => setIsQuickRepliesOpen(false)}
-          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+          className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+          title="Close (ESC)"
         >
-          <Lucide icon="X" className="w-6 h-6" />
+          <Lucide icon="X" className="w-6 h-6 text-gray-500 dark:text-gray-400" />
         </button>
       </div>
 
-      <div className="flex justify-between items-center mb-4">
-        <div className="flex space-x-4">
+      {/* Content */}
+      <div className="p-6">
+        {/* Tabs */}
+        <div className="flex space-x-4 mb-4">
           <button
             className={`px-4 py-2 rounded-lg ${
               activeQuickReplyTab === 'all'
@@ -9051,201 +9164,249 @@ const toggleBot = async () => {
             Personal
           </button>
         </div>
-        <div className="flex space-x-4">
-          <select
-            value={quickReplyCategory}
-            onChange={(e) => setQuickReplyCategory(e.target.value)}
-            className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-          >
-            <option value="all">All Categories</option>
-            {categories
-              .filter(cat => cat !== 'all')
-              .map(category => (
-                <option key={category} value={category}>{category}</option>
-              ))}
-          </select>
-          <div className="relative">
-            <input
-              type="text"
-              placeholder="Search quick replies..."
-              value={quickReplyFilter}
-              onChange={(e) => setQuickReplyFilter(e.target.value)}
-              className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-            />
-            <Lucide
-              icon="Search"
-              className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
-            />
+
+        {/* Search and Filter */}
+        <div className="flex justify-between items-center mb-4">
+          <div className="flex space-x-4">
+            <select
+              value={quickReplyCategory}
+              onChange={(e) => setQuickReplyCategory(e.target.value)}
+              className="px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+            >
+              <option value="all">All Categories</option>
+              {categories
+                .filter(cat => cat !== 'all')
+                .map(category => (
+                  <option key={category} value={category}>{category}</option>
+                ))}
+            </select>
+            <div className="relative">
+              <input
+                type="text"
+                placeholder="Search quick replies..."
+                value={quickReplyFilter}
+                onChange={(e) => setQuickReplyFilter(e.target.value)}
+                className="pl-10 pr-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+              />
+              <Lucide
+                icon="Search"
+                className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5"
+              />
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
-        {quickReplies
-          .filter(reply => activeQuickReplyTab === 'all' || reply.type === 'self')
-          .filter(reply => quickReplyCategory === 'all' || reply.category === quickReplyCategory)
-          .filter(reply => 
-            reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
-            reply.text?.toLowerCase().includes(quickReplyFilter.toLowerCase())
-          )
-          .sort((a, b) => a.keyword.localeCompare(b.keyword))
-          .map(reply => (
-            <div 
-              key={reply.id} 
-              className="flex items-center justify-between mb-2 bg-white dark:bg-gray-700 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer transition-colors duration-200"
-              onClick={() => {
-                if (editingReply?.id !== reply.id) {
-                  if (reply.images?.length) {
-                    setPastedImageUrl(reply.images);
-                    setDocumentCaption(reply.text || '');
-                    setImageModalOpen2(true);
-                  }
-                  if (reply.documents?.length) {
-                    reply.documents.forEach((doc) => {
-                      fetch(doc.url)
-                        .then(response => response.blob())
-                        .then(blob => {
-                          const documentFile = new File([blob], doc.name, { 
-                            type: doc.type,
-                            lastModified: doc.lastModified 
+        {/* Quick Replies List */}
+        <div className="overflow-y-auto" style={{ maxHeight: 'calc(90vh - 200px)' }}>
+          {quickReplies
+            .filter(reply => activeQuickReplyTab === 'all' || reply.type === 'self')
+            .filter(reply => quickReplyCategory === 'all' || reply.category === quickReplyCategory)
+            .filter(reply => 
+              reply.keyword.toLowerCase().includes(quickReplyFilter.toLowerCase()) ||
+              reply.text?.toLowerCase().includes(quickReplyFilter.toLowerCase())
+            )
+            .sort((a, b) => a.keyword.localeCompare(b.keyword))
+            .map(reply => (
+              <div 
+                key={reply.id} 
+                className="flex items-center justify-between mb-2 bg-white dark:bg-gray-700 p-4 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer transition-colors duration-200"
+                onClick={() => {
+                  if (editingReply?.id !== reply.id) {
+                    // Handle videos first
+                    if (reply.videos?.length) {
+                      reply.videos.forEach((video) => {
+                        fetch(video.url)
+                          .then(response => response.blob())
+                          .then(blob => {
+                            const videoFile = new File([blob], video.name, { 
+                              type: video.type,
+                              lastModified: video.lastModified 
+                            });
+                            setSelectedVideo(videoFile);
+                            setVideoModalOpen(true);
+                            setDocumentCaption(reply.text || '');
+                          })
+                          .catch(error => {
+                            console.error('Error handling video:', error);
+                            toast.error('Failed to load video');
                           });
-                          setSelectedDocument(documentFile);
-                          setDocumentModalOpen(true);
-                          setDocumentCaption(reply.text || '');
-                        })
-                        .catch(error => {
-                          console.error('Error handling document:', error);
-                          toast.error('Failed to load document');
-                        });
-                    });
+                      });
+                    }
+                    // Handle images
+                    else if (reply.images?.length) {
+                      setPastedImageUrl(reply.images);
+                      setDocumentCaption(reply.text || '');
+                      setImageModalOpen2(true);
+                    }
+                    // Handle documents
+                    else if (reply.documents?.length) {
+                      reply.documents.forEach((doc) => {
+                        fetch(doc.url)
+                          .then(response => response.blob())
+                          .then(blob => {
+                            const documentFile = new File([blob], doc.name, { 
+                              type: doc.type,
+                              lastModified: doc.lastModified 
+                            });
+                            setSelectedDocument(documentFile);
+                            setDocumentModalOpen(true);
+                            setDocumentCaption(reply.text || '');
+                          })
+                          .catch(error => {
+                            console.error('Error handling document:', error);
+                            toast.error('Failed to load document');
+                          });
+                      });
+                    }
+                    // Handle text-only replies
+                    else if (!reply.images?.length && !reply.documents?.length && !reply.videos?.length) {
+                      setNewMessage(reply.text);
+                    }
+                    setIsQuickRepliesOpen(false);
                   }
-                  if (!reply.images?.length && !reply.documents?.length) {
-                    setNewMessage(reply.text);
-                  }
-                  setIsQuickRepliesOpen(false);
-                }
-              }}
-            >
-              {editingReply?.id === reply.id ? (
-                <div className="flex items-center w-full space-x-4">
-                  <input
-                    className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    value={editingReply.keyword}
-                    onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
-                    placeholder="Keyword"
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <select
-                    className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    value={editingReply.category || ""}
-                    onChange={(e) => setEditingReply({ ...editingReply, category: e.target.value })}
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <option value="">Select Category</option>
-                    {categories
-                      .filter((cat: string) => cat !== 'all')
-                      .map(category => (
-                        <option key={category} value={category}>
-                          {category}
-                        </option>
-                    ))}
-                  </select>
-                  <textarea
-                    className="flex-grow px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                    value={editingReply.text || ''}
-                    onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
-                    placeholder="Message text (optional)"
-                    rows={1}
-                    onClick={(e) => e.stopPropagation()}
-                  />
-                  <div className="flex space-x-2">
-                    <button 
-                      className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        updateQuickReply(reply.id, editingReply.keyword, editingReply.text || '', editingReply.type as "all" | "self");
-                      }}
+                }}
+              >
+                {editingReply?.id === reply.id ? (
+                  <div className="flex items-center w-full space-x-4">
+                    <input
+                      className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      value={editingReply.keyword}
+                      onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
+                      placeholder="Keyword"
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <select
+                      className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      value={editingReply.category || ""}
+                      onChange={(e) => setEditingReply({ ...editingReply, category: e.target.value })}
+                      onClick={(e) => e.stopPropagation()}
                     >
-                      <Lucide icon="Save" className="w-5 h-5" />
-                    </button>
-                    <button 
-                      className="p-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingReply(null);
-                      }}
-                    >
-                      <Lucide icon="X" className="w-5 h-5" />
-                    </button>
+                      <option value="">Select Category</option>
+                      {categories
+                        .filter((cat: string) => cat !== 'all')
+                        .map(category => (
+                          <option key={category} value={category}>
+                            {category}
+                          </option>
+                      ))}
+                    </select>
+                    <textarea
+                      className="flex-grow px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
+                      value={editingReply.text || ''}
+                      onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
+                      placeholder="Message text (optional)"
+                      rows={1}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex space-x-2">
+                      <button 
+                        className="p-2 bg-primary text-white rounded-lg hover:bg-primary-dark"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          updateQuickReply(reply.id, editingReply.keyword, editingReply.text || '', editingReply.type as "all" | "self");
+                        }}
+                      >
+                        <Lucide icon="Save" className="w-5 h-5" />
+                      </button>
+                      <button 
+                        className="p-2 bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200 rounded-lg hover:bg-gray-300 dark:hover:bg-gray-500"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingReply(null);
+                        }}
+                      >
+                        <Lucide icon="X" className="w-5 h-5" />
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-col flex-grow">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
-                        {reply.keyword}
-                      </span>
-                      {reply.category && (
-                        <span className="px-3 py-1 bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full text-sm">
-                          {reply.category}
+                ) : (
+                  <>
+                    <div className="flex flex-col flex-grow">
+                      <div className="flex items-center space-x-2 mb-2">
+                        <span className="px-3 py-1 bg-primary/10 text-primary rounded-full text-sm font-medium">
+                          {reply.keyword}
+                        </span>
+                        {reply.category && (
+                          <span className="px-3 py-1 bg-gray-100 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full text-sm">
+                            {reply.category}
+                          </span>
+                        )}
+                    
+                      </div>
+                      {reply.text && (
+                        <span
+                          className="px-2 py-1 text-gray-800 dark:text-gray-200"
+                          style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                        >
+                          {reply.text}
                         </span>
                       )}
-                  
+                      <div className="grid grid-cols-2 gap-2 mt-2">
+                        {reply.documents && reply.documents.length > 0 && reply.documents.map((doc, index) => (
+                          <div key={index} className="relative group">
+                            <a href={doc.url} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-600 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-500" onClick={(e) => e.stopPropagation()}>
+                              <Lucide icon="File" className="w-4 h-4" />
+                              <span className="text-sm truncate">{doc.name}</span>
+                            </a>
+                          </div>
+                        ))}
+                        {(reply.images?.length ?? 0) > 0 && (reply.images as string[]).map((img, index) => (
+                          <div key={index} className="relative group">
+                            <img 
+                              src={img} 
+                              alt={`Preview ${index + 1}`} 
+                              className="w-16 h-16 object-cover rounded-md hover:opacity-90 transition-opacity"
+                              onClick={(e) => e.stopPropagation()}
+                            />
+                          </div>
+                        ))}
+                        {reply.videos && reply.videos.length > 0 && reply.videos.map((video, index) => (
+                          <div key={`video-${index}`} className="relative group">
+                            <div className="w-16 h-16 bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 rounded-md flex items-center justify-center hover:opacity-90 transition-opacity cursor-pointer" onClick={(e) => e.stopPropagation()}>
+                              {video.thumbnail ? (
+                                <img 
+                                  src={video.thumbnail} 
+                                  alt={`Video ${index + 1}`} 
+                                  className="w-full h-full object-cover rounded-md"
+                                />
+                              ) : (
+                                <Lucide icon="Video" className="w-6 h-6 text-purple-600 dark:text-purple-400" />
+                              )}
+                              <div className="absolute inset-0 flex items-center justify-center">
+                                <div className="bg-black/60 rounded-full p-1">
+                                  <Lucide icon="Play" className="w-3 h-3 text-white" />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    {reply.text && (
-                      <span
-                        className="px-2 py-1 text-gray-800 dark:text-gray-200"
-                        style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+                    <div className="flex items-center space-x-2 ml-4">
+                      <button
+                        className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setEditingReply(reply);
+                        }}
                       >
-                        {reply.text}
-                      </span>
-                    )}
-                    <div className="grid grid-cols-2 gap-2 mt-2">
-                      {reply.documents && reply.documents.length > 0 && reply.documents.map((doc, index) => (
-                        <div key={index} className="relative group">
-                          <a href={doc.url} target="_blank" className="p-2 bg-gray-100 dark:bg-gray-600 rounded-md flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-gray-500" onClick={(e) => e.stopPropagation()}>
-                            <Lucide icon="File" className="w-4 h-4" />
-                            <span className="text-sm truncate">{doc.name}</span>
-                          </a>
-                        </div>
-                      ))}
-                      {(reply.images?.length ?? 0) > 0 && (reply.images as string[]).map((img, index) => (
-                        <div key={index} className="relative group">
-                          <img 
-                            src={img} 
-                            alt={`Preview ${index + 1}`} 
-                            className="w-16 h-16 object-cover rounded-md hover:opacity-90 transition-opacity"
-                            onClick={(e) => e.stopPropagation()}
-                          />
-                        </div>
-                      ))}
+                        <Lucide icon="PencilLine" className="w-5 h-5" />
+                      </button>
+                      <button
+                        className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteQuickReply(reply.id, reply.type as "all" | "self");
+                        }}
+                      >
+                        <Lucide icon="Trash" className="w-5 h-5" />
+                      </button>
                     </div>
-                  </div>
-                  <div className="flex items-center space-x-2 ml-4">
-                    <button
-                      className="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingReply(reply);
-                      }}
-                    >
-                      <Lucide icon="Pencil" className="w-5 h-5" />
-                    </button>
-                    <button
-                      className="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteQuickReply(reply.id, reply.type as "all" | "self");
-                      }}
-                    >
-                      <Lucide icon="Trash" className="w-5 h-5" />
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          ))}
+                  </>
+                )}
+              </div>
+            ))}
+        </div>
       </div>
     </div>
   </div>
@@ -9376,7 +9537,7 @@ const toggleBot = async () => {
                 onClick={() => setIsEditing(true)}
               >
                 <span>{selectedContact?.contactName || selectedContact?.firstName || selectedContact?.phone || ''}</span>
-                <Lucide icon="Pencil" className="w-4 h-4 ml-2 text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
+                <Lucide icon="PencilLine" className="w-4 h-4 ml-2 text-gray-500 dark:text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity duration-200" />
               </div>
             )}
             {userRole === '1' && (
@@ -9404,6 +9565,60 @@ const toggleBot = async () => {
                       className="px-3 py-1 bg-primary text-white rounded-md hover:bg-primary-dark transition duration-200"
                     >
                       Edit
+                    </button>
+                    <button
+                      onClick={async () => {
+                        try {
+                          const user = auth.currentUser;
+                          const docUserRef = doc(firestore, 'user', user?.email!);
+                          const docUserSnapshot = await getDoc(docUserRef);
+                          if (!docUserSnapshot.exists()) {
+                            toast.error("User document not found");
+                            return;
+                          }
+                          const userData = docUserSnapshot.data();
+                          const companyId = userData.companyId;
+                          const docRef = doc(firestore, 'companies', companyId);
+                          const docSnapshot = await getDoc(docRef);
+                          if (!docSnapshot.exists()) throw new Error('No company document found');
+                          const companyData = docSnapshot.data();
+                          const baseUrl = companyData.apiUrl || 'https://mighty-dane-newly.ngrok-free.app';
+                          
+                          if (!selectedContact.phone) {
+                            toast.error("Contact phone number is required for sync");
+                            return;
+                          }
+
+                          const phoneNumber = selectedContact.phone.replace(/\D/g, '');
+                          const response = await fetch(`${baseUrl}/api/sync-a-contact/${companyId}`, {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                            body: JSON.stringify({
+                              companyId: companyId,
+                              phoneNumber: phoneNumber,
+                              phoneIndex: selectedContact.phoneIndex ?? 0
+                            }),
+                          });
+
+                          if (response.ok) {
+                            const responseData = await response.json();
+                            toast.success("Contact synced successfully!");
+                            // Optionally refresh contact data here
+                          } else {
+                            const errorText = await response.text();
+                            console.error('Sync failed:', errorText);
+                            toast.error("Failed to sync contact");
+                          }
+                        } catch (error) {
+                          console.error('Error syncing contact:', error);
+                          toast.error("An error occurred while syncing contact");
+                        }
+                      }}
+                      className="px-3 py-1 bg-blue-500 text-white rounded-md hover:bg-blue-600 transition duration-200"
+                    >
+                      Sync
                     </button>
                     <button
                       onClick={() => {

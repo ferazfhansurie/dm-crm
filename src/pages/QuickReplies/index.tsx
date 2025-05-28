@@ -104,6 +104,26 @@ const QuickRepliesPage: React.FC = () => {
     fetchCategories();
   }, []);
 
+  // Add keyboard event listener for modal
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && previewModal.isOpen) {
+        setPreviewModal(prev => ({ ...prev, isOpen: false }));
+      }
+    };
+
+    if (previewModal.isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      // Prevent body scroll when modal is open
+      document.body.style.overflow = 'hidden';
+    }
+
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      document.body.style.overflow = 'unset';
+    };
+  }, [previewModal.isOpen]);
+
   const fetchQuickReplies = async () => {
     try {
       const user = auth.currentUser;
@@ -835,37 +855,84 @@ const QuickRepliesPage: React.FC = () => {
 
                 {/* Preview Section */}
                 {(selectedDocuments.length > 0 || selectedImages.length > 0 || selectedVideos.length > 0) && (
-                  <div className="mt-4">
-                    <h4 className="text-sm font-medium text-gray-500 mb-2">Attachments</h4>
-                    <div className="flex flex-wrap gap-2">
+                  <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <div className="flex items-center mb-3">
+                      <Lucide icon="Paperclip" className="w-4 h-4 text-gray-500 mr-2" />
+                      <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                        Attachments ({selectedImages.length + selectedDocuments.length + selectedVideos.length})
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
                       {[...selectedImages, ...selectedDocuments, ...selectedVideos].map((file) => (
                         <div key={file.name} className="relative group">
-                          <div 
-                            className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                            onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
-                          >
-                            <Lucide 
-                              icon={getFileType(file.name) === 'image' ? 'Image' : getFileType(file.name) === 'video' ? 'Video' : 'File'} 
-                              className="w-5 h-5 mr-2 text-gray-500"
-                            />
-                            <span className="text-sm truncate max-w-[150px]">{file.name}</span>
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                const fileType = getFileType(file.name);
-                                if (fileType === 'video') {
-                                  removeVideo(file.name, false);
-                                } else if (fileType === 'image') {
-                                  removeFile(file.name, 'image');
-                                } else {
-                                  removeFile(file.name, 'document');
-                                }
-                              }}
-                              className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
-                            >
-                              <Lucide icon="X" className="w-4 h-4" />
-                            </button>
-                          </div>
+                          {getFileType(file.name) === 'image' ? (
+                            <div className="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600">
+                              <div className="aspect-square">
+                                <img
+                                  src={previewUrls[file.name]}
+                                  alt={file.name}
+                                  className="w-full h-full object-cover"
+                                />
+                              </div>
+                              <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                                <Lucide icon="Image" className="w-3 h-3" />
+                              </div>
+                              <button
+                                onClick={() => removeFile(file.name, 'image')}
+                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                              >
+                                <Lucide icon="X" className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : getFileType(file.name) === 'video' ? (
+                            <div className="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600">
+                              <div className="aspect-square relative bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                <Lucide icon="Video" className="w-8 h-8 text-gray-400" />
+                                <div className="absolute inset-0 flex items-center justify-center">
+                                  <div className="bg-black/60 rounded-full p-2">
+                                    <Lucide icon="Play" className="w-4 h-4 text-white" />
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                                <Lucide icon="Video" className="w-3 h-3" />
+                              </div>
+                              <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                                <p className="text-white text-xs truncate font-medium">{file.name}</p>
+                                <p className="text-white/80 text-xs">
+                                  {(file.size / 1024 / 1024).toFixed(1)} MB
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => removeVideo(file.name, false)}
+                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                              >
+                                <Lucide icon="X" className="w-3 h-3" />
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600 flex flex-col relative">
+                              <div className="flex items-center justify-center h-16 mb-2">
+                                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                  <Lucide icon="FileText" className="w-6 h-6 text-blue-600 dark:text-blue-400" />
+                                </div>
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate mb-1">
+                                  {file.name}
+                                </p>
+                                <p className="text-xs text-gray-500 dark:text-gray-400">
+                                  {(file.size / 1024 / 1024).toFixed(1)} MB
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => removeFile(file.name, 'document')}
+                                className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors"
+                              >
+                                <Lucide icon="X" className="w-3 h-3" />
+                              </button>
+                            </div>
+                          )}
                         </div>
                       ))}
                     </div>
@@ -879,17 +946,41 @@ const QuickRepliesPage: React.FC = () => {
               {filteredQuickReplies.map(reply => (
                 <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4 hover:shadow-lg transition-shadow">
                   {editingReply?.id === reply.id ? (
-                    <div className="space-y-4">
-                      <div className="flex space-x-4">
-                        <input
-                          className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
-                          value={editingReply.keyword}
-                          onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
-                          placeholder="Keyword (required)"
-                        />
-                        <div className="relative flex-1">
+                    <div className="space-y-6 border-2 border-primary/20 rounded-lg p-6 bg-gradient-to-br from-primary/5 to-transparent">
+                      {/* Header with editing indicator */}
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center space-x-3">
+                          <div className="p-2 bg-primary/10 rounded-lg">
+                            <Lucide icon="PencilLine" className="w-5 h-5 text-primary" />
+                          </div>
+                          <div>
+                            <h4 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Editing Quick Reply</h4>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">Make your changes below</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <span className="px-3 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-300 rounded-full text-sm font-medium flex items-center">
+                            <Lucide icon="Clock" className="w-3 h-3 mr-1" />
+                            Editing
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Form fields */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Keyword</label>
+                          <input
+                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 shadow-sm"
+                            value={editingReply.keyword}
+                            onChange={(e) => setEditingReply({ ...editingReply, keyword: e.target.value })}
+                            placeholder="Enter keyword (required)"
+                          />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Category</label>
                           <select
-                            className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
+                            className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 shadow-sm"
                             value={editingReply.category || ""}
                             onChange={(e) => setEditingReply({ ...editingReply, category: e.target.value })}
                           >
@@ -904,15 +995,163 @@ const QuickRepliesPage: React.FC = () => {
                           </select>
                         </div>
                       </div>
-                      <textarea
-                        className="w-full px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
-                        value={editingReply.text}
-                        onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
-                        placeholder="Message text (optional)"
-                        rows={3}
-                      />
-                      <div className="flex items-center space-x-4">
-                        <div className="flex-1 flex space-x-4">
+
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Message Text</label>
+                        <div className="relative">
+                          <div className="absolute right-3 top-3 flex space-x-1 z-10">
+                            <button
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              onClick={() => {
+                                const textarea = document.querySelector(`#edit-textarea-${reply.id}`) as HTMLTextAreaElement;
+                                const start = textarea.selectionStart;
+                                const end = textarea.selectionEnd;
+                                const selectedText = editingReply.text.substring(start, end);
+                                if (selectedText) {
+                                  const formattedText = `*${selectedText}*`;
+                                  const newText = editingReply.text.substring(0, start) + formattedText + editingReply.text.substring(end);
+                                  setEditingReply({ ...editingReply, text: newText });
+                                }
+                              }}
+                              title="Bold"
+                            >
+                              <Lucide icon="Bold" className="w-4 h-4 text-gray-500" />
+                            </button>
+                            <button
+                              className="p-1.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                              onClick={() => {
+                                const textarea = document.querySelector(`#edit-textarea-${reply.id}`) as HTMLTextAreaElement;
+                                const start = textarea.selectionStart;
+                                const end = textarea.selectionEnd;
+                                const selectedText = editingReply.text.substring(start, end);
+                                if (selectedText) {
+                                  const formattedText = `~${selectedText}~`;
+                                  const newText = editingReply.text.substring(0, start) + formattedText + editingReply.text.substring(end);
+                                  setEditingReply({ ...editingReply, text: newText });
+                                }
+                              }}
+                              title="Strikethrough"
+                            >
+                              <Lucide icon="Strikethrough" className="w-4 h-4 text-gray-500" />
+                            </button>
+                          </div>
+                          <textarea
+                            id={`edit-textarea-${reply.id}`}
+                            className="w-full px-4 py-3 pr-20 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent transition-all duration-200 shadow-sm resize-none"
+                            value={editingReply.text}
+                            onChange={(e) => setEditingReply({ ...editingReply, text: e.target.value })}
+                            placeholder="Enter message text (optional)"
+                            rows={4}
+                          />
+                        </div>
+                      </div>
+
+                      {/* Existing attachments preview */}
+                      {((reply.images && reply.images.length > 0) || (reply.documents && reply.documents.length > 0) || (reply.videos && reply.videos.length > 0)) && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                              <Lucide icon="Paperclip" className="w-4 h-4 mr-2" />
+                              Current Attachments
+                            </label>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded-full">
+                              {(reply.images?.length || 0) + (reply.documents?.length || 0) + (reply.videos?.length || 0)} files
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 p-4 bg-gray-50 dark:bg-gray-700/30 rounded-lg border border-gray-200 dark:border-gray-600">
+                            {reply.images?.map((image, index) => (
+                              <div
+                                key={`existing-image-${index}`}
+                                className="relative group cursor-pointer bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600"
+                                onClick={() => handlePreviewClick('image', image, `Image ${index + 1}`)}
+                              >
+                                <div className="aspect-square">
+                                  <img
+                                    src={image}
+                                    alt={`Image ${index + 1}`}
+                                    className="w-full h-full object-cover"
+                                  />
+                                </div>
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-200 flex items-center justify-center">
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 dark:bg-gray-800/90 rounded-full p-2">
+                                    <Lucide icon="ZoomIn" className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                                  </div>
+                                </div>
+                                <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                  <Lucide icon="Image" className="w-3 h-3 mr-1" />
+                                  IMG
+                                </div>
+                              </div>
+                            ))}
+                            {reply.videos?.map((video, index) => (
+                              <div
+                                key={`existing-video-${index}`}
+                                className="relative group cursor-pointer bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600"
+                                onClick={() => handlePreviewClick('video', video.url, video.name)}
+                              >
+                                <div className="aspect-square relative">
+                                  {video.thumbnail ? (
+                                    <img
+                                      src={video.thumbnail}
+                                      alt={`Video ${index + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 flex items-center justify-center">
+                                      <Lucide icon="Video" className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="bg-black/60 rounded-full p-2 group-hover:bg-black/80 transition-colors">
+                                      <Lucide icon="Play" className="w-5 h-5 text-white" />
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="absolute top-2 left-2 bg-purple-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                  <Lucide icon="Video" className="w-3 h-3 mr-1" />
+                                  VID
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                  <p className="text-white text-xs truncate font-medium">{video.name}</p>
+                                </div>
+                              </div>
+                            ))}
+                            {reply.documents?.map((document, index) => (
+                              <div
+                                key={`existing-document-${index}`}
+                                className="group cursor-pointer bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600 flex flex-col"
+                                onClick={() => handlePreviewClick('document', document.url, document.name)}
+                              >
+                                <div className="flex items-center justify-center h-12 mb-2">
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                                    <Lucide icon="FileText" className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                  </div>
+                                </div>
+                                <div className="flex-1 text-center">
+                                  <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate mb-1">
+                                    {document.name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {(document.size / 1024 / 1024).toFixed(1)} MB
+                                  </p>
+                                </div>
+                                <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                  <Lucide icon="File" className="w-3 h-3 mr-1" />
+                                  DOC
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* File upload section */}
+                      <div className="space-y-3">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                          <Lucide icon="Plus" className="w-4 h-4 mr-2" />
+                          Add New Attachments
+                        </label>
+                        <div className="flex flex-wrap gap-3">
                           <div>
                             <input
                               type="file"
@@ -923,7 +1162,7 @@ const QuickRepliesPage: React.FC = () => {
                             />
                             <label
                               htmlFor={`editFile-${reply.id}`}
-                              className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                              className="flex items-center px-4 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300 rounded-lg cursor-pointer hover:bg-blue-100 dark:hover:bg-blue-900/30 transition-colors border border-blue-200 dark:border-blue-800"
                             >
                               <Lucide icon="File" className="w-5 h-5 mr-2" />
                               Documents
@@ -940,82 +1179,146 @@ const QuickRepliesPage: React.FC = () => {
                             />
                             <label
                               htmlFor={`editImage-${reply.id}`}
-                              className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
+                              className="flex items-center px-4 py-3 bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 rounded-lg cursor-pointer hover:bg-green-100 dark:hover:bg-green-900/30 transition-colors border border-green-200 dark:border-green-800"
                             >
                               <Lucide icon="Image" className="w-5 h-5 mr-2" />
                               Images
                             </label>
                           </div>
-                        </div>
-                        <div>
-                          <input
-                            type="file"
-                            id={`editVideo-${reply.id}`}
-                            accept="video/*"
-                            className="hidden"
-                            multiple
-                            onChange={(e) => handleVideoSelect(e, true)}
-                          />
-                          <label
-                            htmlFor={`editVideo-${reply.id}`}
-                            className="flex items-center px-4 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors"
-                          >
-                            <Lucide icon="Video" className="w-5 h-5 mr-2" />
-                            Videos
-                          </label>
-                        </div>
-                        <div className="flex space-x-2">
-                          <button
-                            className="px-4 py-2 bg-green-500 text-white rounded-lg hover:bg-green-600 transition-colors"
-                            onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self", editingReply.category || "")}
-                          >
-                            Save
-                          </button>
-                          <button
-                            className="px-4 py-2 bg-gray-500 text-white rounded-lg hover:bg-gray-600 transition-colors"
-                            onClick={() => {
-                              setEditingReply(null);
-                              setEditingDocuments([]);
-                              setEditingImages([]);
-                              setEditingVideos([]);
-                            }}
-                          >
-                            Cancel
-                          </button>
+                          <div>
+                            <input
+                              type="file"
+                              id={`editVideo-${reply.id}`}
+                              accept="video/*"
+                              className="hidden"
+                              multiple
+                              onChange={(e) => handleVideoSelect(e, true)}
+                            />
+                            <label
+                              htmlFor={`editVideo-${reply.id}`}
+                              className="flex items-center px-4 py-3 bg-purple-50 dark:bg-purple-900/20 text-purple-700 dark:text-purple-300 rounded-lg cursor-pointer hover:bg-purple-100 dark:hover:bg-purple-900/30 transition-colors border border-purple-200 dark:border-purple-800"
+                            >
+                              <Lucide icon="Video" className="w-5 h-5 mr-2" />
+                              Videos
+                            </label>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Preview Section for Editing */}
+                      {/* New attachments preview */}
                       {(editingDocuments.length > 0 || editingImages.length > 0 || editingVideos.length > 0) && (
-                        <div className="mt-4">
-                          <h4 className="text-sm font-medium text-gray-500 mb-2">New Attachments</h4>
-                          <div className="flex flex-wrap gap-2">
-                            {[...editingImages, ...editingDocuments, ...editingVideos].map((file) => (
-                              <div key={file.name} className="relative group">
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <label className="text-sm font-medium text-gray-700 dark:text-gray-300 flex items-center">
+                              <Lucide icon="Upload" className="w-4 h-4 mr-2" />
+                              New Attachments
+                            </label>
+                            <span className="text-xs text-amber-600 dark:text-amber-400 bg-amber-100 dark:bg-amber-900/30 px-2 py-1 rounded-full">
+                              {editingImages.length + editingDocuments.length + editingVideos.length} new files
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-3 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-lg border border-amber-200 dark:border-amber-800">
+                            {editingImages.map((file) => (
+                              <div key={`new-image-${file.name}`} className="relative group">
                                 <div 
-                                  className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                                  onClick={() => handlePreviewClick(getFileType(file.name), previewUrls[file.name], file.name)}
+                                  className="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border-2 border-green-200 dark:border-green-700 cursor-pointer"
+                                  onClick={() => handlePreviewClick('image', previewUrls[file.name], file.name)}
                                 >
-                                  <Lucide 
-                                    icon={getFileType(file.name) === 'image' ? 'Image' : getFileType(file.name) === 'video' ? 'Video' : 'File'} 
-                                    className="w-5 h-5 mr-2 text-gray-500"
-                                  />
-                                  <span className="text-sm truncate max-w-[150px]">{file.name}</span>
+                                  <div className="aspect-square">
+                                    <img
+                                      src={previewUrls[file.name]}
+                                      alt={file.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  </div>
+                                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-200 flex items-center justify-center">
+                                    <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 dark:bg-gray-800/90 rounded-full p-2">
+                                      <Lucide icon="ZoomIn" className="w-4 h-4 text-gray-700 dark:text-gray-300" />
+                                    </div>
+                                  </div>
+                                  <div className="absolute top-2 left-2 bg-green-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                    <Lucide icon="Plus" className="w-3 h-3 mr-1" />
+                                    NEW
+                                  </div>
                                   <button
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      const fileType = getFileType(file.name);
-                                      if (fileType === 'video') {
-                                        removeVideo(file.name, true);
-                                      } else if (fileType === 'image') {
-                                        removeEditingFile(file.name, 'image');
-                                      } else {
-                                        removeEditingFile(file.name, 'document');
-                                      }
+                                      removeEditingFile(file.name, 'image');
                                     }}
-                                    className="ml-2 p-1 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-full"
+                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
                                   >
-                                    <Lucide icon="X" className="w-4 h-4" />
+                                    <Lucide icon="X" className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            {editingVideos.map((file) => (
+                              <div key={`new-video-${file.name}`} className="relative group">
+                                <div 
+                                  className="relative bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border-2 border-purple-200 dark:border-purple-700 cursor-pointer"
+                                  onClick={() => handlePreviewClick('video', previewUrls[file.name], file.name)}
+                                >
+                                  <div className="aspect-square relative bg-gradient-to-br from-purple-100 to-purple-200 dark:from-purple-900/30 dark:to-purple-800/30 flex items-center justify-center">
+                                    <Lucide icon="Video" className="w-8 h-8 text-purple-600 dark:text-purple-400" />
+                                    <div className="absolute inset-0 flex items-center justify-center">
+                                      <div className="bg-black/60 rounded-full p-2">
+                                        <Lucide icon="Play" className="w-4 h-4 text-white" />
+                                      </div>
+                                    </div>
+                                  </div>
+                                  <div className="absolute top-2 left-2 bg-purple-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                    <Lucide icon="Plus" className="w-3 h-3 mr-1" />
+                                    NEW
+                                  </div>
+                                  <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2">
+                                    <p className="text-white text-xs truncate font-medium">{file.name}</p>
+                                    <p className="text-white/80 text-xs">
+                                      {(file.size / 1024 / 1024).toFixed(1)} MB
+                                    </p>
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeVideo(file.name, true);
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                  >
+                                    <Lucide icon="X" className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                            ))}
+                            {editingDocuments.map((file) => (
+                              <div key={`new-document-${file.name}`} className="relative group">
+                                <div 
+                                  className="bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200 border-2 border-blue-200 dark:border-blue-700 flex flex-col cursor-pointer"
+                                  onClick={() => handlePreviewClick('document', previewUrls[file.name] || '', file.name)}
+                                >
+                                  <div className="flex items-center justify-center h-12 mb-2">
+                                    <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+                                      <Lucide icon="FileText" className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                    </div>
+                                  </div>
+                                  <div className="flex-1 text-center">
+                                    <p className="text-xs font-medium text-gray-900 dark:text-gray-100 truncate mb-1">
+                                      {file.name}
+                                    </p>
+                                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                                      {(file.size / 1024 / 1024).toFixed(1)} MB
+                                    </p>
+                                  </div>
+                                  <div className="absolute top-2 left-2 bg-blue-500 text-white text-xs px-2 py-1 rounded flex items-center">
+                                    <Lucide icon="Plus" className="w-3 h-3 mr-1" />
+                                    NEW
+                                  </div>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      removeEditingFile(file.name, 'document');
+                                    }}
+                                    className="absolute top-2 right-2 p-1 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-lg"
+                                  >
+                                    <Lucide icon="X" className="w-3 h-3" />
                                   </button>
                                 </div>
                               </div>
@@ -1023,6 +1326,30 @@ const QuickRepliesPage: React.FC = () => {
                           </div>
                         </div>
                       )}
+
+                      {/* Action buttons */}
+                      <div className="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-600">
+                        <button
+                          className="px-6 py-3 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center font-medium"
+                          onClick={() => {
+                            setEditingReply(null);
+                            setEditingDocuments([]);
+                            setEditingImages([]);
+                            setEditingVideos([]);
+                            setPreviewUrls({});
+                          }}
+                        >
+                          <Lucide icon="X" className="w-4 h-4 mr-2" />
+                          Cancel
+                        </button>
+                        <button
+                          className="px-6 py-3 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center font-medium shadow-lg hover:shadow-xl"
+                          onClick={() => updateQuickReply(reply.id, editingReply.keyword, editingReply.text, editingReply.type as "all" | "self", editingReply.category || "")}
+                        >
+                          <Lucide icon="Save" className="w-4 h-4 mr-2" />
+                          Save Changes
+                        </button>
+                      </div>
                     </div>
                   ) : (
                     <div className="flex flex-col">
@@ -1064,64 +1391,94 @@ const QuickRepliesPage: React.FC = () => {
                       </div>
                       {/* Attachments Section */}
                       {((reply.images && reply.images.length > 0) || (reply.documents && reply.documents.length > 0) || (reply.videos && reply.videos.length > 0)) && (
-                        <div className="flex flex-wrap gap-2 mt-2">
-                          {reply.images?.map((image, index) => (
-                            <div
-                              key={`image-${index}`}
-                              className="relative group cursor-pointer"
-                              onClick={() => handlePreviewClick('image', image, `Image ${index + 1}`)}
-                            >
-                              <img
-                                src={image}
-                                alt={`Quick Reply Image ${index + 1}`}
-                                className="w-20 h-20 object-cover rounded-lg hover:opacity-90 transition-opacity"
-                              />
-                              <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center rounded-lg">
-                                <Lucide icon="ZoomIn" className="w-6 h-6 text-white" />
-                              </div>
-                            </div>
-                          ))}
-                          {reply.videos?.map((video, index) => (
-                            <div
-                              key={`video-${index}`}
-                              className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                              onClick={() => handlePreviewClick('video', video.url, video.name)}
-                            >
-                              <div className="relative">
-                                {video.thumbnail && (
+                        <div className="mt-4 p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                          <div className="flex items-center mb-3">
+                            <Lucide icon="Paperclip" className="w-4 h-4 text-gray-500 mr-2" />
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                              Attachments ({(reply.images?.length || 0) + (reply.documents?.length || 0) + (reply.videos?.length || 0)})
+                            </span>
+                          </div>
+                          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                            {reply.images?.map((image, index) => (
+                              <div
+                                key={`image-${index}`}
+                                className="relative group cursor-pointer bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600"
+                                onClick={() => handlePreviewClick('image', image, `Image ${index + 1}`)}
+                              >
+                                <div className="aspect-square">
                                   <img
-                                    src={video.thumbnail}
-                                    alt={`Video thumbnail ${index + 1}`}
-                                    className="w-20 h-20 object-cover rounded-lg"
+                                    src={image}
+                                    alt={`Quick Reply Image ${index + 1}`}
+                                    className="w-full h-full object-cover"
                                   />
-                                )}
-                                <div className="absolute inset-0 flex items-center justify-center bg-black bg-opacity-50 rounded-lg">
-                                  <Lucide icon="Play" className="w-8 h-8 text-white" />
+                                </div>
+                                <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-all duration-200 flex items-center justify-center">
+                                  <div className="opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-white/90 dark:bg-gray-800/90 rounded-full p-2">
+                                    <Lucide icon="ZoomIn" className="w-5 h-5 text-gray-700 dark:text-gray-300" />
+                                  </div>
+                                </div>
+                                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                                  <Lucide icon="Image" className="w-3 h-3" />
                                 </div>
                               </div>
-                              <div className="ml-3 flex flex-col">
-                                <span className="text-sm font-medium">{video.name}</span>
-                                <span className="text-xs text-gray-500">
-                                  {(video.size / 1024 / 1024).toFixed(2)} MB • {video.type}
-                                </span>
+                            ))}
+                            {reply.videos?.map((video, index) => (
+                              <div
+                                key={`video-${index}`}
+                                className="relative group cursor-pointer bg-white dark:bg-gray-800 rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600"
+                                onClick={() => handlePreviewClick('video', video.url, video.name)}
+                              >
+                                <div className="aspect-square relative">
+                                  {video.thumbnail ? (
+                                    <img
+                                      src={video.thumbnail}
+                                      alt={`Video thumbnail ${index + 1}`}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
+                                      <Lucide icon="Video" className="w-8 h-8 text-gray-400" />
+                                    </div>
+                                  )}
+                                  <div className="absolute inset-0 flex items-center justify-center">
+                                    <div className="bg-black/60 rounded-full p-3 group-hover:bg-black/80 transition-colors">
+                                      <Lucide icon="Play" className="w-6 h-6 text-white" />
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="absolute top-2 left-2 bg-black/60 text-white text-xs px-2 py-1 rounded">
+                                  <Lucide icon="Video" className="w-3 h-3" />
+                                </div>
+                                <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                                  <p className="text-white text-xs truncate font-medium">{video.name}</p>
+                                  <p className="text-white/80 text-xs">
+                                    {(video.size / 1024 / 1024).toFixed(1)} MB
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                          {reply.documents?.map((document, index) => (
-                            <div
-                              key={`document-${index}`}
-                              className="flex items-center p-2 bg-gray-50 dark:bg-gray-700 rounded-lg cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                              onClick={() => handlePreviewClick('document', document.url, document.name)}
-                            >
-                              <Lucide icon="File" className="w-5 h-5 mr-2 text-gray-500" />
-                              <div className="flex flex-col">
-                                <span className="text-sm font-medium">{document.name}</span>
-                                <span className="text-xs text-gray-500">
-                                    {(document.size / 1024 / 1024).toFixed(2)} MB • {document.type}
-                                </span>
+                            ))}
+                            {reply.documents?.map((document, index) => (
+                              <div
+                                key={`document-${index}`}
+                                className="group cursor-pointer bg-white dark:bg-gray-800 rounded-lg p-3 shadow-sm hover:shadow-md transition-all duration-200 border border-gray-200 dark:border-gray-600 flex flex-col"
+                                onClick={() => handlePreviewClick('document', document.url, document.name)}
+                              >
+                                <div className="flex items-center justify-center h-12 mb-2">
+                                  <div className="p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg group-hover:bg-blue-100 dark:group-hover:bg-blue-900/30 transition-colors">
+                                    <Lucide icon="FileText" className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                                  </div>
+                                </div>
+                                <div className="flex-1">
+                                  <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate mb-1">
+                                    {document.name}
+                                  </p>
+                                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                                    {(document.size / 1024 / 1024).toFixed(1)} MB
+                                  </p>
+                                </div>
                               </div>
-                            </div>
-                          ))}
+                            ))}
+                          </div>
                         </div>
                       )}
                     </div>
@@ -1135,40 +1492,103 @@ const QuickRepliesPage: React.FC = () => {
 
       {/* Preview Modal */}
       {previewModal.isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-4 max-w-4xl w-full max-h-[90vh] overflow-hidden relative">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">{previewModal.title}</h3>
-              <button
-                onClick={() => setPreviewModal(prev => ({ ...prev, isOpen: false }))}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
-              >
-                <Lucide icon="X" className="w-6 h-6" />
-              </button>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setPreviewModal(prev => ({ ...prev, isOpen: false }))}
+        >
+          <div 
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-6xl w-full mx-4 max-h-[95vh] overflow-hidden relative animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Lucide 
+                    icon={previewModal.type === 'image' ? 'Image' : previewModal.type === 'video' ? 'Video' : 'File'} 
+                    className="w-5 h-5 text-primary" 
+                  />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 truncate max-w-md">
+                    {previewModal.title}
+                  </h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 capitalize">
+                    {previewModal.type} Preview
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center space-x-2">
+                {previewModal.type !== 'video' && (
+                  <button
+                    onClick={() => window.open(previewModal.url, '_blank')}
+                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                    title="Open in new tab"
+                  >
+                    <Lucide icon="ExternalLink" className="w-5 h-5" />
+                  </button>
+                )}
+                <button
+                  onClick={() => setPreviewModal(prev => ({ ...prev, isOpen: false }))}
+                  className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                  title="Close (ESC)"
+                >
+                  <Lucide icon="X" className="w-5 h-5" />
+                </button>
+              </div>
             </div>
-            <div className="overflow-auto" style={{ maxHeight: 'calc(90vh - 100px)' }}>
+
+            {/* Content */}
+            <div className="p-6 overflow-auto bg-gray-50 dark:bg-gray-900" style={{ maxHeight: 'calc(95vh - 120px)' }}>
               {previewModal.type === 'image' ? (
-                <img
-                  src={previewModal.url}
-                  alt={previewModal.title}
-                  className="w-full h-auto"
-                />
+                <div className="flex justify-center items-center min-h-[400px]">
+                  <img
+                    src={previewModal.url}
+                    alt={previewModal.title}
+                    className="max-w-full max-h-full object-contain rounded-lg shadow-lg"
+                    style={{ maxHeight: '75vh' }}
+                  />
+                </div>
               ) : previewModal.type === 'video' ? (
-                <video
-                  src={previewModal.url}
-                  controls
-                  className="w-full h-auto"
-                  controlsList="nodownload"
-                  playsInline
-                />
+                <div className="flex justify-center items-center min-h-[400px] bg-black rounded-lg">
+                  <video
+                    src={previewModal.url}
+                    controls
+                    className="max-w-full max-h-full object-contain rounded-lg"
+                    style={{ maxHeight: '75vh' }}
+                    controlsList="nodownload"
+                    playsInline
+                    autoPlay={false}
+                  />
+                </div>
               ) : (
-                <iframe
-                  src={previewModal.url}
-                  title={previewModal.title}
-                  className="w-full h-[80vh]"
-                  frameBorder="0"
-                />
+                <div className="bg-white dark:bg-gray-800 rounded-lg shadow-inner">
+                  <iframe
+                    src={previewModal.url}
+                    title={previewModal.title}
+                    className="w-full rounded-lg"
+                    style={{ height: '75vh', minHeight: '500px' }}
+                    frameBorder="0"
+                  />
+                </div>
               )}
+            </div>
+
+            {/* Footer for additional actions */}
+            <div className="flex justify-between items-center p-4 border-t border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+              <div className="text-sm text-gray-500 dark:text-gray-400">
+                Press <kbd className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded text-xs">ESC</kbd> to close
+              </div>
+              <div className="flex items-center space-x-2">
+                <a
+                  href={previewModal.url}
+                  download={previewModal.title}
+                  className="flex items-center px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                >
+                  <Lucide icon="Download" className="w-4 h-4 mr-2" />
+                  Download
+                </a>
+              </div>
             </div>
           </div>
         </div>
@@ -1176,57 +1596,95 @@ const QuickRepliesPage: React.FC = () => {
 
       {/* Category Management Modal */}
       {showCategoryModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75">
-          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold">Manage Categories</h3>
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm animate-in fade-in duration-200"
+          onClick={() => setShowCategoryModal(false)}
+        >
+          <div 
+            className="bg-white dark:bg-gray-900 rounded-xl shadow-2xl max-w-lg w-full mx-4 animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 bg-gray-50 dark:bg-gray-800">
+              <div className="flex items-center space-x-3">
+                <div className="p-2 bg-primary/10 rounded-lg">
+                  <Lucide icon="Tags" className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Manage Categories</h3>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">Organize your quick replies</p>
+                </div>
+              </div>
               <button
                 onClick={() => setShowCategoryModal(false)}
-                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition-colors"
+                title="Close"
               >
-                <Lucide icon="X" className="w-6 h-6" />
+                <Lucide icon="X" className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="space-y-4">
+            {/* Content */}
+            <div className="p-6 space-y-6">
               {/* Add new category */}
-              <div className="flex space-x-2">
-                <input
-                  type="text"
-                  value={newCategoryName}
-                  onChange={(e) => setNewCategoryName(e.target.value)}
-                  placeholder="New category name"
-                  className="flex-1 px-4 py-2 border rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent"
-                />
-                <Button
-                  variant="primary"
-                  onClick={addCategory}
-                >
-                  <Lucide icon="Plus" className="w-4 h-4 mr-2" />
-                  Add
-                </Button>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Add New Category</label>
+                <div className="flex space-x-3">
+                  <input
+                    type="text"
+                    value={newCategoryName}
+                    onChange={(e) => setNewCategoryName(e.target.value)}
+                    placeholder="Enter category name"
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+                    onKeyPress={(e) => e.key === 'Enter' && addCategory()}
+                  />
+                  <Button
+                    variant="primary"
+                    onClick={addCategory}
+                    className="px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors flex items-center"
+                  >
+                    <Lucide icon="Plus" className="w-4 h-4 mr-2" />
+                    Add
+                  </Button>
+                </div>
               </div>
 
               {/* Category list */}
-              <div className="mt-4">
-                <h4 className="text-sm font-medium text-gray-500 mb-2">Existing Categories</h4>
-                <div className="space-y-2">
+              <div>
+                <div className="flex items-center justify-between mb-3">
+                  <label className="text-sm font-medium text-gray-700 dark:text-gray-300">Existing Categories</label>
+                  <span className="text-xs text-gray-500 dark:text-gray-400">
+                    {categories.filter(cat => cat !== 'all').length} categories
+                  </span>
+                </div>
+                <div className="space-y-2 max-h-60 overflow-y-auto">
                   {categories
                     .filter(category => category !== 'all')
                     .map(category => (
                       <div
                         key={category}
-                        className="flex items-center justify-between p-2 bg-gray-50 dark:bg-gray-700 rounded-lg"
+                        className="flex items-center justify-between p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors group"
                       >
-                        <span>{category}</span>
+                        <div className="flex items-center space-x-3">
+                          <div className="w-2 h-2 bg-primary rounded-full"></div>
+                          <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{category}</span>
+                        </div>
                         <button
                           onClick={() => deleteCategory(category)}
-                          className="p-1 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
+                          className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Delete category"
                         >
                           <Lucide icon="Trash2" className="w-4 h-4" />
                         </button>
                       </div>
                     ))}
+                  {categories.filter(cat => cat !== 'all').length === 0 && (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      <Lucide icon="Tags" className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                      <p className="text-sm">No categories yet</p>
+                      <p className="text-xs">Add your first category above</p>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
